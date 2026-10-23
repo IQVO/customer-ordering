@@ -69,7 +69,10 @@ export SHIPPING_CONSUMER_GROUP=customer-ordering-shipping
 go run ./cmd/api                       # listens on :8080 (HTTP_ADDR)
 ```
 
-All settings, the probes, the shutdown order and the outbox runbook: [docs/runtime.md](docs/runtime.md).
+All settings, the probes, the shutdown order, the outbox runbook and the Helm chart (`charts/customer-ordering`): [docs/runtime.md](docs/runtime.md).
+
+On Kubernetes: `helm upgrade --install customer-ordering charts/customer-ordering` with the mandatory values (`database.*`, `kafka.brokers`,
+`config.deliveryPromiseUrl`, the three `config.*ConsumerGroup` ids); the chart fails to render, naming the value, without them.
 
 ## Develop
 

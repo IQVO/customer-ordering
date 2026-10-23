@@ -38,4 +38,4 @@ Aggregates, invariants and assumptions A1-A23 are in docs/adr/0002; consumed con
 
 ## Workflow
 GitFlow: feature/* -> PR into develop, CI green before merge, never push develop or main. lefthook: pre-commit fmt/vet/lint, pre-push `make check`. Commit and push after each step.
-Open follow-up: the Helm chart (docs/before-first-release.md rows 5-9).
+Deploy: Helm chart `charts/customer-ordering` (one `api` component; mandatory values `database.*`, `kafka.brokers`, `config.deliveryPromiseUrl`, `config.{deliveryPromise,orderSourcing,shipping}ConsumerGroup`, refused empty at render; `terminationGracePeriodSeconds` 60, must exceed drain delay + 50 s). `bash charts/customer-ordering/tests/render_test.sh` and `python3 charts/customer-ordering/tests/test_service_selectors.py` guard it; a new env var in cmd/api needs a chart value. CI `helm-lint` (PRs) and `chart-tests`. Registry secrets (row 11) are for the repo admin.
