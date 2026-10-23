@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS outbox_events;
+DROP TABLE IF EXISTS idempotency_keys;
+DROP TABLE IF EXISTS processed_events;
+DROP TABLE IF EXISTS group_signals;
+DROP TABLE IF EXISTS tracking_packages;
+DROP TABLE IF EXISTS assignment_links;
+DROP TABLE IF EXISTS order_groups;
+DROP TABLE IF EXISTS order_lines;
+DROP TABLE IF EXISTS customer_orders;
+DROP TABLE IF EXISTS shoppers;
