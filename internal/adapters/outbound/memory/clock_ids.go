@@ -70,6 +70,9 @@ type ConfirmCall struct {
 	GroupNo   int
 }
 
+// CancelCall records one CancelPromise call.
+type CancelCall = ConfirmCall
+
 // QuoteCall records one QuoteOffers call.
 type QuoteCall struct {
 	Prefix string
@@ -87,12 +90,20 @@ type PromiseGateway struct {
 	MakeErr map[string]error
 	// ConfirmErr makes ConfirmPromise fail per promise id.
 	ConfirmErr map[string]error
+	// CancelErr makes CancelPromise fail per promise id.
+	CancelErr map[string]error
+	// OnConfirm, when set, runs inside every ConfirmPromise call (tests cancel
+	// the request context with it).
+	OnConfirm func(promiseID string)
+	// CancelCtxErr is the ctx.Err() CancelPromise saw on its last call.
+	CancelCtxErr error
 	// Offers is what QuoteOffers returns; QuoteErr makes it fail.
 	Offers   []promising.Offer
 	QuoteErr error
 
 	made      []promising.MakeRequest
 	confirmed []ConfirmCall
+	cancelled []CancelCall
 	quoted    []QuoteCall
 }
 
@@ -100,7 +111,7 @@ var _ ports.PromiseGateway = (*PromiseGateway)(nil)
 
 // NewPromiseGateway returns a gateway with nothing scripted.
 func NewPromiseGateway() *PromiseGateway {
-	return &PromiseGateway{Terms: map[string]promising.Terms{}, MakeErr: map[string]error{}, ConfirmErr: map[string]error{}}
+	return &PromiseGateway{Terms: map[string]promising.Terms{}, MakeErr: map[string]error{}, ConfirmErr: map[string]error{}, CancelErr: map[string]error{}}
 }
 
 // QuoteOffers implements ports.PromiseGateway.
@@ -133,8 +144,27 @@ func (g *PromiseGateway) MakePromise(_ context.Context, req promising.MakeReques
 func (g *PromiseGateway) ConfirmPromise(_ context.Context, promiseID, orderID string, groupNo int) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.OnConfirm != nil {
+		g.OnConfirm(promiseID)
+	}
 	g.confirmed = append(g.confirmed, ConfirmCall{PromiseID: promiseID, OrderID: orderID, GroupNo: groupNo})
 	return g.ConfirmErr[promiseID]
+}
+
+// CancelPromise implements ports.PromiseGateway.
+func (g *PromiseGateway) CancelPromise(ctx context.Context, promiseID, orderID string, groupNo int) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.CancelCtxErr = ctx.Err()
+	g.cancelled = append(g.cancelled, CancelCall{PromiseID: promiseID, OrderID: orderID, GroupNo: groupNo})
+	return g.CancelErr[promiseID]
+}
+
+// Cancelled returns the CancelPromise calls in order.
+func (g *PromiseGateway) Cancelled() []CancelCall {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]CancelCall(nil), g.cancelled...)
 }
 
 // Made returns the MakePromise calls in order.

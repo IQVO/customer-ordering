@@ -16,7 +16,7 @@ This repository is a service of the retail network, not of the warehouse-systems
 
 - **Checkout**: a shopper's cart is grouped into shipment groups; for each group the service obtains a promise from delivery-promise
   (re-quote check, make, then confirm synchronously), and only then places the order with the shopper and the ship-to address
-  (synthetic PII, held only here). A failed confirm places nothing and returns the re-quoted offers.
+  (synthetic PII, held only here). A failed confirm places nothing and returns the re-quoted offers; the promises of the same checkout that were already confirmed are cancelled again (ADR 0002 A14).
 - **Status and tracking**: the order status is derived from its groups; tracking shows each group's promise window, lock and ship times,
   packages, scans and promise verdicts, fed by events of delivery-promise, order-sourcing and shipping-and-tracking.
 - **Cancellation**: a shopper can cancel while any group is unlocked; the cancel is a request that order-sourcing accepts or refuses.
@@ -52,7 +52,7 @@ Contract: [`apis/asyncapi.yaml`](apis/asyncapi.yaml), catalogue in [ADR 0004](do
 - **Consumed**: delivery-promise `PromiseAtRisk`, `PromiseRevised`, `PromiseKept`, `PromiseBroken`, `PromiseUnkeepable`; order-sourcing `FulfillmentLocked`,
   `FulfillmentShipped`, `FulfillmentUnsourceable`, `FulfillmentCancelled`, `FulfillmentCancelRefused`; shipping-and-tracking `LabelIssued`, `LabelVoided`,
   `PackageScanned`, `PackageDelivered`, `PackageExceptionRaised`. Idempotent on the CloudEvents id, dispatched on the full type, bad messages go to `<topic>.dlq`.
-- **Synchronous calls**: delivery-promise `POST /delivery-offers:quote`, `POST /promises`, `POST /promises/{promiseId}:confirm`.
+- **Synchronous calls**: delivery-promise `POST /delivery-offers:quote`, `POST /promises`, `POST /promises/{promiseId}:confirm`, and the compensating `POST /promises/{promiseId}:cancel` (only after a later confirm failed).
 
 ## Run it
 

@@ -2,7 +2,7 @@
 
 harness-template: v4
 
-Retail network, bounded context Customer Ordering (Generic, commerce tier). Turns a cart into a customer order: promises and confirms every shipment group at checkout, holds the shopper and the ship-to address (synthetic PII, only here), shows status and tracking, handles cancellation. Publishes 2 events, consumes 14, makes 3 synchronous calls to delivery-promise.
+Retail network, bounded context Customer Ordering (Generic, commerce tier). Turns a cart into a customer order: promises and confirms every shipment group at checkout, holds the shopper and the ship-to address (synthetic PII, only here), shows status and tracking, handles cancellation. Publishes 2 events, consumes 14, makes 4 synchronous calls to delivery-promise (quote, make, confirm and the compensating cancel).
 Design source of truth: IQVO/retail-network-docs `model/model.yaml` (context customer-ordering). This service belongs to the retail network, not the warehouse-systems fleet.
 This project is a domain-driven design study, not associated with any company: never name a real company, brand or product in code, comments, ADRs, specs, tests or fixtures (README `## Disclaimer`).
 
@@ -34,7 +34,7 @@ Use internal/adapters/kafka/cloudevents only. Transactional outbox: aggregates +
 A new event: domain struct + apis/asyncapi.yaml + ADR 0004 `type:` line in the SAME commit + encoder payload + golden test (.claude/skills/how-to-add-an-integration-event).
 
 ## Domain
-Aggregates, invariants and assumptions A1-A22 are in docs/adr/0002; consumed contracts, read models and relationships in 0003. Order status is DERIVED from the group states and only moves forward; cancel applies to unlocked groups only. Checkout confirms every promise synchronously before the order is placed (a failed confirm = re-quote, no order).
+Aggregates, invariants and assumptions A1-A22 are in docs/adr/0002; consumed contracts, read models and relationships in 0003. Order status is DERIVED from the group states and only moves forward; cancel applies to unlocked groups only. Checkout confirms every promise synchronously before the order is placed (a failed confirm = re-quote, no order; promises already confirmed by that checkout are cancelled through `POST /promises/{id}:cancel`, A14).
 
 ## Workflow
 GitFlow: feature/* -> PR into develop, CI green before merge, never push develop or main. lefthook: pre-commit fmt/vet/lint, pre-push `make check`. Commit and push after each step.

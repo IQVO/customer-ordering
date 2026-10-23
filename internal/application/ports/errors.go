@@ -29,4 +29,8 @@ var (
 	// ErrPromiseUnavailable: delivery-promise is unreachable, timed out or
 	// answered with a server error (503 delivery-promise-unavailable).
 	ErrPromiseUnavailable = errors.New("delivery-promise unavailable")
+	// ErrPromiseNotCancellable: delivery-promise refused the compensating
+	// cancel (404 not-found, or 409 illegal-transition because the promise is
+	// KEPT or BROKEN). Checkout logs it and goes on (ADR 0002, A14).
+	ErrPromiseNotCancellable = errors.New("promise not cancellable")
 )

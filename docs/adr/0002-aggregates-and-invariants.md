@@ -144,10 +144,30 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
 - **A13** The order id is a UUID v5 of the `Idempotency-Key` (namespace fixed in
   the code), so a retried checkout re-uses the same promises (MakePromise is
   idempotent per `<orderId>:<groupNo>`) and the same order.
-- **A14** There is no un-confirm in delivery-promise's contract. If a confirm fails
-  after other groups of the same checkout were confirmed, those promises stay
-  confirmed for an order that was never placed. Reported as a model gap (delivery-promise
-  should release confirmed promises whose order never appears, or offer a release).
+- **A14 (final)** Accepted. `CancelPromise` is `POST /promises/{promiseId}:cancel`
+  (delivery-promise contract, final): header `Idempotency-Key` (here
+  `<orderId>:<groupNo>:cancel`), no body, 200 returns the promise with
+  `status: CANCELLED` and releases its hold, a repeat on a CANCELLED promise is 200,
+  404 `not-found`, 409 `illegal-transition` when the promise is KEPT or BROKEN.
+  When a LATER confirm of a checkout fails, `PlaceOrder` cancels the promises it
+  already confirmed (in order, on a context detached from the request so a client that
+  hung up does not leave holds behind) and then fails with the confirm's own error
+  (the problem type already used for it: `offer-not-quotable`, `promise-capacity-exhausted`,
+  `book-closed` or `delivery-promise-unavailable`). If the failed confirm's outcome is
+  unknown (timeout, transport error, 5xx) its own group is cancelled too, because it may
+  have been applied. A refused or failed cancel (`ports.ErrPromiseNotCancellable`,
+  `ErrPromiseUnavailable`) is logged at error level (`orderId`, `groupNo`, `promiseId`)
+  and skipped; the checkout answer does not change.
+  *Residual risk, final decision:* no compensation record is kept. A cancel that fails
+  leaves that promise confirmed for an order that never appears; its capacity hold
+  stays until delivery-promise's own hold expiry, and the same `Idempotency-Key` retried
+  by the shopper re-runs MakePromise (idempotent per `<orderId>:<groupNo>`) and meets the
+  promise again, so the retry either re-confirms it (hold still valid) or re-quotes.
+  The same holds if the order cannot be stored after every confirm succeeded: the retry
+  with the same key re-confirms the same promises (confirm is idempotent). A cancelled
+  promise answers the retry's confirm with a refusal, so the shopper sees fresh offers.
+  Model sentence: *when checkout fails after some groups were confirmed, the confirmed
+  promises are cancelled and the failure is reported as a failed confirm.*
 - **A15** Limits (plain literal constants): up to 100 lines, 50 groups, quantity and
   numbers <= 2147483647, names/lines/cities <= 100 characters, postal code <= 20,
   phone <= 40, e-mail <= 254, cancel reason <= 200, 20 saved addresses.
@@ -172,5 +192,5 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
 - The status derivation is one pure function; every consumed event is a command with
   a table of legal and illegal transitions.
 - `model_gaps` for the orchestrator: A11 (destination on the promise), A12 (confirm
-  body), A14 (dangling confirmed promises), and the model's `GroupPromise` /
+  body), A14 (resolved by the cancel route; the residual risk above), and the model's `GroupPromise` /
   `OrderStatus` back-fill (A1, A2, A3).

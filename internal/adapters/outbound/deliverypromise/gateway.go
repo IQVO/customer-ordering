@@ -1,7 +1,8 @@
 // Package deliverypromise is the outbound HTTP client of delivery-promise, the
 // only synchronous in-organization call customer-ordering makes (the model's
-// sync_calls QuoteDeliveryOffers and MakePromise, plus ConfirmPromise, E7). It
-// restates the three routes it uses and nothing else; the DTOs here are not
+// sync_calls QuoteDeliveryOffers and MakePromise, plus ConfirmPromise, E7, and
+// the compensating CancelPromise). It
+// restates the four routes it uses and nothing else; the DTOs here are not
 // shared with the service.
 package deliverypromise
 
@@ -9,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -136,19 +138,39 @@ func (g *Gateway) ConfirmPromise(ctx context.Context, promiseID, orderID string,
 	return g.post(ctx, "/promises/"+url.PathEscape(promiseID)+":confirm", key, map[string]any{"orderId": orderID, "groupNo": groupNo}, nil)
 }
 
-// post sends one JSON POST and maps the answer: 2xx decodes into out (when
-// non-nil); 404, 409 and 422 are the typed refusals of mapRefusal; anything
-// else, a transport error or a timeout is ports.ErrPromiseUnavailable.
-func (g *Gateway) post(ctx context.Context, path, idempotencyKey string, body, out any) error {
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("encode request to delivery-promise: %w", err)
+// CancelPromise implements ports.PromiseGateway: POST /promises/{id}:cancel
+// with no body and the Idempotency-Key "<orderId>:<groupNo>:cancel". 200 (also
+// for a promise that is already CANCELLED) is success; 404 not-found and 409
+// illegal-transition (KEPT or BROKEN) are ports.ErrPromiseNotCancellable.
+func (g *Gateway) CancelPromise(ctx context.Context, promiseID, orderID string, groupNo int) error {
+	key := fmt.Sprintf("%s:%d:cancel", orderID, groupNo)
+	err := g.post(ctx, "/promises/"+url.PathEscape(promiseID)+":cancel", key, nil, nil)
+	if errors.Is(err, ports.ErrPromiseOfferNotQuotable) {
+		return fmt.Errorf("%w: %v", ports.ErrPromiseNotCancellable, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.base+path, bytes.NewReader(raw))
+	return err
+}
+
+// post sends one JSON POST (no body when body is nil) and maps the answer: 2xx
+// decodes into out (when non-nil); 404, 409 and 422 are the typed refusals of
+// mapRefusal; anything else, a transport error or a timeout is
+// ports.ErrPromiseUnavailable.
+func (g *Gateway) post(ctx context.Context, path, idempotencyKey string, body, out any) error {
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("encode request to delivery-promise: %w", err)
+		}
+		reader = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.base+path, reader)
 	if err != nil {
 		return fmt.Errorf("build request to delivery-promise: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("Accept", "application/json, application/problem+json")
 	if idempotencyKey != "" {
 		req.Header.Set("Idempotency-Key", idempotencyKey)

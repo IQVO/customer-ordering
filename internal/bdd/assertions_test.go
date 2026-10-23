@@ -240,6 +240,20 @@ func registerCallAssertions(sc *godog.ScenarioContext, w *world) {
 		}
 		return nil
 	})
+	sc.Step(`^delivery-promise cancelled (\d+) promises$`, func(n int) error {
+		if got := len(w.gw.Cancelled()); got != n {
+			return fmt.Errorf("%d cancels, want %d", got, n)
+		}
+		return nil
+	})
+	sc.Step(`^delivery-promise cancelled the promise of group (\d+)$`, func(group int) error {
+		for _, c := range w.gw.Cancelled() {
+			if c.GroupNo == group && c.PromiseID == fmt.Sprintf("p-%d", group) {
+				return nil
+			}
+		}
+		return fmt.Errorf("group %d was not cancelled: %+v", group, w.gw.Cancelled())
+	})
 	sc.Step(`^delivery-promise made (\d+) promises$`, func(n int) error {
 		if got := len(w.gw.Made()); got != n {
 			return fmt.Errorf("%d MakePromise calls, want %d", got, n)

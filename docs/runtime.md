@@ -9,7 +9,7 @@
 | `DATABASE_URL` | required | Postgres DSN. Missing = boot error naming it, before the listener binds. |
 | `MIGRATIONS_DATABASE_URL` | `DATABASE_URL` | Direct DSN for the embedded boot migrations (use it behind a pooler). |
 | `KAFKA_BROKERS` | required | Comma-separated brokers: outbox relay, consumers and `/readyz`. |
-| `DELIVERY_PROMISE_URL` | required | Base URL of delivery-promise (quote, make, confirm). |
+| `DELIVERY_PROMISE_URL` | required | Base URL of delivery-promise (quote, make, confirm, and the compensating cancel of a failed checkout). |
 | `DELIVERY_PROMISE_TIMEOUT` | `5s` | Per-call timeout (Go duration). |
 | `DELIVERY_PROMISE_CONSUMER_GROUP` | required | Group of the delivery-promise consumer. |
 | `ORDER_SOURCING_CONSUMER_GROUP` | required | Group of the order-sourcing consumer. |

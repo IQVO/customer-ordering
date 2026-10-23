@@ -103,7 +103,7 @@ type UnitOfWork interface {
 
 // PromiseGateway is the synchronous in-organization client of
 // delivery-promise (sync_calls QuoteDeliveryOffers and MakePromise, and
-// ConfirmPromise, E7). Failures are the ErrPromise... sentinels.
+// ConfirmPromise, E7, and CancelPromise for its compensation). Failures are the ErrPromise... sentinels.
 type PromiseGateway interface {
 	// QuoteOffers quotes the offers (all tiers) for a destination prefix and a
 	// group's lines.
@@ -113,6 +113,11 @@ type PromiseGateway interface {
 	MakePromise(ctx context.Context, req promising.MakeRequest) (promising.Terms, error)
 	// ConfirmPromise confirms a promise for an order group (idempotent).
 	ConfirmPromise(ctx context.Context, promiseID, orderID string, groupNo int) error
+	// CancelPromise releases the hold of a promise (compensation of a
+	// checkout whose later confirm failed, ADR 0002 A14). Idempotent: a repeat
+	// on a CANCELLED promise succeeds. ErrPromiseNotCancellable when the
+	// promise is unknown or already KEPT or BROKEN.
+	CancelPromise(ctx context.Context, promiseID, orderID string, groupNo int) error
 }
 
 // IdempotencyStore remembers the first response per (route, key) for 24 hours.

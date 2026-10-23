@@ -93,6 +93,10 @@ func registerSetup(sc *godog.ScenarioContext, w *world) {
 		w.gw.Terms["offer-2"] = t
 		return nil
 	})
+	sc.Step(`^delivery-promise cannot cancel the promise of group (\d+)$`, func(group int) error {
+		w.gw.CancelErr[fmt.Sprintf("p-%d", group)] = ports.ErrPromiseUnavailable
+		return nil
+	})
 	sc.Step(`^delivery-promise cannot confirm the promise of group 2$`, func() error {
 		w.gw.ConfirmErr["p-2"] = ports.ErrPromiseOfferNotQuotable
 		return nil
