@@ -19,6 +19,7 @@ func Restore(s Snapshot) (*CustomerOrder, error) {
 		g.ShipBy, g.DeliverByEarliest, g.DeliverByLatest = shared.UTC(g.ShipBy), shared.UTC(g.DeliverByEarliest), shared.UTC(g.DeliverByLatest)
 		g.LockedAt, g.ShippedAt, g.DeliveredAt = shared.UTC(g.LockedAt), shared.UTC(g.ShippedAt), shared.UTC(g.DeliveredAt)
 		g.CancelRequestedAt, g.CancelledAt = shared.UTC(g.CancelRequestedAt), shared.UTC(g.CancelledAt)
+		g.LostAt, g.ReturnedAt = shared.UTC(g.LostAt), shared.UTC(g.ReturnedAt)
 		groups[i] = g
 	}
 	return &CustomerOrder{
@@ -135,6 +136,9 @@ func checkReasons(g GroupPromise) error {
 
 // checkStatusFacts verifies the timestamps each group state requires or forbids.
 func checkStatusFacts(g GroupPromise) error {
+	if err := checkOutcome(g); err != nil || g.closedWithoutDelivery() {
+		return err
+	}
 	switch g.Status {
 	case GroupPromised:
 		return forbid(g.Status, "locked/shipped/cancel facts", !g.LockedAt.IsZero() || !g.ShippedAt.IsZero() || !g.CancelRequestedAt.IsZero() ||
@@ -146,11 +150,19 @@ func checkStatusFacts(g GroupPromise) error {
 	case GroupDelivered:
 		return requireShipped(g, true)
 	case GroupCancellationRequested:
-		if g.CancelRequestedAt.IsZero() {
-			return errors.New("CANCELLATION_REQUESTED needs cancelRequestedAt")
-		}
-		return forbid(g.Status, "shipped/cancelled facts", !g.ShippedAt.IsZero() || !g.CancelledAt.IsZero())
+		return requireRequested(g)
 	}
+	return requireCancelled(g)
+}
+
+func requireRequested(g GroupPromise) error {
+	if g.CancelRequestedAt.IsZero() {
+		return errors.New("CANCELLATION_REQUESTED needs cancelRequestedAt")
+	}
+	return forbid(g.Status, "shipped/cancelled facts", !g.ShippedAt.IsZero() || !g.CancelledAt.IsZero())
+}
+
+func requireCancelled(g GroupPromise) error {
 	if g.CancelledAt.IsZero() {
 		return errors.New("CANCELLED needs cancelledAt")
 	}
@@ -174,6 +186,27 @@ func requireShipped(g GroupPromise, delivered bool) error {
 	}
 	if allDelivered != delivered {
 		return fmt.Errorf("a %s group has all of its packages delivered exactly when it is DELIVERED", g.Status)
+	}
+	return nil
+}
+
+// checkOutcome verifies the terminal-outcome facts: a LOST group has lostAt, a
+// RETURNED group has returnedAt, both name a package the group announced and
+// did not deliver, it shipped and was not cancelled, and no other group carries
+// any of them.
+func checkOutcome(g GroupPromise) error {
+	lost, returned := g.Status == GroupLost, g.Status == GroupReturned
+	if !lost && !returned {
+		return forbid(g.Status, "lost/returned facts", g.OutcomeTrackingNumber != "" || !g.LostAt.IsZero() || !g.ReturnedAt.IsZero())
+	}
+	if lost == g.LostAt.IsZero() || returned == g.ReturnedAt.IsZero() {
+		return fmt.Errorf("a %s group has exactly its own lostAt or returnedAt", g.Status)
+	}
+	if g.ShippedAt.IsZero() || !g.CancelledAt.IsZero() {
+		return fmt.Errorf("a %s group needs shippedAt and has no cancelledAt", g.Status)
+	}
+	if !slices.Contains(g.TrackingNumbers, g.OutcomeTrackingNumber) || slices.Contains(g.DeliveredTrackingNumbers, g.OutcomeTrackingNumber) {
+		return fmt.Errorf("a %s group names an announced package that was not delivered", g.Status)
 	}
 	return nil
 }

@@ -43,6 +43,8 @@ const (
 	TypePackageScanned          = typePrefixShippingJourney + "PackageScanned"
 	TypePackageDelivered        = typePrefixShippingJourney + "PackageDelivered"
 	TypePackageException        = typePrefixShippingJourney + "PackageExceptionRaised"
+	TypePackageLost             = typePrefixShippingJourney + "PackageLost"
+	TypePackageReturned         = typePrefixShippingJourney + "PackageReturned"
 )
 
 // Payloads restate the producers' v1 `data` (camelCase JSON); unknown fields
@@ -116,6 +118,16 @@ type (
 		AssignmentID   string    `json:"assignmentId"`
 		OrderID        string    `json:"orderId"`
 		DeliveredAt    time.Time `json:"deliveredAt"`
+	}
+	packageLostData struct {
+		TrackingNumber string    `json:"trackingNumber"`
+		OrderID        string    `json:"orderId"`
+		DeclaredAt     time.Time `json:"declaredAt"`
+	}
+	packageReturnedData struct {
+		TrackingNumber string    `json:"trackingNumber"`
+		OrderID        string    `json:"orderId"`
+		ReturnedAt     time.Time `json:"returnedAt"`
 	}
 	packageExceptionData struct {
 		TrackingNumber string    `json:"trackingNumber"`
@@ -290,6 +302,16 @@ func ShippingAndTrackingHandlers(c usecases.Consumer) map[string]HandlerFunc {
 			return c.ApplyPackageDelivered(ctx, m, usecases.PackageDelivered{
 				TrackingNumber: d.TrackingNumber, AssignmentID: d.AssignmentID, OrderID: d.OrderID, DeliveredAt: d.DeliveredAt,
 			})
+		}),
+		TypePackageLost: handler("PackageLost", func(d packageLostData) error {
+			return need("PackageLost", "trackingNumber", d.TrackingNumber, "orderId", d.OrderID)
+		}, func(ctx context.Context, m usecases.Meta, d packageLostData) error {
+			return c.ApplyPackageLost(ctx, m, usecases.PackageLost{TrackingNumber: d.TrackingNumber, OrderID: d.OrderID, DeclaredAt: d.DeclaredAt})
+		}),
+		TypePackageReturned: handler("PackageReturned", func(d packageReturnedData) error {
+			return need("PackageReturned", "trackingNumber", d.TrackingNumber, "orderId", d.OrderID)
+		}, func(ctx context.Context, m usecases.Meta, d packageReturnedData) error {
+			return c.ApplyPackageReturned(ctx, m, usecases.PackageReturned{TrackingNumber: d.TrackingNumber, OrderID: d.OrderID, ReturnedAt: d.ReturnedAt})
 		}),
 		TypePackageException: handler("PackageExceptionRaised", func(d packageExceptionData) error {
 			return tracking("PackageExceptionRaised")(d.TrackingNumber)

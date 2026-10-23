@@ -142,7 +142,9 @@ func groupLines(in PlaceOrderInput, g CheckoutGroup) []promising.Line {
 
 // promiseGroups makes a promise for every group, checks the order against the
 // promises (destination, coverage) and only then confirms them all (G7), so a
-// mismatch never leaves a confirmed promise behind.
+// mismatch never leaves a confirmed promise behind. When a later confirm
+// fails, the promises already confirmed are cancelled (A14) and the confirm
+// error is returned unchanged.
 func (u PlaceOrder) promiseGroups(ctx context.Context, in PlaceOrderInput) ([]customerorder.GroupInput, error) {
 	out := make([]customerorder.GroupInput, 0, len(in.Groups))
 	for _, g := range in.Groups {
@@ -157,12 +159,51 @@ func (u PlaceOrder) promiseGroups(ctx context.Context, in PlaceOrderInput) ([]cu
 	if _, _, err := customerorder.Place(newOrder(in, out), u.now()); err != nil {
 		return nil, err
 	}
-	for _, g := range out {
+	for i, g := range out {
 		if err := u.Promises.ConfirmPromise(ctx, g.PromiseID, string(in.OrderID), g.GroupNo); err != nil {
+			u.compensate(ctx, in.OrderID, out[:confirmedBefore(i, err)])
 			return nil, err
 		}
 	}
 	return out, nil
+}
+
+// confirmedBefore is how many leading groups a failed confirm of group i makes
+// the compensation cancel: the groups confirmed before it and, when the answer
+// is unknown (timeout, transport error, 5xx), group i itself, because the
+// confirm may have been applied (ADR 0002, A14).
+func confirmedBefore(i int, err error) int {
+	if errors.Is(err, ports.ErrPromiseUnavailable) {
+		return i + 1
+	}
+	return i
+}
+
+// compensate cancels the promises a failed checkout already confirmed, so
+// their capacity holds are released (ADR 0002, A14). A cancel that fails is
+// logged and skipped: the checkout still fails with the confirm error. It runs
+// detached from the request's cancellation so a client that gave up does not
+// leave the holds behind.
+func (u PlaceOrder) compensate(ctx context.Context, orderID customerorder.ID, confirmed []customerorder.GroupInput) {
+	ctx = context.WithoutCancel(ctx)
+	for _, g := range confirmed {
+		err := u.Promises.CancelPromise(ctx, g.PromiseID, string(orderID), g.GroupNo)
+		if errors.Is(err, ports.ErrPromiseNotCancellable) {
+			// delivery-promise cancels CONFIRMED (or AT_RISK) promises only: a
+			// PROVISIONAL one (the confirm never applied) lapses by itself, and a
+			// KEPT, BROKEN or RELEASED one is closed. Nothing is left to release.
+			u.logger().WarnContext(ctx, "compensating cancel refused by delivery-promise; nothing to release",
+				"orderId", string(orderID), "groupNo", g.GroupNo, "promiseId", g.PromiseID, "error", err.Error())
+			continue
+		}
+		if err != nil {
+			u.logger().ErrorContext(ctx, "compensating cancel of a confirmed promise failed; the hold stays at delivery-promise",
+				"orderId", string(orderID), "groupNo", g.GroupNo, "promiseId", g.PromiseID, "error", err.Error())
+			continue
+		}
+		u.logger().InfoContext(ctx, "cancelled a confirmed promise of a failed checkout",
+			"orderId", string(orderID), "groupNo", g.GroupNo, "promiseId", g.PromiseID)
+	}
 }
 
 func groupInput(g CheckoutGroup, t promising.Terms) customerorder.GroupInput {

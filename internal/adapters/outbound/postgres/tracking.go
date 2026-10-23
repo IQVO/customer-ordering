@@ -107,7 +107,7 @@ func (r *TrackingRepository) ApplyScan(ctx context.Context, s readmodel.Scan) er
 			ON CONFLICT (tracking_number) DO UPDATE SET
 				last_scan_node_id = CASE WHEN tracking_packages.last_scan_at IS NULL OR $3 >= tracking_packages.last_scan_at
 					THEN NULLIF($2, '') ELSE tracking_packages.last_scan_node_id END,
-				state = CASE WHEN tracking_packages.last_scan_at IS NULL OR $3 >= tracking_packages.last_scan_at
+				state = CASE WHEN tracking_packages.outcome IS NULL AND (tracking_packages.last_scan_at IS NULL OR $3 >= tracking_packages.last_scan_at)
 					THEN coalesce(NULLIF($4, ''), tracking_packages.state) ELSE tracking_packages.state END,
 				last_scan_at = greatest(tracking_packages.last_scan_at, $3)`, s.TrackingNumber, s.NodeID, at, s.State); err != nil {
 			return err
@@ -135,6 +135,45 @@ func (r *TrackingRepository) ApplyDelivery(ctx context.Context, d readmodel.Deli
 		_, err := q.Exec(ctx, linkRow, d.TrackingNumber)
 		return err
 	})
+}
+
+// ApplyOutcome implements ports.TrackingRepository.
+func (r *TrackingRepository) ApplyOutcome(ctx context.Context, o readmodel.Outcome) error {
+	at := shared.UTC(o.At)
+	return r.exec(ctx, "apply outcome "+o.TrackingNumber, func(q querier) error {
+		_, err := q.Exec(ctx, `
+			INSERT INTO tracking_packages (tracking_number, order_id, state, outcome, outcome_at, last_scan_at)
+			VALUES ($1, NULLIF($2, ''), $3, $3, $4, $4)
+			ON CONFLICT (tracking_number) DO UPDATE SET
+				order_id = coalesce(tracking_packages.order_id, NULLIF($2, '')),
+				state = CASE WHEN tracking_packages.state = 'DELIVERED' OR tracking_packages.outcome IS NOT NULL THEN tracking_packages.state ELSE $3 END,
+				outcome = coalesce(tracking_packages.outcome, $3),
+				outcome_at = coalesce(tracking_packages.outcome_at, $4),
+				last_scan_at = greatest(tracking_packages.last_scan_at, $4)`, o.TrackingNumber, o.OrderID, o.Kind, at)
+		return err
+	})
+}
+
+// OutcomePackages implements ports.TrackingRepository.
+func (r *TrackingRepository) OutcomePackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Outcome, error) {
+	rows, err := queryFor(ctx, r.pool).Query(ctx, `
+		SELECT tracking_number, outcome, outcome_at FROM tracking_packages
+		WHERE order_id = $1 AND group_no = $2 AND outcome IS NOT NULL ORDER BY outcome_at, tracking_number`, orderID, groupNo)
+	if err != nil {
+		return nil, fmt.Errorf("read package outcomes: %w", err)
+	}
+	defer rows.Close()
+	out := []readmodel.Outcome{}
+	for rows.Next() {
+		o := readmodel.Outcome{OrderID: orderID}
+		var at time.Time
+		if err := rows.Scan(&o.TrackingNumber, &o.Kind, &at); err != nil {
+			return nil, fmt.Errorf("scan package outcome: %w", err)
+		}
+		o.At = at.UTC()
+		out = append(out, o)
+	}
+	return out, rows.Err()
 }
 
 // ApplyException implements ports.TrackingRepository.
@@ -226,7 +265,7 @@ func (r *TrackingRepository) GroupSignals(ctx context.Context, orderID string) (
 func (r *TrackingRepository) Packages(ctx context.Context, orderID string) ([]readmodel.Package, error) {
 	rows, err := queryFor(ctx, r.pool).Query(ctx, `
 		SELECT tracking_number, coalesce(assignment_id, ''), coalesce(group_no, 0), coalesce(carrier, ''), coalesce(state, ''),
-			coalesce(last_scan_node_id, ''), last_scan_at, delivered_at, coalesce(exception_reason, '')
+			coalesce(last_scan_node_id, ''), last_scan_at, delivered_at, coalesce(exception_reason, ''), coalesce(outcome, ''), outcome_at
 		FROM tracking_packages WHERE order_id = $1 ORDER BY coalesce(group_no, 0), tracking_number`, orderID)
 	if err != nil {
 		return nil, fmt.Errorf("read packages: %w", err)
@@ -235,11 +274,11 @@ func (r *TrackingRepository) Packages(ctx context.Context, orderID string) ([]re
 	out := []readmodel.Package{}
 	for rows.Next() {
 		p := readmodel.Package{OrderID: orderID}
-		var scan, delivered *time.Time
-		if err := rows.Scan(&p.TrackingNumber, &p.AssignmentID, &p.GroupNo, &p.Carrier, &p.State, &p.LastScanNodeID, &scan, &delivered, &p.ExceptionReason); err != nil {
+		var scan, delivered, outcomeAt *time.Time
+		if err := rows.Scan(&p.TrackingNumber, &p.AssignmentID, &p.GroupNo, &p.Carrier, &p.State, &p.LastScanNodeID, &scan, &delivered, &p.ExceptionReason, &p.Outcome, &outcomeAt); err != nil {
 			return nil, fmt.Errorf("scan package: %w", err)
 		}
-		p.LastScanAt, p.DeliveredAt = timeOrZero(scan), timeOrZero(delivered)
+		p.LastScanAt, p.DeliveredAt, p.OutcomeAt = timeOrZero(scan), timeOrZero(delivered), timeOrZero(outcomeAt)
 		out = append(out, p)
 	}
 	return out, rows.Err()

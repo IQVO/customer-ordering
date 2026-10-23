@@ -84,6 +84,8 @@ unknown types are ignored, decoding is tolerant, the contract of each is restate
 | `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageScanned` | `retailnetwork.shipping-and-tracking.events` | shipping-and-tracking |
 | `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered` | `retailnetwork.shipping-and-tracking.events` | shipping-and-tracking |
 | `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageExceptionRaised` | `retailnetwork.shipping-and-tracking.events` | shipping-and-tracking |
+| `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost` | `retailnetwork.shipping-and-tracking.events` | shipping-and-tracking |
+| `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned` | `retailnetwork.shipping-and-tracking.events` | shipping-and-tracking |
 
 `TestConsumedTypeStringsAreTheProducersContracts` pins these strings.
 

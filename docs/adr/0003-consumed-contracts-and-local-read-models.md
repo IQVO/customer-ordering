@@ -21,10 +21,10 @@ event-fed local read model; every consumer is idempotent on the CloudEvents id
 |---|---|---|---|
 | shopper / storefront | in (REST) | OHS | `POST /checkout`, `GET /orders/{id}`, `GET /orders/{id}/tracking`, `POST /orders/{id}:cancel`, `POST /shoppers` |
 | shipping-and-tracking | in (REST) | Customer/Supplier | `GET /orders/{id}/ship-to` (restricted; the only PII exit) |
-| delivery-promise | out (REST) | Customer/Supplier | QuoteDeliveryOffers `POST /delivery-offers:quote`, MakePromise `POST /promises`, ConfirmPromise `POST /promises/{promiseId}:confirm` (E7) |
+| delivery-promise | out (REST) | Customer/Supplier | QuoteDeliveryOffers `POST /delivery-offers:quote`, MakePromise `POST /promises`, ConfirmPromise `POST /promises/{promiseId}:confirm` (E7), CancelPromise `POST /promises/{promiseId}:cancel` (compensation of a failed checkout, A14) |
 | delivery-promise | in (events) | Customer/Supplier | PromiseAtRisk, PromiseRevised, PromiseKept, PromiseBroken, PromiseUnkeepable (E9) |
 | order-sourcing | in (events) | Conformist | FulfillmentLocked, FulfillmentShipped, FulfillmentUnsourceable, FulfillmentCancelled, FulfillmentCancelRefused (E11) |
-| shipping-and-tracking | in (events) | Conformist | LabelIssued, LabelVoided (E16), PackageScanned, PackageDelivered, PackageExceptionRaised |
+| shipping-and-tracking | in (events) | Conformist | LabelIssued, LabelVoided (E16), PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned (A19) |
 | order-sourcing, delivery-promise | out (events) | published language | CustomerOrderPlaced, CustomerOrderCancelled |
 
 ### Consumed events and what each does
@@ -32,7 +32,7 @@ event-fed local read model; every consumer is idempotent on the CloudEvents id
 Topics: `retailnetwork.delivery-promise.events`, `retailnetwork.order-sourcing.events`,
 `retailnetwork.shipping-and-tracking.events`; one consumer group each
 (`DELIVERY_PROMISE_CONSUMER_GROUP`, `ORDER_SOURCING_CONSUMER_GROUP`,
-`SHIPPING_CONSUMER_GROUP`, all mandatory). The inbox table `processed_events`
+`SHIPPING_CONSUMER_GROUP`, all mandatory; `PackageLost` and `PackageReturned` share the shipping-and-tracking consumer and its group). The inbox table `processed_events`
 (event id primary key) is written in the same transaction as the effect.
 
 | Full type | Effect |
@@ -51,6 +51,8 @@ Topics: `retailnetwork.delivery-promise.events`, `retailnetwork.order-sourcing.e
 | `...journey.PackageScanned` | tracking package: last scan node/time, journey state (older scans never overwrite newer ones) |
 | `...journey.PackageDelivered` | tracking package delivered; `MarkGroupDelivered` |
 | `...journey.PackageExceptionRaised` | tracking package `exceptionReason` |
+| `...journey.PackageLost` | tracking package outcome LOST; `MarkGroupLost` for the group that announced the package (terminal LOST); an early loss is replayed when `FulfillmentShipped` arrives (A19) |
+| `...journey.PackageReturned` | tracking package outcome RETURNED; `MarkGroupReturned` (terminal RETURNED), same replay rule (A19) |
 
 Decoding is tolerant: only the fields listed in `apis/asyncapi.yaml` are read, unknown
 fields and unknown types are ignored. A message that is not a valid CloudEvents
@@ -65,7 +67,7 @@ that are recorded and skipped instead).
   - `promise_signals` (promiseId, orderId, atRiskReason, verdict, lateByMinutes,
     unsourceable reason), and
   - `tracking_packages` (trackingNumber primary key, assignmentId, orderId, groupNo,
-    carrier, state, lastScanNodeId, lastScanAt, deliveredAt, exceptionReason).
+    carrier, state, lastScanNodeId, lastScanAt, deliveredAt, exceptionReason, outcome, outcomeAt).
   Rows may be created before the order link is known (a scan can precede
   `FulfillmentLocked`); `FulfillmentLocked` fills `orderId` and `groupNo` of every row
   with the assignment id, `FulfillmentShipped` those of its tracking numbers.

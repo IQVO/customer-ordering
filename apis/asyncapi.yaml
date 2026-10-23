@@ -89,6 +89,10 @@ channels:
         $ref: '#/components/messages/ConsumedPackageDelivered'
       PackageExceptionRaised:
         $ref: '#/components/messages/ConsumedPackageExceptionRaised'
+      PackageLost:
+        $ref: '#/components/messages/ConsumedPackageLost'
+      PackageReturned:
+        $ref: '#/components/messages/ConsumedPackageReturned'
 operations:
   publishCustomerOrderingEvents:
     action: send
@@ -135,8 +139,8 @@ operations:
   receiveShippingAndTrackingEvents:
     action: receive
     title: Receive shipping-and-tracking events
-    summary: Consume LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised from shipping-and-tracking.
-    description: customer-ordering consumes LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised from `retailnetwork.shipping-and-tracking.events`. See ADR 0003 for what each event does to the order and the OrderTrackingView read model.
+    summary: Consume LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned from shipping-and-tracking.
+    description: customer-ordering consumes LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned from `retailnetwork.shipping-and-tracking.events` (one consumer group, SHIPPING_CONSUMER_GROUP). See ADR 0003 for what each event does to the order and the OrderTrackingView read model.
     tags:
     - name: consumed
     channel:
@@ -147,6 +151,8 @@ operations:
     - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageScanned'
     - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageDelivered'
     - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageExceptionRaised'
+    - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageLost'
+    - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageReturned'
 components:
   messages:
     CustomerOrderPlaced:
@@ -644,6 +650,58 @@ components:
             orderId: 7a1e6c52
             reason: ADDRESS_NOT_FOUND
             at: '2026-10-24T14:00:00Z'
+    ConsumedPackageLost:
+      name: PackageLost
+      title: PackageLost (consumed)
+      summary: A package was declared lost.
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. The group that announced the package becomes LOST (terminal); a package reported before its shipment is known is replayed when FulfillmentShipped arrives. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PackageLostEvent'
+      examples:
+      - name: packageLost
+        summary: A package was declared lost.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c41
+          source: /retailnetwork/shipping-and-tracking
+          type: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost
+          subject: TRK-1
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:shipping-and-tracking:events:PackageLost:v1
+          data:
+            trackingNumber: TRK-1
+            orderId: 7a1e6c52
+            declaredAt: '2026-10-27T13:00:00Z'
+    ConsumedPackageReturned:
+      name: PackageReturned
+      title: PackageReturned (consumed)
+      summary: A package was returned to the sender.
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. The group that announced the package becomes RETURNED (terminal), with the same rules as PackageLost. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PackageReturnedEvent'
+      examples:
+      - name: packageReturned
+        summary: A package was returned to the sender.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c41
+          source: /retailnetwork/shipping-and-tracking
+          type: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned
+          subject: TRK-1
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:shipping-and-tracking:events:PackageReturned:v1
+          data:
+            trackingNumber: TRK-1
+            orderId: 7a1e6c52
+            returnedAt: '2026-10-26T09:00:00Z'
   schemas:
     CustomerOrderPlacedData:
       type: object
@@ -1511,3 +1569,85 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/PackageExceptionRaisedData'
+    PackageLostData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader). A missing declaredAt falls back to the event time.
+      required:
+      - trackingNumber
+      - orderId
+      properties:
+        trackingNumber:
+          type: string
+        orderId:
+          type: string
+        declaredAt: *id001
+    PackageLostEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PackageLostData'
+    PackageReturnedData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader). A missing returnedAt falls back to the event time.
+      required:
+      - trackingNumber
+      - orderId
+      properties:
+        trackingNumber:
+          type: string
+        orderId:
+          type: string
+        returnedAt: *id001
+    PackageReturnedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PackageReturnedData'

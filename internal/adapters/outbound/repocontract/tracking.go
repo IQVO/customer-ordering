@@ -34,6 +34,7 @@ func testTracking(t *testing.T, e Env) {
 		{"a delivery with only the assignment is linked by it", trackingADeliveryWithOnlyTheAssignmentIsLinkedBy},
 		{"exceptions are recorded and linked", trackingExceptionsAreRecordedAndLinked},
 		{"a void closes a labelled package only", trackingAVoidClosesALabelledPackageOnly},
+		{"outcomes: the first one wins, are listed per group and survive later scans", trackingOutcomesAreRememberedListedPerGroupAndFinal},
 		{"group signals accumulate per field and sort by group", trackingGroupSignalsAccumulatePerFieldAndSortByG},
 	}
 	for _, c := range cases {
@@ -169,5 +170,43 @@ func trackingGroupSignalsAccumulatePerFieldAndSortByG(t *testing.T, e Env) {
 	must(t, err)
 	if none == nil || len(none) != 0 {
 		t.Fatalf("no signals must be an empty list, got %#v", none)
+	}
+}
+
+func trackingOutcomesAreRememberedListedPerGroupAndFinal(t *testing.T, e Env) {
+	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: "TRK-L", OrderID: "o-l", Kind: readmodel.OutcomeLost, At: at(90)}))
+	list, err := e.Tracking.OutcomePackages(bg(), "o-l", 1)
+	must(t, err)
+	if len(list) != 0 {
+		t.Fatalf("the group is not known yet: %+v", list)
+	}
+	must(t, e.Tracking.AttachTrackingNumbers(bg(), "o-l", 1, []string{"TRK-L", "TRK-M"}))
+	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: "TRK-M", OrderID: "o-l", Kind: readmodel.OutcomeReturned, At: at(85)}))
+	list, err = e.Tracking.OutcomePackages(bg(), "o-l", 1)
+	must(t, err)
+	if len(list) != 2 || list[0].TrackingNumber != "TRK-M" || list[0].Kind != readmodel.OutcomeReturned || !list[0].At.Equal(at(85)) ||
+		list[1].TrackingNumber != "TRK-L" || list[1].Kind != readmodel.OutcomeLost || !list[1].At.Equal(at(90)) || list[1].OrderID != "o-l" {
+		t.Fatalf("outcomes (oldest first) = %+v", list)
+	}
+	if other, err := e.Tracking.OutcomePackages(bg(), "o-l", 2); err != nil || len(other) != 0 {
+		t.Fatalf("another group has no outcome: %+v %v", other, err)
+	}
+	trackingOutcomesAreFinal(t, e)
+}
+
+func trackingOutcomesAreFinal(t *testing.T, e Env) {
+	t.Helper()
+	// The first outcome wins, a later scan or outcome does not change the state.
+	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: "TRK-L", OrderID: "o-l", Kind: readmodel.OutcomeReturned, At: at(95)}))
+	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: "TRK-L", NodeID: "hub-1", State: "IN_TRANSIT", At: at(100)}))
+	p := packageByTN(t, e, "o-l", "TRK-L")
+	if p.State != readmodel.OutcomeLost || p.Outcome != readmodel.OutcomeLost || !p.OutcomeAt.Equal(at(90)) {
+		t.Fatalf("package = %+v", p)
+	}
+	// A package already reported delivered keeps the DELIVERED state, but the outcome is recorded.
+	must(t, e.Tracking.ApplyDelivery(bg(), readmodel.Delivery{TrackingNumber: "TRK-N", OrderID: "o-l", At: at(50)}))
+	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: "TRK-N", OrderID: "o-l", Kind: readmodel.OutcomeLost, At: at(60)}))
+	if p := packageByTN(t, e, "o-l", "TRK-N"); p.State != "DELIVERED" || p.Outcome != readmodel.OutcomeLost {
+		t.Fatalf("package = %+v", p)
 	}
 }

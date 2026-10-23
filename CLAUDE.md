@@ -2,7 +2,7 @@
 
 harness-template: v4
 
-Retail network, bounded context Customer Ordering (Generic, commerce tier). Turns a cart into a customer order: promises and confirms every shipment group at checkout, holds the shopper and the ship-to address (synthetic PII, only here), shows status and tracking, handles cancellation. Publishes 2 events, consumes 14, makes 3 synchronous calls to delivery-promise.
+Retail network, bounded context Customer Ordering (Generic, commerce tier). Turns a cart into a customer order: promises and confirms every shipment group at checkout, holds the shopper and the ship-to address (synthetic PII, only here), shows status and tracking, handles cancellation. Publishes 2 events, consumes 17, makes 4 synchronous calls to delivery-promise (quote, make, confirm and the compensating cancel).
 Design source of truth: IQVO/retail-network-docs `model/model.yaml` (context customer-ordering). This service belongs to the retail network, not the warehouse-systems fleet.
 This project is a domain-driven design study, not associated with any company: never name a real company, brand or product in code, comments, ADRs, specs, tests or fixtures (README `## Disclaimer`).
 
@@ -29,13 +29,13 @@ NUL: 404 in the path, 400 elsewhere. Errors are RFC 9457 problem+json, `type` = 
 ## Events: CloudEvents 1.0 is MANDATORY
 Published type `com.retailnetwork.commerce.customer-ordering.customerorder.<Event>` (CustomerOrderPlaced, CustomerOrderCancelled); source `/retailnetwork/customer-ordering`; dataschema `urn:retailnetwork:customer-ordering:events:<Event>:v1`;
 both on `retailnetwork.customer-ordering.events` (nothing analytics-only); subject and Kafka key = orderId; header `content-type: application/cloudevents+json; charset=UTF-8`. CustomerOrderCancelled is a REQUEST: order-sourcing answers FulfillmentCancelled or FulfillmentCancelRefused.
-Consumed (full-type dispatch, inbox `processed_events`, DLQ `<topic>.dlq`): delivery-promise Promise{AtRisk,Revised,Kept,Broken,Unkeepable}; order-sourcing Fulfillment{Locked,Shipped,Unsourceable,Cancelled,CancelRefused}; shipping-and-tracking Label{Issued,Voided}, Package{Scanned,Delivered,ExceptionRaised}. Re-read the producer's AsyncAPI before changing a consumer.
+Consumed (full-type dispatch, inbox `processed_events`, DLQ `<topic>.dlq`): delivery-promise Promise{AtRisk,Revised,Kept,Broken,Unkeepable}; order-sourcing Fulfillment{Locked,Shipped,Unsourceable,Cancelled,CancelRefused}; shipping-and-tracking Label{Issued,Voided}, Package{Scanned,Delivered,ExceptionRaised,Lost,Returned} (same topic and `SHIPPING_CONSUMER_GROUP`; Lost/Returned close the group, A19). Re-read the producer's AsyncAPI before changing a consumer.
 Use internal/adapters/kafka/cloudevents only. Transactional outbox: aggregates + outbox rows in ONE Postgres transaction, id minted once at append, at-least-once. No `warehouse.*` topic, ever.
 A new event: domain struct + apis/asyncapi.yaml + ADR 0004 `type:` line in the SAME commit + encoder payload + golden test (.claude/skills/how-to-add-an-integration-event).
 
 ## Domain
-Aggregates, invariants and assumptions A1-A22 are in docs/adr/0002; consumed contracts, read models and relationships in 0003. Order status is DERIVED from the group states and only moves forward; cancel applies to unlocked groups only. Checkout confirms every promise synchronously before the order is placed (a failed confirm = re-quote, no order).
+Aggregates, invariants and assumptions A1-A23 are in docs/adr/0002; consumed contracts, read models and relationships in 0003. Order status is DERIVED from the group states (incl. terminal LOST/RETURNED, A23) and only moves forward; cancel applies to unlocked groups only. Checkout confirms every promise synchronously before the order is placed (a failed confirm = re-quote, no order; promises already confirmed by that checkout are cancelled through `POST /promises/{id}:cancel`, A14).
 
 ## Workflow
 GitFlow: feature/* -> PR into develop, CI green before merge, never push develop or main. lefthook: pre-commit fmt/vet/lint, pre-push `make check`. Commit and push after each step.
-Open follow-up: the Helm chart (docs/before-first-release.md rows 5-9).
+Deploy: Helm chart `charts/customer-ordering` (one `api` component; mandatory values `database.*`, `kafka.brokers`, `config.deliveryPromiseUrl`, `config.{deliveryPromise,orderSourcing,shipping}ConsumerGroup`, refused empty at render; `terminationGracePeriodSeconds` 60, must exceed drain delay + 50 s). `bash charts/customer-ordering/tests/render_test.sh` and `python3 charts/customer-ordering/tests/test_service_selectors.py` guard it; a new env var in cmd/api needs a chart value. CI `helm-lint` (PRs) and `chart-tests`. Registry secrets (row 11) are for the repo admin.

@@ -16,8 +16,8 @@ import (
 )
 
 type seen struct {
-	method, path, key string
-	body              map[string]any
+	method, path, key, contentType string
+	body                           map[string]any
 }
 
 // serve answers every request with status and body and records the last one.
@@ -26,7 +26,8 @@ func serve(t *testing.T, status int, contentType, body string) (*deliverypromise
 	got := &seen{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
-		got.method, got.path, got.key = r.Method, r.URL.EscapedPath(), r.Header.Get("Idempotency-Key")
+		got.method, got.path, got.key, got.contentType = r.Method, r.URL.EscapedPath(), r.Header.Get("Idempotency-Key"), r.Header.Get("Content-Type")
+		got.body = nil
 		_ = json.Unmarshal(raw, &got.body)
 		w.Header().Set("Content-Type", contentType)
 		w.WriteHeader(status)
@@ -146,5 +147,38 @@ func TestATimeoutOrADeadConnectionIsUnavailable(t *testing.T) {
 	dead.Close()
 	if err := deliverypromise.New(url, nil).ConfirmPromise(context.Background(), "p", "o", 1); !errors.Is(err, ports.ErrPromiseUnavailable) {
 		t.Fatalf("refused connection: %v", err)
+	}
+}
+
+func TestCancelPromiseUsesTheCancelRouteWithoutABody(t *testing.T) {
+	g, got := serve(t, 200, "application/json", `{"promiseId":"pr 1","state":"CANCELLED"}`)
+	if err := g.CancelPromise(context.Background(), "pr 1", "o-1", 2); err != nil {
+		t.Fatal(err)
+	}
+	if got.method != "POST" || got.path != "/promises/pr%201:cancel" || got.key != "o-1:2:cancel" || got.body != nil || got.contentType != "" {
+		t.Fatalf("request = %+v", got)
+	}
+}
+
+func TestCancelPromiseRefusalsAreTyped(t *testing.T) {
+	problem := func(slug string) string { return `{"type":"/problems/` + slug + `","title":"t","detail":"d"}` }
+	for _, c := range []struct {
+		name   string
+		status int
+		body   string
+		want   error
+	}{
+		{"unknown promise", 404, problem("not-found"), ports.ErrPromiseNotCancellable},
+		{"kept or broken", 409, problem("illegal-transition"), ports.ErrPromiseNotCancellable},
+		{"server error", 500, `oops`, ports.ErrPromiseUnavailable},
+		{"bad gateway", 502, ``, ports.ErrPromiseUnavailable},
+	} {
+		g, _ := serve(t, c.status, "application/problem+json", c.body)
+		if err := g.CancelPromise(context.Background(), "p", "o", 1); !errors.Is(err, c.want) {
+			t.Fatalf("%s: %v, want %v", c.name, err, c.want)
+		}
+	}
+	if err := deliverypromise.New("http://127.0.0.1:1", nil).CancelPromise(context.Background(), "p", "o", 1); !errors.Is(err, ports.ErrPromiseUnavailable) {
+		t.Fatalf("a dead connection is unavailable: %v", err)
 	}
 }

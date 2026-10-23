@@ -139,6 +139,9 @@ type trackingGroupDTO struct {
 	LockedAt            string               `json:"lockedAt,omitempty"`
 	ShippedAt           string               `json:"shippedAt,omitempty"`
 	CancelRefusedReason string               `json:"cancelRefusedReason,omitempty"`
+	LostAt              string               `json:"lostAt,omitempty"`
+	ReturnedAt          string               `json:"returnedAt,omitempty"`
+	OutcomePackage      string               `json:"outcomePackage,omitempty"`
 	Packages            []trackingPackageDTO `json:"packages"`
 }
 
@@ -161,7 +164,8 @@ func trackingView(t views.Tracking) trackingDTO {
 		groups[i] = trackingGroupDTO{
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Status: g.Status, DeliverByEarliest: ts(g.DeliverByEarliest), DeliverByLatest: ts(g.DeliverByLatest),
 			AtRiskReason: g.AtRiskReason, UnsourceableReason: g.UnsourceableReason, PromiseVerdict: g.PromiseVerdict, LateByMinutes: g.LateByMinutes,
-			LockedAt: ts(g.LockedAt), ShippedAt: ts(g.ShippedAt), CancelRefusedReason: g.CancelRefusedReason, Packages: pkgs,
+			LockedAt: ts(g.LockedAt), ShippedAt: ts(g.ShippedAt), CancelRefusedReason: g.CancelRefusedReason,
+			LostAt: ts(g.LostAt), ReturnedAt: ts(g.ReturnedAt), OutcomePackage: g.OutcomePackage, Packages: pkgs,
 		}
 	}
 	return trackingDTO{OrderID: t.OrderID, Status: t.Status, Groups: groups}

@@ -151,6 +151,7 @@ func TestPayloadValidationPerType(t *testing.T) {
 		{"o", kafkaconsumer.TypeFulfillmentCancelled}, {"o", kafkaconsumer.TypeFulfillmentCancelRefuse},
 		{"s", kafkaconsumer.TypeLabelIssued}, {"s", kafkaconsumer.TypeLabelVoided}, {"s", kafkaconsumer.TypePackageScanned},
 		{"s", kafkaconsumer.TypePackageDelivered}, {"s", kafkaconsumer.TypePackageException},
+		{"s", kafkaconsumer.TypePackageLost}, {"s", kafkaconsumer.TypePackageReturned},
 	}
 	for _, b := range bad {
 		if err := handle(t, all[b.c], event("empty-"+b.typ, b.typ, map[string]any{})); err == nil {
@@ -183,6 +184,8 @@ func TestConsumedTypeStringsAreTheProducersContracts(t *testing.T) {
 		kafkaconsumer.TypePackageScanned:          "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageScanned",
 		kafkaconsumer.TypePackageDelivered:        "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered",
 		kafkaconsumer.TypePackageException:        "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageExceptionRaised",
+		kafkaconsumer.TypePackageLost:             "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost",
+		kafkaconsumer.TypePackageReturned:         "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned",
 	} {
 		if typ != want {
 			t.Fatalf("type %q, want %q", typ, want)

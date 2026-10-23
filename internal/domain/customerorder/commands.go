@@ -40,7 +40,7 @@ func (o *CustomerOrder) MarkInFulfillment(groupNo int, assignmentID, nodeID stri
 	switch g.Status {
 	case GroupLocked:
 		return nil
-	case GroupShipped, GroupDelivered:
+	case GroupShipped, GroupDelivered, GroupLost, GroupReturned:
 		return regression(g, string(GroupLocked))
 	case GroupCancelled:
 		return illegal(g, "MarkInFulfillment")
@@ -71,7 +71,8 @@ func validTrackingNumbers(list []string) ([]string, error) {
 // MarkGroupShipped records that the group shipped (FulfillmentShipped).
 // PROMISED, LOCKED or CANCELLATION_REQUESTED -> SHIPPED (a vendor that ships
 // wins over a cancel request); SHIPPED again is a no-op; DELIVERED is a
-// regression; CANCELLED is illegal. If every announced package was already
+// regression, and so are LOST and RETURNED (they did ship); CANCELLED is
+// illegal. If every announced package was already
 // reported delivered the group is DELIVERED at once (A21).
 func (o *CustomerOrder) MarkGroupShipped(groupNo int, trackingNumbers []string, shippedAt time.Time) error {
 	tns, err := validTrackingNumbers(trackingNumbers)
@@ -88,7 +89,7 @@ func (o *CustomerOrder) MarkGroupShipped(groupNo int, trackingNumbers []string, 
 	switch g.Status {
 	case GroupShipped:
 		return nil
-	case GroupDelivered:
+	case GroupDelivered, GroupLost, GroupReturned:
 		return regression(g, string(GroupShipped))
 	case GroupCancelled:
 		return illegal(g, "MarkGroupShipped")
@@ -116,7 +117,8 @@ func (g *GroupPromise) settleDelivery() {
 // MarkGroupDelivered records that one package of the group was delivered
 // (PackageDelivered). The group is DELIVERED when it is SHIPPED and every
 // announced package is delivered. A delivery that arrives before the shipment
-// is remembered (A21); a repeat is a no-op; CANCELLED is illegal.
+// is remembered (A21); a repeat is a no-op; CANCELLED, LOST and RETURNED are
+// illegal (terminal).
 func (o *CustomerOrder) MarkGroupDelivered(groupNo int, trackingNumber string, deliveredAt time.Time) error {
 	if !shared.ValidTextN(trackingNumber, MaxTrackingNumberLen) || deliveredAt.IsZero() {
 		return shared.Invalid("delivery needs trackingNumber and deliveredAt")
@@ -125,7 +127,7 @@ func (o *CustomerOrder) MarkGroupDelivered(groupNo int, trackingNumber string, d
 	if err != nil {
 		return err
 	}
-	if g.Status == GroupCancelled {
+	if g.Status == GroupCancelled || g.closedWithoutDelivery() {
 		return illegal(g, "MarkGroupDelivered")
 	}
 	if slices.Contains(g.DeliveredTrackingNumbers, trackingNumber) || len(g.DeliveredTrackingNumbers) >= MaxTrackingNumbers {
@@ -144,7 +146,7 @@ func (o *CustomerOrder) MarkGroupDelivered(groupNo int, trackingNumber string, d
 // UpdateGroupPromise applies a revised promise (PromiseRevised): a later
 // window, shipBy and node for the group holding the promise. It never changes
 // the group state. A revision no newer than the stored one is a no-op; a
-// CANCELLED or DELIVERED group is illegal (A8).
+// CANCELLED, DELIVERED, LOST or RETURNED group is illegal (A8, A19).
 func (o *CustomerOrder) UpdateGroupPromise(promiseID string, revisionNo int, earliest, latest, shipBy time.Time, nodeID string) error {
 	i := o.indexByPromise(promiseID)
 	if i < 0 {
@@ -157,7 +159,7 @@ func (o *CustomerOrder) UpdateGroupPromise(promiseID string, revisionNo int, ear
 		return shared.Invalid("nodeId %q is not a valid id", nodeID)
 	}
 	g := &o.groups[i]
-	if g.Status == GroupCancelled || g.Status == GroupDelivered {
+	if g.terminal() {
 		return illegal(g, "UpdateGroupPromise")
 	}
 	if revisionNo <= g.RevisionNo {
@@ -169,5 +171,52 @@ func (o *CustomerOrder) UpdateGroupPromise(promiseID string, revisionNo int, ear
 		g.WitnessNodeID = nodeID
 	}
 	o.bump(o.placedAt)
+	return nil
+}
+
+// MarkGroupLost records that a package of the group was declared lost
+// (PackageLost, A19): SHIPPED -> LOST, terminal. One lost package loses the
+// group. LOST again is a no-op; a group that did not ship, is DELIVERED,
+// RETURNED or CANCELLED is illegal; a tracking number the group never
+// announced is an unknown group.
+func (o *CustomerOrder) MarkGroupLost(groupNo int, trackingNumber string, declaredAt time.Time) error {
+	return o.markPackageOutcome("MarkGroupLost", groupNo, trackingNumber, declaredAt, GroupLost)
+}
+
+// MarkGroupReturned records that a package of the group was returned to the
+// sender (PackageReturned, A19): SHIPPED -> RETURNED, terminal, with the same
+// rules as MarkGroupLost.
+func (o *CustomerOrder) MarkGroupReturned(groupNo int, trackingNumber string, returnedAt time.Time) error {
+	return o.markPackageOutcome("MarkGroupReturned", groupNo, trackingNumber, returnedAt, GroupReturned)
+}
+
+func (o *CustomerOrder) markPackageOutcome(command string, groupNo int, trackingNumber string, at time.Time, to GroupStatus) error {
+	if !shared.ValidTextN(trackingNumber, MaxTrackingNumberLen) || at.IsZero() {
+		return shared.Invalid("a %s package needs trackingNumber and its instant", to)
+	}
+	g, err := o.group(groupNo)
+	if err != nil {
+		return err
+	}
+	switch g.Status {
+	case to:
+		return nil
+	case GroupShipped:
+	default:
+		return illegal(g, command)
+	}
+	if !slices.Contains(g.TrackingNumbers, trackingNumber) {
+		return wrapUnknownGroup("group %d of order %s did not announce package %q", groupNo, o.id, trackingNumber)
+	}
+	if slices.Contains(g.DeliveredTrackingNumbers, trackingNumber) {
+		return fmt.Errorf("%w: %s on group %d: package %q was already delivered", shared.ErrIllegalTransition, command, groupNo, trackingNumber)
+	}
+	g.Status, g.OutcomeTrackingNumber = to, trackingNumber
+	if to == GroupLost {
+		g.LostAt = shared.UTC(at)
+	} else {
+		g.ReturnedAt = shared.UTC(at)
+	}
+	o.bump(shared.UTC(at))
 	return nil
 }

@@ -93,6 +93,10 @@ func registerSetup(sc *godog.ScenarioContext, w *world) {
 		w.gw.Terms["offer-2"] = t
 		return nil
 	})
+	sc.Step(`^delivery-promise cannot cancel the promise of group (\d+)$`, func(group int) error {
+		w.gw.CancelErr[fmt.Sprintf("p-%d", group)] = ports.ErrPromiseUnavailable
+		return nil
+	})
 	sc.Step(`^delivery-promise cannot confirm the promise of group 2$`, func() error {
 		w.gw.ConfirmErr["p-2"] = ports.ErrPromiseOfferNotQuotable
 		return nil
@@ -187,6 +191,16 @@ func registerFulfilment(sc *godog.ScenarioContext, w *world) {
 	sc.Step(`^shipping-and-tracking delivers package "([^"]*)"$`, func(tn string) error {
 		return w.consumer().ApplyPackageDelivered(context.Background(), w.meta("PackageDelivered"), usecases.PackageDelivered{
 			TrackingNumber: tn, OrderID: w.orderID, DeliveredAt: t0.Add(3 * time.Hour),
+		})
+	})
+	sc.Step(`^shipping-and-tracking declares package "([^"]*)" lost$`, func(tn string) error {
+		return w.consumer().ApplyPackageLost(context.Background(), w.meta("PackageLost"), usecases.PackageLost{
+			TrackingNumber: tn, OrderID: w.orderID, DeclaredAt: t0.Add(4 * time.Hour),
+		})
+	})
+	sc.Step(`^shipping-and-tracking returns package "([^"]*)" to the sender$`, func(tn string) error {
+		return w.consumer().ApplyPackageReturned(context.Background(), w.meta("PackageReturned"), usecases.PackageReturned{
+			TrackingNumber: tn, OrderID: w.orderID, ReturnedAt: t0.Add(5 * time.Hour),
 		})
 	})
 	sc.Step(`^delivery-promise revises the promise of group 1 one day later$`, func() error {

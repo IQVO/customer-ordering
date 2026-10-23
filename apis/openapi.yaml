@@ -364,15 +364,22 @@ components:
       enum: [SAME_DAY, NEXT_DAY, TWO_DAY, STANDARD]
     OrderStatus:
       type: string
-      enum: [PLACED, IN_FULFILLMENT, PARTIALLY_SHIPPED, SHIPPED, PARTIALLY_DELIVERED, DELIVERED, CANCELLED]
+      description: >-
+        Derived from the group states over the groups that are not CANCELLED
+        (ADR 0002 A1, A23). LOST and RETURNED are terminal: every such group is
+        LOST or RETURNED (LOST when any is lost) and none was delivered; a mix
+        of delivered and lost or returned groups, all closed, is PARTIALLY_DELIVERED.
+      enum: [PLACED, IN_FULFILLMENT, PARTIALLY_SHIPPED, SHIPPED, PARTIALLY_DELIVERED, DELIVERED, LOST, RETURNED, CANCELLED]
     GroupStatus:
       type: string
       description: >-
         PROMISED (no node locked), LOCKED (FulfillmentLocked), SHIPPED
         (FulfillmentShipped), DELIVERED (every package delivered),
         CANCELLATION_REQUESTED (CustomerOrderCancelled published, order-sourcing
-        has not answered), CANCELLED (FulfillmentCancelled or an unkeepable promise).
-      enum: [PROMISED, LOCKED, SHIPPED, DELIVERED, CANCELLATION_REQUESTED, CANCELLED]
+        has not answered), CANCELLED (FulfillmentCancelled or an unkeepable promise),
+        LOST (PackageLost for a package of the group) and RETURNED (PackageReturned),
+        both terminal.
+      enum: [PROMISED, LOCKED, SHIPPED, DELIVERED, LOST, RETURNED, CANCELLATION_REQUESTED, CANCELLED]
     ShipTo:
       type: object
       description: Synthetic PII. Returned only by GET /orders/{orderId}/ship-to; accepted on checkout and shopper registration.
@@ -586,6 +593,17 @@ components:
           format: date-time
         cancelRefusedReason:
           type: string
+        lostAt:
+          type: string
+          format: date-time
+          description: When a package of the group was declared lost (PackageLost); set when the group is LOST.
+        returnedAt:
+          type: string
+          format: date-time
+          description: When a package of the group was returned to the sender (PackageReturned); set when the group is RETURNED.
+        outcomePackage:
+          type: string
+          description: The tracking number named by PackageLost or PackageReturned; set when the group is LOST or RETURNED.
         packages:
           type: array
           items:

@@ -67,6 +67,14 @@ type TrackingRepository interface {
 	ApplyException(ctx context.Context, e readmodel.Exception) error
 	// ApplyVoid marks a LABELLED (or unscanned) package VOIDED.
 	ApplyVoid(ctx context.Context, trackingNumber string) error
+	// ApplyOutcome records PackageLost or PackageReturned on the package row,
+	// creating it: the first outcome wins, the package state becomes the
+	// outcome unless the package was reported delivered, and a later scan
+	// no longer changes the state.
+	ApplyOutcome(ctx context.Context, o readmodel.Outcome) error
+	// OutcomePackages returns the packages of the group that have an outcome,
+	// ordered by instant then tracking number.
+	OutcomePackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Outcome, error)
 	// DeliveredPackages returns the packages of the group reported delivered.
 	DeliveredPackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Delivery, error)
 	// PatchGroupSignal sets the non-nil fields of the group's signal row.
@@ -103,7 +111,7 @@ type UnitOfWork interface {
 
 // PromiseGateway is the synchronous in-organization client of
 // delivery-promise (sync_calls QuoteDeliveryOffers and MakePromise, and
-// ConfirmPromise, E7). Failures are the ErrPromise... sentinels.
+// ConfirmPromise, E7, and CancelPromise for its compensation). Failures are the ErrPromise... sentinels.
 type PromiseGateway interface {
 	// QuoteOffers quotes the offers (all tiers) for a destination prefix and a
 	// group's lines.
@@ -113,6 +121,12 @@ type PromiseGateway interface {
 	MakePromise(ctx context.Context, req promising.MakeRequest) (promising.Terms, error)
 	// ConfirmPromise confirms a promise for an order group (idempotent).
 	ConfirmPromise(ctx context.Context, promiseID, orderID string, groupNo int) error
+	// CancelPromise releases the hold of a promise (compensation of a
+	// checkout whose later confirm failed, ADR 0002 A14). Idempotent: a repeat
+	// on a CANCELLED promise succeeds. ErrPromiseNotCancellable when the
+	// promise is unknown or is not CONFIRMED or AT_RISK (PROVISIONAL, KEPT,
+	// BROKEN, RELEASED).
+	CancelPromise(ctx context.Context, promiseID, orderID string, groupNo int) error
 }
 
 // IdempotencyStore remembers the first response per (route, key) for 24 hours.

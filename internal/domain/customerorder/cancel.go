@@ -16,13 +16,13 @@ const UnkeepableReasonPrefix = "PROMISE_UNKEEPABLE: "
 // becomes CANCELLATION_REQUESTED and CustomerOrderCancelled lists exactly those
 // groups. Locked, shipped and delivered groups are untouched. With nothing
 // left to request, a repeat (every group already requested or cancelled)
-// changes nothing and raises nothing; a DELIVERED order is a status
+// changes nothing and raises nothing; a DELIVERED, LOST or RETURNED order is a status
 // regression; otherwise ErrCancelAfterLock (A4).
 func (o *CustomerOrder) CancelOrder(reason string, now time.Time) ([]shared.Event, error) {
 	if !shared.ValidTextN(reason, MaxReason) {
 		return nil, shared.Invalid("reason must be 1 to %d trimmed characters without control characters", MaxReason)
 	}
-	if o.status == StatusDelivered {
+	if o.status == StatusDelivered || o.status == StatusLost || o.status == StatusReturned {
 		return nil, fmt.Errorf("%w: order %s is %s", ErrStatusRegression, o.id, o.status)
 	}
 	at := shared.UTC(now)
@@ -74,8 +74,8 @@ func (o *CustomerOrder) CancelUnkeepableGroup(groupNo int, reason string, now ti
 
 // ConfirmGroupCancelled records order-sourcing's acceptance
 // (FulfillmentCancelled): PROMISED, CANCELLATION_REQUESTED or LOCKED ->
-// CANCELLED. CANCELLED again is a no-op; SHIPPED and DELIVERED are a status
-// regression.
+// CANCELLED. CANCELLED again is a no-op; SHIPPED, DELIVERED, LOST and RETURNED
+// are a status regression.
 func (o *CustomerOrder) ConfirmGroupCancelled(groupNo int, at time.Time) error {
 	if at.IsZero() {
 		return shared.Invalid("cancelledAt is required")
@@ -87,7 +87,7 @@ func (o *CustomerOrder) ConfirmGroupCancelled(groupNo int, at time.Time) error {
 	switch g.Status {
 	case GroupCancelled:
 		return nil
-	case GroupShipped, GroupDelivered:
+	case GroupShipped, GroupDelivered, GroupLost, GroupReturned:
 		return regression(g, string(GroupCancelled))
 	}
 	g.Status, g.CancelledAt = GroupCancelled, shared.UTC(at)
@@ -97,8 +97,8 @@ func (o *CustomerOrder) ConfirmGroupCancelled(groupNo int, at time.Time) error {
 
 // RefuseGroupCancellation records order-sourcing's refusal
 // (FulfillmentCancelRefused): CANCELLATION_REQUESTED -> LOCKED, the vendor
-// ships. For an already LOCKED, SHIPPED or DELIVERED group the reason is only
-// recorded. PROMISED and CANCELLED are illegal (A3).
+// ships. For an already LOCKED, SHIPPED, DELIVERED, LOST or RETURNED group
+// the reason is only recorded. PROMISED and CANCELLED are illegal (A3).
 func (o *CustomerOrder) RefuseGroupCancellation(groupNo int, reason string, at time.Time) error {
 	if at.IsZero() {
 		return shared.Invalid("refusedAt is required")

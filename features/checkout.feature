@@ -40,6 +40,22 @@ Feature: Checkout turns a cart into an order with a confirmed promise per shipme
     Then the checkout is refused with "offer-not-quotable"
     And no order exists
 
+  Scenario: A failed confirm cancels the promises already confirmed (A14)
+    Given delivery-promise cannot confirm the promise of group 2
+    When the shopper checks out a cart of 3 lines in 2 groups to postal code "78701"
+    Then the checkout is refused with "offer-not-quotable"
+    And delivery-promise cancelled 1 promises
+    And delivery-promise cancelled the promise of group 1
+    And no order exists
+
+  Scenario: A cancel that fails does not change the answer of the checkout
+    Given delivery-promise cannot confirm the promise of group 2
+    And delivery-promise cannot cancel the promise of group 1
+    When the shopper checks out a cart of 3 lines in 2 groups to postal code "78701"
+    Then the checkout is refused with "offer-not-quotable"
+    And delivery-promise cancelled the promise of group 1
+    And no order exists
+
   Scenario: Repeating a checkout with the same Idempotency-Key returns the same order
     When the shopper checks out a cart of 3 lines in 2 groups to postal code "78701"
     And the same checkout is repeated

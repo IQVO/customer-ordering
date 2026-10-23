@@ -2,7 +2,7 @@
 
 Source of truth: retail-network-docs `model/model.yaml` (context `customer-ordering`).
 Invariants, transitions and every assumption the model left open are in
-`docs/adr/0002-aggregates-and-invariants.md` (assumptions A1-A22). Consumed
+`docs/adr/0002-aggregates-and-invariants.md` (assumptions A1-A23). Consumed
 contracts and local read models are in `docs/adr/0003-consumed-contracts-and-local-read-models.md`.
 
 ## Ubiquitous Language (use these exact names)
@@ -19,10 +19,11 @@ contracts and local read models are in `docs/adr/0003-consumed-contracts-and-loc
 - **GroupPromise** — the promise of one group: `promiseId`, `tier`, `shipBy`,
   delivery window, witness node, `revisionNo`, and the group status.
 - **Group status** — `PROMISED` (no node locked: "unlocked"), `LOCKED`, `SHIPPED`,
-  `DELIVERED`, `CANCELLATION_REQUESTED`, `CANCELLED`. Moves forward only.
+  `DELIVERED`, `LOST`, `RETURNED` (terminal, from `PackageLost` / `PackageReturned`),
+  `CANCELLATION_REQUESTED`, `CANCELLED`. Moves forward only.
 - **Order status** — `PLACED`, `IN_FULFILLMENT`, `PARTIALLY_SHIPPED`, `SHIPPED`,
-  `PARTIALLY_DELIVERED`, `DELIVERED`, `CANCELLED`; derived from the non-cancelled
-  groups after every command (table in ADR 0002).
+  `PARTIALLY_DELIVERED`, `DELIVERED`, `LOST`, `RETURNED`, `CANCELLED`; derived from the
+  non-cancelled groups after every command (table in ADR 0002, A1 and A23).
 - **Tracking** — the read model of `GET /orders/{orderId}/tracking`: groups plus
   package rows and promise signals fed by consumed events.
 
@@ -30,7 +31,7 @@ contracts and local read models are in `docs/adr/0003-consumed-contracts-and-loc
 
 - **CustomerOrder** (`internal/domain/customerorder`): `place.go` (PlaceOrder and
   its checks), `commands.go` (MarkInFulfillment, MarkGroupShipped,
-  MarkGroupDelivered, UpdateGroupPromise), `cancel.go` (CancelOrder,
+  MarkGroupDelivered, MarkGroupLost, MarkGroupReturned, UpdateGroupPromise), `cancel.go` (CancelOrder,
   CancelUnkeepableGroup, ConfirmGroupCancelled, RefuseGroupCancellation),
   `status.go` (derivation and the forward-only ranks), `errors.go`, `events.go`,
   `restore.go` (validating `Restore`). Errors: `ErrLineWithoutPromise`,
