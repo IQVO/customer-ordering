@@ -484,6 +484,9 @@ components:
         revisionNo:
           type: integer
           description: Latest applied PromiseRevised revision; absent until the first revision.
+        cancelReason:
+          type: string
+          description: The free-text reason of the cancellation request, or the reason a policy cancelled the group.
         cancelRequestedAt:
           type: string
           format: date-time
