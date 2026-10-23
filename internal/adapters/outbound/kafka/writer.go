@@ -5,6 +5,7 @@ package kafka
 
 import (
 	"strings"
+	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
 )
@@ -19,6 +20,8 @@ func NewWriter(brokers string) *kafkago.Writer {
 		RequiredAcks:           kafkago.RequireAll,
 		Balancer:               &kafkago.Hash{},
 		AllowAutoTopicCreation: true,
+		// A lone synchronous relay write must not wait for kafka-go's 1s default.
+		BatchTimeout: 10 * time.Millisecond,
 	}
 }
 
