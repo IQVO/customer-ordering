@@ -1,0 +1,1513 @@
+asyncapi: 3.0.0
+info:
+  title: customer-ordering Domain Events
+  version: 1.0.0
+  contact:
+    name: customer-ordering maintainers
+    url: https://github.com/IQVO/customer-ordering
+    email: customer-ordering@iqvo.example.com
+  license:
+    name: UNLICENSED
+  tags:
+  - name: customer-ordering
+    description: The customer-ordering bounded context (retail network, commerce tier).
+  - name: customerorder
+    description: Events raised by the CustomerOrder aggregate.
+  - name: consumed
+    description: Events produced by sibling contexts that this service consumes (ADR 0003).
+  description: |-
+    Event catalog for the **customer-ordering** bounded context of the retail network (commerce tier): it turns a shopper's cart into a customer order, promising and confirming every shipment group at checkout (ADR 0001, ADR 0002).
+
+    **Published.** Two integration events, `CustomerOrderPlaced` and `CustomerOrderCancelled`, on `retailnetwork.customer-ordering.events` through a **transactional outbox** (the order row and its already-encoded events are written in ONE database transaction; an always-on relay drains them to Kafka, at-least-once, the CloudEvents `id` is stored with the outbox row). Both types are catalogued in ADR 0004. Nothing is published on `retailnetwork.customer-ordering.analytics`: the model names no analytics-only event for this context. No event carries the ship-to address (PII); `CustomerOrderPlaced` carries the destination postal prefix only.
+
+    **Consumed.** Fifteen events from delivery-promise, order-sourcing and shipping-and-tracking (see the `receive` operations and ADR 0003). The messages list only the fields this service relies on; the producers' own AsyncAPI files are authoritative and unknown fields are ignored. Each consumer group name comes from a mandatory environment variable.
+
+    **Envelope (mandatory).** CloudEvents 1.0, structured content mode, Kafka header `content-type: application/cloudevents+json; charset=UTF-8`. `specversion`, `id`, `source` (`/retailnetwork/customer-ordering`), `type`, `subject` (the orderId), `time`, `datacontenttype` (`application/json`) and `dataschema` (`urn:retailnetwork:customer-ordering:events:<EventName>:v1`) are all required. Kafka key = the subject. Type = `com.retailnetwork.commerce.customer-ordering.customerorder.<EventName>`. A breaking payload change is a new `.v2` type, never a mutation. Dispatch on the full `type`, ignore unknown types, dedupe on `id`.
+
+    **Conventions.** `data` is camelCase; instants are RFC 3339 UTC; enums are UPPER_SNAKE; optional fields are omitted when absent (never null); arrays are always present.
+servers:
+  production:
+    host: '{brokers}'
+    protocol: kafka
+    description: Retail-network Kafka broker (host supplied by the deployment environment via KAFKA_BROKERS).
+    variables:
+      brokers:
+        default: kafka.retail-network.internal:9092
+defaultContentType: application/cloudevents+json
+channels:
+  customerOrderingEvents:
+    address: retailnetwork.customer-ordering.events
+    title: customer-ordering integration topic
+    description: This service's integration topic. Written by the outbox relay; key = subject (the orderId). Every message carries the CloudEvents content-type header.
+    messages:
+      CustomerOrderPlaced:
+        $ref: '#/components/messages/CustomerOrderPlaced'
+      CustomerOrderCancelled:
+        $ref: '#/components/messages/CustomerOrderCancelled'
+  deliveryPromiseEvents:
+    address: retailnetwork.delivery-promise.events
+    title: delivery-promise integration topic (consumed)
+    description: Produced by delivery-promise; consumed by customer-ordering with its own consumer group (see ADR 0003). Idempotent on the CloudEvents id (inbox), dispatch on the full type, tolerant decoding, dead-letter on poison messages.
+    messages:
+      PromiseAtRisk:
+        $ref: '#/components/messages/ConsumedPromiseAtRisk'
+      PromiseRevised:
+        $ref: '#/components/messages/ConsumedPromiseRevised'
+      PromiseKept:
+        $ref: '#/components/messages/ConsumedPromiseKept'
+      PromiseBroken:
+        $ref: '#/components/messages/ConsumedPromiseBroken'
+      PromiseUnkeepable:
+        $ref: '#/components/messages/ConsumedPromiseUnkeepable'
+  orderSourcingEvents:
+    address: retailnetwork.order-sourcing.events
+    title: order-sourcing integration topic (consumed)
+    description: Produced by order-sourcing; consumed by customer-ordering with its own consumer group (see ADR 0003). Idempotent on the CloudEvents id (inbox), dispatch on the full type, tolerant decoding, dead-letter on poison messages.
+    messages:
+      FulfillmentLocked:
+        $ref: '#/components/messages/ConsumedFulfillmentLocked'
+      FulfillmentShipped:
+        $ref: '#/components/messages/ConsumedFulfillmentShipped'
+      FulfillmentUnsourceable:
+        $ref: '#/components/messages/ConsumedFulfillmentUnsourceable'
+      FulfillmentCancelled:
+        $ref: '#/components/messages/ConsumedFulfillmentCancelled'
+      FulfillmentCancelRefused:
+        $ref: '#/components/messages/ConsumedFulfillmentCancelRefused'
+  shippingAndTrackingEvents:
+    address: retailnetwork.shipping-and-tracking.events
+    title: shipping-and-tracking integration topic (consumed)
+    description: Produced by shipping-and-tracking; consumed by customer-ordering with its own consumer group (see ADR 0003). Idempotent on the CloudEvents id (inbox), dispatch on the full type, tolerant decoding, dead-letter on poison messages.
+    messages:
+      LabelIssued:
+        $ref: '#/components/messages/ConsumedLabelIssued'
+      LabelVoided:
+        $ref: '#/components/messages/ConsumedLabelVoided'
+      PackageScanned:
+        $ref: '#/components/messages/ConsumedPackageScanned'
+      PackageDelivered:
+        $ref: '#/components/messages/ConsumedPackageDelivered'
+      PackageExceptionRaised:
+        $ref: '#/components/messages/ConsumedPackageExceptionRaised'
+operations:
+  publishCustomerOrderingEvents:
+    action: send
+    title: Publish customer-ordering events
+    summary: Publish CustomerOrderPlaced and CustomerOrderCancelled through the transactional outbox.
+    description: The service sends the two events of the CustomerOrder aggregate to `retailnetwork.customer-ordering.events`. Consumers route on the full `type`.
+    tags:
+    - name: customer-ordering
+    channel:
+      $ref: '#/channels/customerOrderingEvents'
+    messages:
+    - $ref: '#/channels/customerOrderingEvents/messages/CustomerOrderPlaced'
+    - $ref: '#/channels/customerOrderingEvents/messages/CustomerOrderCancelled'
+  receiveDeliveryPromiseEvents:
+    action: receive
+    title: Receive delivery-promise events
+    summary: Consume PromiseAtRisk, PromiseRevised, PromiseKept, PromiseBroken, PromiseUnkeepable from delivery-promise.
+    description: customer-ordering consumes PromiseAtRisk, PromiseRevised, PromiseKept, PromiseBroken, PromiseUnkeepable from `retailnetwork.delivery-promise.events`. See ADR 0003 for what each event does to the order and the OrderTrackingView read model.
+    tags:
+    - name: consumed
+    channel:
+      $ref: '#/channels/deliveryPromiseEvents'
+    messages:
+    - $ref: '#/channels/deliveryPromiseEvents/messages/PromiseAtRisk'
+    - $ref: '#/channels/deliveryPromiseEvents/messages/PromiseRevised'
+    - $ref: '#/channels/deliveryPromiseEvents/messages/PromiseKept'
+    - $ref: '#/channels/deliveryPromiseEvents/messages/PromiseBroken'
+    - $ref: '#/channels/deliveryPromiseEvents/messages/PromiseUnkeepable'
+  receiveOrderSourcingEvents:
+    action: receive
+    title: Receive order-sourcing events
+    summary: Consume FulfillmentLocked, FulfillmentShipped, FulfillmentUnsourceable, FulfillmentCancelled, FulfillmentCancelRefused from order-sourcing.
+    description: customer-ordering consumes FulfillmentLocked, FulfillmentShipped, FulfillmentUnsourceable, FulfillmentCancelled, FulfillmentCancelRefused from `retailnetwork.order-sourcing.events`. See ADR 0003 for what each event does to the order and the OrderTrackingView read model.
+    tags:
+    - name: consumed
+    channel:
+      $ref: '#/channels/orderSourcingEvents'
+    messages:
+    - $ref: '#/channels/orderSourcingEvents/messages/FulfillmentLocked'
+    - $ref: '#/channels/orderSourcingEvents/messages/FulfillmentShipped'
+    - $ref: '#/channels/orderSourcingEvents/messages/FulfillmentUnsourceable'
+    - $ref: '#/channels/orderSourcingEvents/messages/FulfillmentCancelled'
+    - $ref: '#/channels/orderSourcingEvents/messages/FulfillmentCancelRefused'
+  receiveShippingAndTrackingEvents:
+    action: receive
+    title: Receive shipping-and-tracking events
+    summary: Consume LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised from shipping-and-tracking.
+    description: customer-ordering consumes LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised from `retailnetwork.shipping-and-tracking.events`. See ADR 0003 for what each event does to the order and the OrderTrackingView read model.
+    tags:
+    - name: consumed
+    channel:
+      $ref: '#/channels/shippingAndTrackingEvents'
+    messages:
+    - $ref: '#/channels/shippingAndTrackingEvents/messages/LabelIssued'
+    - $ref: '#/channels/shippingAndTrackingEvents/messages/LabelVoided'
+    - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageScanned'
+    - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageDelivered'
+    - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageExceptionRaised'
+components:
+  messages:
+    CustomerOrderPlaced:
+      name: CustomerOrderPlaced
+      title: CustomerOrderPlaced
+      summary: A customer order was placed (every group promised and confirmed).
+      description: '`type` = `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced`; subject and key = the orderId. Raised by PlaceOrder when the order is saved in state PLACED, in the same transaction as the outbox row. Consumed by order-sourcing (creates one assignment per group) and delivery-promise (a repeated confirm is a no-op, ADR 0003). Carries the destination postal prefix only: the ship-to address never leaves customer-ordering except through GET /orders/{orderId}/ship-to.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: customerorder
+      payload:
+        $ref: '#/components/schemas/CustomerOrderPlacedEvent'
+      examples:
+      - name: customerOrderPlaced
+        summary: A customer order was placed (every group promised and confirmed).
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/customer-ordering
+          type: com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced
+          subject: 7a1e6c52-0d2b-4f0e-9d6a-5c6f1b8e2a10
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:customer-ordering:events:CustomerOrderPlaced:v1
+          data:
+            orderId: 7a1e6c52-0d2b-4f0e-9d6a-5c6f1b8e2a10
+            shopperId: 3b0c1f0e-6f0a-4a39-8a55-2b7f0d8c9e11
+            destinationPostalPrefix: '787'
+            placedAt: '2026-10-23T10:15:30Z'
+            groups:
+            - groupNo: 1
+              promiseId: p-1001
+              tier: NEXT_DAY
+              witnessNodeId: fc-aus-1
+              shipBy: '2026-10-23T22:00:00Z'
+              deliverByEarliest: '2026-10-24T13:00:00Z'
+              deliverByLatest: '2026-10-24T22:00:00Z'
+              lines:
+              - lineNo: 1
+                catalogItemId: sku-100
+                quantity: 2
+    CustomerOrderCancelled:
+      name: CustomerOrderCancelled
+      title: CustomerOrderCancelled
+      summary: The cancellation of one or more groups of a customer order was requested.
+      description: '`type` = `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderCancelled`; subject and key = the orderId. Raised by CancelOrder (shopper) and by the CancelOnUnfulfillable policy (PromiseUnkeepable). It is a REQUEST (G12): order-sourcing decides and answers FulfillmentCancelled or FulfillmentCancelRefused, delivery-promise cancels the promises of the groupNos.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: customerorder
+      payload:
+        $ref: '#/components/schemas/CustomerOrderCancelledEvent'
+      examples:
+      - name: customerOrderCancelled
+        summary: The cancellation of one or more groups of a customer order was requested.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/customer-ordering
+          type: com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderCancelled
+          subject: 7a1e6c52-0d2b-4f0e-9d6a-5c6f1b8e2a10
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:customer-ordering:events:CustomerOrderCancelled:v1
+          data:
+            orderId: 7a1e6c52-0d2b-4f0e-9d6a-5c6f1b8e2a10
+            reason: changed my mind
+            cancelledAt: '2026-10-23T10:20:00Z'
+            groupNos:
+            - 1
+    ConsumedPromiseAtRisk:
+      name: PromiseAtRisk
+      title: PromiseAtRisk (consumed)
+      summary: A promise is at risk.
+      description: '`type` = `com.retailnetwork.commerce.delivery-promise.promise.PromiseAtRisk` produced by delivery-promise on `retailnetwork.delivery-promise.events`. A promise is at risk. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PromiseAtRiskEvent'
+      examples:
+      - name: promiseAtRisk
+        summary: A promise is at risk.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/delivery-promise
+          type: com.retailnetwork.commerce.delivery-promise.promise.PromiseAtRisk
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:delivery-promise:events:PromiseAtRisk:v1
+          data:
+            promiseId: p-1001
+            orderId: 7a1e6c52
+            reason: NODE_DELAYED
+            detectedAt: '2026-10-23T12:00:00Z'
+    ConsumedPromiseRevised:
+      name: PromiseRevised
+      title: PromiseRevised (consumed)
+      summary: A promise was revised to a later window (UpdateGroupPromise).
+      description: '`type` = `com.retailnetwork.commerce.delivery-promise.promise.PromiseRevised` produced by delivery-promise on `retailnetwork.delivery-promise.events`. A promise was revised to a later window (UpdateGroupPromise). Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PromiseRevisedEvent'
+      examples:
+      - name: promiseRevised
+        summary: A promise was revised to a later window (UpdateGroupPromise).
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/delivery-promise
+          type: com.retailnetwork.commerce.delivery-promise.promise.PromiseRevised
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:delivery-promise:events:PromiseRevised:v1
+          data:
+            promiseId: p-1001
+            orderId: 7a1e6c52
+            revisionNo: 1
+            deliverByEarliest: '2026-10-25T13:00:00Z'
+            deliverByLatest: '2026-10-25T22:00:00Z'
+            shipBy: '2026-10-24T22:00:00Z'
+            nodeId: fc-aus-2
+            reason: NODE_EXCLUDED
+    ConsumedPromiseKept:
+      name: PromiseKept
+      title: PromiseKept (consumed)
+      summary: A promise was kept.
+      description: '`type` = `com.retailnetwork.commerce.delivery-promise.promise.PromiseKept` produced by delivery-promise on `retailnetwork.delivery-promise.events`. A promise was kept. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PromiseKeptEvent'
+      examples:
+      - name: promiseKept
+        summary: A promise was kept.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/delivery-promise
+          type: com.retailnetwork.commerce.delivery-promise.promise.PromiseKept
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:delivery-promise:events:PromiseKept:v1
+          data:
+            promiseId: p-1001
+            orderId: 7a1e6c52
+            nodeId: fc-aus-1
+            deliveredAt: '2026-10-24T15:00:00Z'
+            deliverByLatest: '2026-10-24T22:00:00Z'
+    ConsumedPromiseBroken:
+      name: PromiseBroken
+      title: PromiseBroken (consumed)
+      summary: A promise was broken.
+      description: '`type` = `com.retailnetwork.commerce.delivery-promise.promise.PromiseBroken` produced by delivery-promise on `retailnetwork.delivery-promise.events`. A promise was broken. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PromiseBrokenEvent'
+      examples:
+      - name: promiseBroken
+        summary: A promise was broken.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/delivery-promise
+          type: com.retailnetwork.commerce.delivery-promise.promise.PromiseBroken
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:delivery-promise:events:PromiseBroken:v1
+          data:
+            promiseId: p-1001
+            orderId: 7a1e6c52
+            nodeId: fc-aus-1
+            deliveredAt: '2026-10-25T09:00:00Z'
+            deliverByLatest: '2026-10-24T22:00:00Z'
+            lateByMinutes: 660
+            cause: LATE
+    ConsumedPromiseUnkeepable:
+      name: PromiseUnkeepable
+      title: PromiseUnkeepable (consumed)
+      summary: 'Re-promising found no path (E9, G10): the policy CancelOnUnfulfillable cancels the group.'
+      description: '`type` = `com.retailnetwork.commerce.delivery-promise.promise.PromiseUnkeepable` produced by delivery-promise on `retailnetwork.delivery-promise.events`. Re-promising found no path (E9, G10): the policy CancelOnUnfulfillable cancels the group. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PromiseUnkeepableEvent'
+      examples:
+      - name: promiseUnkeepable
+        summary: 'Re-promising found no path (E9, G10): the policy CancelOnUnfulfillable cancels the group.'
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/delivery-promise
+          type: com.retailnetwork.commerce.delivery-promise.promise.PromiseUnkeepable
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:delivery-promise:events:PromiseUnkeepable:v1
+          data:
+            promiseId: p-1001
+            orderId: 7a1e6c52
+            groupNo: 1
+            reason: NO_FEASIBLE_PATH
+    ConsumedFulfillmentLocked:
+      name: FulfillmentLocked
+      title: FulfillmentLocked (consumed)
+      summary: A shipment group was locked to a node (MarkInFulfillment).
+      description: '`type` = `com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentLocked` produced by order-sourcing on `retailnetwork.order-sourcing.events`. A shipment group was locked to a node (MarkInFulfillment). Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/FulfillmentLockedEvent'
+      examples:
+      - name: fulfillmentLocked
+        summary: A shipment group was locked to a node (MarkInFulfillment).
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/order-sourcing
+          type: com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentLocked
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:order-sourcing:events:FulfillmentLocked:v1
+          data:
+            assignmentId: a-77
+            orderId: 7a1e6c52
+            groupNo: 1
+            nodeId: fc-aus-1
+            pickupDepartureId: dep-9
+            lockedAt: '2026-10-23T10:30:00Z'
+            lockReason: CUTOFF
+            promiseId: p-1001
+    ConsumedFulfillmentShipped:
+      name: FulfillmentShipped
+      title: FulfillmentShipped (consumed)
+      summary: A shipment group was shipped (MarkGroupShipped).
+      description: '`type` = `com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentShipped` produced by order-sourcing on `retailnetwork.order-sourcing.events`. A shipment group was shipped (MarkGroupShipped). Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/FulfillmentShippedEvent'
+      examples:
+      - name: fulfillmentShipped
+        summary: A shipment group was shipped (MarkGroupShipped).
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/order-sourcing
+          type: com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentShipped
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:order-sourcing:events:FulfillmentShipped:v1
+          data:
+            assignmentId: a-77
+            orderId: 7a1e6c52
+            groupNo: 1
+            nodeId: fc-aus-1
+            trackingNumbers:
+            - TRK-1
+            shippedAt: '2026-10-23T21:00:00Z'
+    ConsumedFulfillmentUnsourceable:
+      name: FulfillmentUnsourceable
+      title: FulfillmentUnsourceable (consumed)
+      summary: No node can fulfil the group; shown in tracking until a revised promise or PromiseUnkeepable arrives.
+      description: '`type` = `com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentUnsourceable` produced by order-sourcing on `retailnetwork.order-sourcing.events`. No node can fulfil the group; shown in tracking until a revised promise or PromiseUnkeepable arrives. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/FulfillmentUnsourceableEvent'
+      examples:
+      - name: fulfillmentUnsourceable
+        summary: No node can fulfil the group; shown in tracking until a revised promise or PromiseUnkeepable arrives.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/order-sourcing
+          type: com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentUnsourceable
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:order-sourcing:events:FulfillmentUnsourceable:v1
+          data:
+            assignmentId: a-77
+            orderId: 7a1e6c52
+            groupNo: 1
+            promiseId: p-1001
+            excludedNodes:
+            - fc-aus-1
+            reason: NO_NODE_WITH_STOCK
+    ConsumedFulfillmentCancelled:
+      name: FulfillmentCancelled
+      title: FulfillmentCancelled (consumed)
+      summary: order-sourcing accepted the cancellation request of a group (E11).
+      description: '`type` = `com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentCancelled` produced by order-sourcing on `retailnetwork.order-sourcing.events`. order-sourcing accepted the cancellation request of a group (E11). Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/FulfillmentCancelledEvent'
+      examples:
+      - name: fulfillmentCancelled
+        summary: order-sourcing accepted the cancellation request of a group (E11).
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/order-sourcing
+          type: com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentCancelled
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:order-sourcing:events:FulfillmentCancelled:v1
+          data:
+            assignmentId: a-77
+            orderId: 7a1e6c52
+            groupNo: 1
+            reason: CUSTOMER_CANCELLED
+    ConsumedFulfillmentCancelRefused:
+      name: FulfillmentCancelRefused
+      title: FulfillmentCancelRefused (consumed)
+      summary: 'order-sourcing refused the cancellation request (E11): the vendor ships and the shopper path becomes a return.'
+      description: '`type` = `com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentCancelRefused` produced by order-sourcing on `retailnetwork.order-sourcing.events`. order-sourcing refused the cancellation request (E11): the vendor ships and the shopper path becomes a return. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/FulfillmentCancelRefusedEvent'
+      examples:
+      - name: fulfillmentCancelRefused
+        summary: 'order-sourcing refused the cancellation request (E11): the vendor ships and the shopper path becomes a return.'
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/order-sourcing
+          type: com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentCancelRefused
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:order-sourcing:events:FulfillmentCancelRefused:v1
+          data:
+            assignmentId: a-77
+            orderId: 7a1e6c52
+            groupNo: 1
+            reason: VENDOR_ACKNOWLEDGED
+    ConsumedLabelIssued:
+      name: LabelIssued
+      title: LabelIssued (consumed)
+      summary: 'A label was issued: the package is known by tracking number and assignment.'
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.label.LabelIssued` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. A label was issued: the package is known by tracking number and assignment. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/LabelIssuedEvent'
+      examples:
+      - name: labelIssued
+        summary: 'A label was issued: the package is known by tracking number and assignment.'
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/shipping-and-tracking
+          type: com.retailnetwork.logistics.shipping-and-tracking.label.LabelIssued
+          subject: TRK-1
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:shipping-and-tracking:events:LabelIssued:v1
+          data:
+            labelRef: lbl-1
+            trackingNumber: TRK-1
+            poNumber: PO-9
+            assignmentId: a-77
+            packageNo: 1
+            tier: NEXT_DAY
+            carrier: NETWORK
+    ConsumedLabelVoided:
+      name: LabelVoided
+      title: LabelVoided (consumed)
+      summary: 'A label was voided (G18): the tracking row shows VOIDED until a new label arrives.'
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.label.LabelVoided` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. A label was voided (G18): the tracking row shows VOIDED until a new label arrives. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/LabelVoidedEvent'
+      examples:
+      - name: labelVoided
+        summary: 'A label was voided (G18): the tracking row shows VOIDED until a new label arrives.'
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/shipping-and-tracking
+          type: com.retailnetwork.logistics.shipping-and-tracking.label.LabelVoided
+          subject: TRK-1
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:shipping-and-tracking:events:LabelVoided:v1
+          data:
+            labelRef: lbl-1
+            trackingNumber: TRK-1
+            reason: WRONG_ADDRESS
+    ConsumedPackageScanned:
+      name: PackageScanned
+      title: PackageScanned (consumed)
+      summary: A package was scanned.
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageScanned` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. A package was scanned. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PackageScannedEvent'
+      examples:
+      - name: packageScanned
+        summary: A package was scanned.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/shipping-and-tracking
+          type: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageScanned
+          subject: TRK-1
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:shipping-and-tracking:events:PackageScanned:v1
+          data:
+            trackingNumber: TRK-1
+            scanId: scan-1
+            nodeId: ds-aus-1
+            scanType: ARRIVAL
+            at: '2026-10-24T05:00:00Z'
+            state: AT_STATION
+    ConsumedPackageDelivered:
+      name: PackageDelivered
+      title: PackageDelivered (consumed)
+      summary: A package was delivered (MarkGroupDelivered once every package of the group is).
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. A package was delivered (MarkGroupDelivered once every package of the group is). Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PackageDeliveredEvent'
+      examples:
+      - name: packageDelivered
+        summary: A package was delivered (MarkGroupDelivered once every package of the group is).
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/shipping-and-tracking
+          type: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:shipping-and-tracking:events:PackageDelivered:v1
+          data:
+            trackingNumber: TRK-1
+            assignmentId: a-77
+            orderId: 7a1e6c52
+            deliveredAt: '2026-10-24T15:00:00Z'
+    ConsumedPackageExceptionRaised:
+      name: PackageExceptionRaised
+      title: PackageExceptionRaised (consumed)
+      summary: A delivery exception was raised for a package.
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageExceptionRaised` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. A delivery exception was raised for a package. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PackageExceptionRaisedEvent'
+      examples:
+      - name: packageExceptionRaised
+        summary: A delivery exception was raised for a package.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/shipping-and-tracking
+          type: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageExceptionRaised
+          subject: 7a1e6c52
+          time: '2026-10-23T10:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:shipping-and-tracking:events:PackageExceptionRaised:v1
+          data:
+            trackingNumber: TRK-1
+            assignmentId: a-77
+            orderId: 7a1e6c52
+            reason: ADDRESS_NOT_FOUND
+            at: '2026-10-24T14:00:00Z'
+  schemas:
+    CustomerOrderPlacedData:
+      type: object
+      required:
+      - orderId
+      - shopperId
+      - destinationPostalPrefix
+      - placedAt
+      - groups
+      properties:
+        orderId:
+          type: string
+        shopperId:
+          type: string
+        destinationPostalPrefix:
+          type: string
+          description: Postal prefix only (first 3 characters of the normalised ship-to postal code); never the address.
+        placedAt: &id001
+          type: string
+          format: date-time
+        groups:
+          type: array
+          items:
+            type: object
+            required:
+            - groupNo
+            - promiseId
+            - tier
+            - witnessNodeId
+            - shipBy
+            - deliverByEarliest
+            - deliverByLatest
+            - lines
+            properties:
+              groupNo:
+                type: integer
+                minimum: 1
+              promiseId:
+                type: string
+              tier: &id002
+                type: string
+                enum:
+                - SAME_DAY
+                - NEXT_DAY
+                - TWO_DAY
+                - STANDARD
+              witnessNodeId:
+                type: string
+              shipBy: *id001
+              deliverByEarliest: *id001
+              deliverByLatest: *id001
+              lines:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - lineNo
+                  - catalogItemId
+                  - quantity
+                  properties:
+                    lineNo:
+                      type: integer
+                      minimum: 1
+                    catalogItemId:
+                      type: string
+                    quantity:
+                      type: integer
+                      minimum: 1
+          minItems: 1
+    CustomerOrderPlacedEvent:
+      type: object
+      required:
+      - specversion
+      - id
+      - source
+      - type
+      - subject
+      - time
+      - datacontenttype
+      - dataschema
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+          const: /retailnetwork/customer-ordering
+        type:
+          type: string
+          const: com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+          const: urn:retailnetwork:customer-ordering:events:CustomerOrderPlaced:v1
+        data:
+          $ref: '#/components/schemas/CustomerOrderPlacedData'
+    CustomerOrderCancelledData:
+      type: object
+      required:
+      - orderId
+      - reason
+      - cancelledAt
+      - groupNos
+      properties:
+        orderId:
+          type: string
+        reason:
+          type: string
+          description: 'Free text (shopper reason, or PROMISE_UNKEEPABLE: <reason> for the CancelOnUnfulfillable policy).'
+        cancelledAt: *id001
+        groupNos:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+          description: Groups whose cancellation is requested; a subset of the order's groups when others are locked.
+    CustomerOrderCancelledEvent:
+      type: object
+      required:
+      - specversion
+      - id
+      - source
+      - type
+      - subject
+      - time
+      - datacontenttype
+      - dataschema
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+          const: /retailnetwork/customer-ordering
+        type:
+          type: string
+          const: com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderCancelled
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+          const: urn:retailnetwork:customer-ordering:events:CustomerOrderCancelled:v1
+        data:
+          $ref: '#/components/schemas/CustomerOrderCancelledData'
+    PromiseAtRiskData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - promiseId
+      - orderId
+      properties:
+        promiseId:
+          type: string
+        orderId:
+          type: string
+        reason:
+          type: string
+        detectedAt: *id001
+    PromiseAtRiskEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.commerce.delivery-promise.promise.PromiseAtRisk
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PromiseAtRiskData'
+    PromiseRevisedData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - promiseId
+      - orderId
+      - revisionNo
+      - deliverByEarliest
+      - deliverByLatest
+      properties:
+        promiseId:
+          type: string
+        orderId:
+          type: string
+        revisionNo:
+          type: integer
+          minimum: 1
+        previousDeliverByLatest: *id001
+        deliverByEarliest: *id001
+        deliverByLatest: *id001
+        shipBy: *id001
+        nodeId:
+          type: string
+        reason:
+          type: string
+    PromiseRevisedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.commerce.delivery-promise.promise.PromiseRevised
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PromiseRevisedData'
+    PromiseKeptData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - promiseId
+      - orderId
+      properties:
+        promiseId:
+          type: string
+        orderId:
+          type: string
+        nodeId:
+          type: string
+        deliveredAt: *id001
+        deliverByLatest: *id001
+    PromiseKeptEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.commerce.delivery-promise.promise.PromiseKept
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PromiseKeptData'
+    PromiseBrokenData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - promiseId
+      - orderId
+      properties:
+        promiseId:
+          type: string
+        orderId:
+          type: string
+        nodeId:
+          type: string
+        deliveredAt: *id001
+        deliverByLatest: *id001
+        lateByMinutes:
+          type: integer
+          minimum: 0
+        cause:
+          type: string
+    PromiseBrokenEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.commerce.delivery-promise.promise.PromiseBroken
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PromiseBrokenData'
+    PromiseUnkeepableData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - promiseId
+      - orderId
+      - groupNo
+      properties:
+        promiseId:
+          type: string
+        orderId:
+          type: string
+        groupNo:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+    PromiseUnkeepableEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.commerce.delivery-promise.promise.PromiseUnkeepable
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PromiseUnkeepableData'
+    FulfillmentLockedData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - assignmentId
+      - orderId
+      - groupNo
+      properties:
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        groupNo:
+          type: integer
+          minimum: 1
+        nodeId:
+          type: string
+        pickupDepartureId:
+          type: string
+        lockedAt: *id001
+        lockReason:
+          type: string
+        promiseId:
+          type: string
+    FulfillmentLockedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentLocked
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/FulfillmentLockedData'
+    FulfillmentShippedData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - assignmentId
+      - orderId
+      - groupNo
+      properties:
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        groupNo:
+          type: integer
+          minimum: 1
+        nodeId:
+          type: string
+        trackingNumbers:
+          type: array
+          items:
+            type: string
+        shippedAt: *id001
+    FulfillmentShippedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentShipped
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/FulfillmentShippedData'
+    FulfillmentUnsourceableData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - orderId
+      - groupNo
+      properties:
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        groupNo:
+          type: integer
+          minimum: 1
+        promiseId:
+          type: string
+        excludedNodes:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+    FulfillmentUnsourceableEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentUnsourceable
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/FulfillmentUnsourceableData'
+    FulfillmentCancelledData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - orderId
+      - groupNo
+      properties:
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        groupNo:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+    FulfillmentCancelledEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentCancelled
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/FulfillmentCancelledData'
+    FulfillmentCancelRefusedData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - orderId
+      - groupNo
+      properties:
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        groupNo:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+    FulfillmentCancelRefusedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentCancelRefused
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/FulfillmentCancelRefusedData'
+    LabelIssuedData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - trackingNumber
+      - assignmentId
+      properties:
+        labelRef:
+          type: string
+        trackingNumber:
+          type: string
+        poNumber:
+          type: string
+        assignmentId:
+          type: string
+        packageNo:
+          type: integer
+          minimum: 1
+        tier: *id002
+        carrier:
+          type: string
+    LabelIssuedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.logistics.shipping-and-tracking.label.LabelIssued
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/LabelIssuedData'
+    LabelVoidedData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - trackingNumber
+      properties:
+        labelRef:
+          type: string
+        trackingNumber:
+          type: string
+        reason:
+          type: string
+    LabelVoidedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.logistics.shipping-and-tracking.label.LabelVoided
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/LabelVoidedData'
+    PackageScannedData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - trackingNumber
+      properties:
+        trackingNumber:
+          type: string
+        scanId:
+          type: string
+        nodeId:
+          type: string
+        scanType:
+          type: string
+        at: *id001
+        state:
+          type: string
+    PackageScannedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageScanned
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PackageScannedData'
+    PackageDeliveredData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - trackingNumber
+      properties:
+        trackingNumber:
+          type: string
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        deliveredAt: *id001
+    PackageDeliveredEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PackageDeliveredData'
+    PackageExceptionRaisedData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
+      required:
+      - trackingNumber
+      properties:
+        trackingNumber:
+          type: string
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        reason:
+          type: string
+        at: *id001
+    PackageExceptionRaisedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageExceptionRaised
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PackageExceptionRaisedData'

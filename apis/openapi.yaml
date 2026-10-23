@@ -1,0 +1,632 @@
+openapi: 3.0.3
+info:
+  title: Customer Ordering API
+  version: 0.1.0
+  contact:
+    name: customer-ordering maintainers
+    url: https://github.com/IQVO/customer-ordering
+  description: >-
+    REST contract of the customer-ordering bounded context of the retail
+    network, derived from retail-network-docs model/model.yaml
+    (contexts[customer-ordering].rest) and adjusted by the final cross-context
+    decisions (contracts-delta E7, E9, E11 and Gap Register G7, G10, G12, G25).
+    It turns a shopper's cart into a customer order: checkout promises and
+    confirms every shipment group at delivery-promise before the order is
+    placed, the order carries the ship-to address (synthetic PII, held only
+    here), the tracking view is fed by events, and a customer cancellation is a
+    request that order-sourcing decides. One restricted in-organization route,
+    GET /orders/{orderId}/ship-to, is called only by shipping-and-tracking to
+    print a label and is the only route that returns the address. There is no
+    authentication anywhere in the network; "restricted" means the route is
+    not exposed through the storefront edge. Errors are RFC 9457 problem
+    details (application/problem+json) whose type is /problems/<slug>. The
+    shared problem types are not-found (404), illegal-transition (409),
+    concurrent-update (409) and validation-failed (422). Optional fields are
+    omitted when absent, never null.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Checkout
+    description: Turn a cart into a customer order, promising and confirming every shipment group (PlaceOrder).
+  - name: Orders
+    description: Read and cancel customer orders (GetOrder, GetTracking, CancelOrder).
+  - name: Ship-To
+    description: Restricted, in-organization read of the ship-to address for label printing (GetShipTo). Caller is shipping-and-tracking only.
+  - name: Shoppers
+    description: Register a synthetic shopper (RegisterShopper).
+  - name: Operations
+    description: Liveness and readiness probes.
+paths:
+  /checkout:
+    post:
+      tags: [Checkout]
+      operationId: placeOrder
+      summary: Place a customer order, promising and confirming every shipment group
+      description: >-
+        PlaceOrder. For each shipment group the service calls delivery-promise
+        MakePromise (POST /promises) with the offer the shopper saw and then
+        ConfirmPromise (POST /promises/{promiseId}:confirm) before anything is
+        stored. If an offer expired or was consumed, or a confirm fails, it
+        re-quotes (QuoteDeliveryOffers, POST /delivery-offers:quote) and answers
+        409 offer-not-quotable with the new offers; no order is placed. On
+        success the order is PLACED and CustomerOrderPlaced is published through
+        the outbox in the same transaction. The order id is derived from the
+        Idempotency-Key, so a retry after a timeout reuses the same promises.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '201':
+          description: Order placed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: >-
+            An offer expired or was consumed or a promise could not be confirmed
+            (offer-not-quotable, the body carries re-quoted offers), promise
+            capacity exhausted (promise-capacity-exhausted), book closed
+            (book-closed) or a concurrent update (concurrent-update).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/CheckoutConflictProblem'
+        '422':
+          description: >-
+            validation-failed, line-without-promise (ErrLineWithoutPromise),
+            promise-destination-mismatch (ErrPromiseDestinationMismatch) or
+            group-spans-nodes from delivery-promise.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: delivery-promise unreachable or timed out (delivery-promise-unavailable). Retry with the same Idempotency-Key.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /orders/{orderId}:
+    get:
+      tags: [Orders]
+      operationId: getOrder
+      summary: Get a customer order with its status and the promise per group
+      description: Returns the order without the ship-to address; the address is only on the restricted ship-to route.
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerOrder'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orders/{orderId}/tracking:
+    get:
+      tags: [Orders]
+      operationId: getOrderTracking
+      summary: Get the order's tracking view per shipment group and package
+      description: >-
+        Served from the event-fed read model OrderTrackingView (delivery-promise,
+        order-sourcing and shipping-and-tracking events) joined with the order's
+        groups. A package scanned before its label or shipment event arrived is
+        listed once the order is known.
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: The tracking view.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderTracking'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orders/{orderId}:cancel:
+    post:
+      tags: [Orders]
+      operationId: cancelOrder
+      summary: Request the cancellation of every group that is not yet locked
+      description: >-
+        CancelOrder is a request (G12, G25). Every group still PROMISED (no
+        node locked yet) moves to CANCELLATION_REQUESTED and
+        CustomerOrderCancelled is published through the outbox with those
+        groupNos; locked, shipped and delivered groups are untouched. order-sourcing
+        decides: FulfillmentCancelled makes the group CANCELLED (the order is
+        CANCELLED once every group is), FulfillmentCancelRefused returns the
+        group to fulfilment (the vendor ships; the shopper path becomes a
+        return). Refused with 409 cancel-after-lock (ErrCancelAfterLock) when no
+        group is unlocked. Repeating the request, or cancelling a CANCELLED order,
+        returns the order unchanged and publishes nothing.
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelOrderRequest'
+      responses:
+        '200':
+          description: The order after the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: cancel-after-lock (ErrCancelAfterLock), status-regression (ErrStatusRegression), or concurrent-update.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /orders/{orderId}/ship-to:
+    get:
+      tags: [Ship-To]
+      operationId: getShipTo
+      summary: Get the ship-to address of an order (restricted, label printing only)
+      description: >-
+        In-organization, restricted route for shipping-and-tracking (GetShipTo),
+        called when it issues a label. The only route that returns ship-to PII
+        (synthetic). Not exposed through the storefront edge.
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: The ship-to address (synthetic PII).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShipTo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /shoppers:
+    post:
+      tags: [Shoppers]
+      operationId: registerShopper
+      summary: Register a synthetic shopper
+      description: >-
+        RegisterShopper. The email is unique, compared case-insensitively;
+        a duplicate is refused with 409 shopper-exists (ErrShopperExists).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterShopperRequest'
+      responses:
+        '201':
+          description: Shopper registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shopper'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: shopper-exists (ErrShopperExists).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /healthz:
+    get:
+      tags: [Operations]
+      operationId: getHealth
+      summary: Liveness probe
+      description: Always 200 while the process runs; it checks no dependency.
+      responses:
+        '200':
+          description: Alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /readyz:
+    get:
+      tags: [Operations]
+      operationId: getReadiness
+      summary: Readiness probe
+      description: >-
+        200 when the drain gate is open, Postgres answers a ping and Kafka
+        answers a metadata request (an empty, non-nil topic list). Otherwise
+        503 with the problem type dependency-unavailable.
+      responses:
+        '200':
+          description: Ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: A dependency is down or the service is draining (dependency-unavailable).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  parameters:
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      description: The customer order id (aggregate root id, CloudEvents subject).
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-chosen key (route, key; 24 hour TTL); a replay with the same body returns the stored response.
+      schema:
+        type: string
+        maxLength: 200
+  responses:
+    BadRequest:
+      description: The request is not valid JSON, has an unknown field, a missing Idempotency-Key or contains a NUL character (invalid-request).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: No order with this id (not-found).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unprocessable:
+      description: The body is well-formed JSON but breaks a value-object rule (validation-failed), or the Idempotency-Key was reused with another request (idempotency-key-reused).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+    Problem:
+      type: object
+      description: RFC 9457 problem details. type is /problems/<slug>.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          example: /problems/cancel-after-lock
+        title:
+          type: string
+          example: Cancellation after lock
+        status:
+          type: integer
+          example: 409
+        detail:
+          type: string
+          example: Every shipment group is locked to a node; cancellation is now a return.
+        instance:
+          type: string
+          format: uri-reference
+    CheckoutConflictProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          properties:
+            requotedOffers:
+              type: array
+              description: Present for offer-not-quotable; the new offers to show before placing (CheckoutPromising). One per feasible tier of each failed group.
+              items:
+                $ref: '#/components/schemas/RequotedOffer'
+    RequotedOffer:
+      type: object
+      required: [groupNo, offerId, tier, deliverByEarliest, deliverByLatest, expiresAt]
+      properties:
+        groupNo:
+          type: integer
+          minimum: 1
+        offerId:
+          type: string
+        tier:
+          $ref: '#/components/schemas/Tier'
+        deliverByEarliest:
+          type: string
+          format: date-time
+        deliverByLatest:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    Tier:
+      type: string
+      enum: [SAME_DAY, NEXT_DAY, TWO_DAY, STANDARD]
+    OrderStatus:
+      type: string
+      enum: [PLACED, IN_FULFILLMENT, PARTIALLY_SHIPPED, SHIPPED, PARTIALLY_DELIVERED, DELIVERED, CANCELLED]
+    GroupStatus:
+      type: string
+      description: >-
+        PROMISED (no node locked), LOCKED (FulfillmentLocked), SHIPPED
+        (FulfillmentShipped), DELIVERED (every package delivered),
+        CANCELLATION_REQUESTED (CustomerOrderCancelled published, order-sourcing
+        has not answered), CANCELLED (FulfillmentCancelled or an unkeepable promise).
+      enum: [PROMISED, LOCKED, SHIPPED, DELIVERED, CANCELLATION_REQUESTED, CANCELLED]
+    ShipTo:
+      type: object
+      description: Synthetic PII. Returned only by GET /orders/{orderId}/ship-to; accepted on checkout and shopper registration.
+      required: [name, line1, city, region, postalCode, countryCode]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        line1:
+          type: string
+          maxLength: 100
+        line2:
+          type: string
+          maxLength: 100
+        city:
+          type: string
+          maxLength: 100
+        region:
+          type: string
+          maxLength: 100
+        postalCode:
+          type: string
+          maxLength: 20
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: ISO 3166-1 alpha-2, upper case.
+        phone:
+          type: string
+          maxLength: 40
+    OrderLine:
+      type: object
+      required: [lineNo, catalogItemId, quantity]
+      properties:
+        lineNo:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        catalogItemId:
+          type: string
+          maxLength: 64
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+    CheckoutGroup:
+      type: object
+      description: One shipment group and the delivery offer the shopper saw for it.
+      required: [groupNo, offerId, lineNos]
+      properties:
+        groupNo:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        offerId:
+          type: string
+          maxLength: 64
+        lineNos:
+          type: array
+          minItems: 1
+          items:
+            type: integer
+            minimum: 1
+    CheckoutRequest:
+      type: object
+      required: [shopperId, shipTo, lines, groups]
+      properties:
+        shopperId:
+          type: string
+        shipTo:
+          $ref: '#/components/schemas/ShipTo'
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OrderLine'
+        groups:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CheckoutGroup'
+    GroupPromise:
+      type: object
+      required: [groupNo, promiseId, tier, shipBy, deliverByEarliest, deliverByLatest, lineNos, status]
+      properties:
+        groupNo:
+          type: integer
+        promiseId:
+          type: string
+        tier:
+          $ref: '#/components/schemas/Tier'
+        shipBy:
+          type: string
+          format: date-time
+        deliverByEarliest:
+          type: string
+          format: date-time
+        deliverByLatest:
+          type: string
+          format: date-time
+        lineNos:
+          type: array
+          items:
+            type: integer
+        status:
+          $ref: '#/components/schemas/GroupStatus'
+        revisionNo:
+          type: integer
+          description: Latest applied PromiseRevised revision; absent until the first revision.
+        cancelReason:
+          type: string
+          description: The free-text reason of the cancellation request, or the reason a policy cancelled the group.
+        cancelRequestedAt:
+          type: string
+          format: date-time
+        cancelRefusedReason:
+          type: string
+          description: order-sourcing refused the cancellation (FulfillmentCancelRefused); the vendor ships and the shopper path is a return.
+    CustomerOrder:
+      type: object
+      description: The customer order without the ship-to address.
+      required: [orderId, shopperId, status, destinationPostalPrefix, placedAt, lines, groups]
+      properties:
+        orderId:
+          type: string
+        shopperId:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        destinationPostalPrefix:
+          type: string
+        placedAt:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+          description: Present once the order is CANCELLED.
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLine'
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupPromise'
+    CancelOrderRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          maxLength: 200
+          description: Free text; the model defines no code list.
+    TrackingPackage:
+      type: object
+      required: [trackingNumber]
+      properties:
+        trackingNumber:
+          type: string
+        carrier:
+          type: string
+        state:
+          type: string
+          description: The package journey state from PackageScanned (LABELLED .. DELIVERED, RETURNED, LOST) or VOIDED after LabelVoided.
+        lastScanNodeId:
+          type: string
+        lastScanAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          type: string
+          format: date-time
+        exceptionReason:
+          type: string
+          description: From PackageExceptionRaised.
+    TrackingGroup:
+      type: object
+      required: [groupNo, promiseId, status, deliverByEarliest, deliverByLatest, packages]
+      properties:
+        groupNo:
+          type: integer
+        promiseId:
+          type: string
+        status:
+          $ref: '#/components/schemas/GroupStatus'
+        deliverByEarliest:
+          type: string
+          format: date-time
+        deliverByLatest:
+          type: string
+          format: date-time
+        atRiskReason:
+          type: string
+          description: From PromiseAtRisk.
+        unsourceableReason:
+          type: string
+          description: From FulfillmentUnsourceable.
+        promiseVerdict:
+          type: string
+          enum: [KEPT, BROKEN]
+          description: From PromiseKept or PromiseBroken.
+        lateByMinutes:
+          type: integer
+        lockedAt:
+          type: string
+          format: date-time
+        shippedAt:
+          type: string
+          format: date-time
+        cancelRefusedReason:
+          type: string
+        packages:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackingPackage'
+    OrderTracking:
+      type: object
+      required: [orderId, status, groups]
+      properties:
+        orderId:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackingGroup'
+    RegisterShopperRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        savedAddresses:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ShipTo'
+    Shopper:
+      type: object
+      required: [shopperId, email, status, registeredAt]
+      properties:
+        shopperId:
+          type: string
+        email:
+          type: string
+          format: email
+        status:
+          type: string
+          enum: [ACTIVE]
+        registeredAt:
+          type: string
+          format: date-time
