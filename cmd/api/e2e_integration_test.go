@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,14 +94,20 @@ func boot(t *testing.T, env map[string]string) *service {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- run(ctx) }()
+	var (
+		stopOnce sync.Once
+		stopErr  error
+	)
 	s := &service{base: "http://" + addr, stop: func() error {
-		cancel()
-		select {
-		case err := <-done:
-			return err
-		case <-time.After(60 * time.Second):
-			return fmt.Errorf("the service did not stop")
-		}
+		stopOnce.Do(func() {
+			cancel()
+			select {
+			case stopErr = <-done:
+			case <-time.After(60 * time.Second):
+				stopErr = fmt.Errorf("the service did not stop")
+			}
+		})
+		return stopErr
 	}}
 	t.Cleanup(func() { _ = s.stop() })
 	eventually(t, 90*time.Second, "readyz to report ready", func() bool {
@@ -255,5 +262,33 @@ func TestTheShippedBinaryIsWiredEndToEnd(t *testing.T) {
 	svc = boot(t, env)
 	if got := svc.call(t, "GET", "/orders/"+orderID, "", ""); got.status != 200 || got.field(t, "status") != "PARTIALLY_DELIVERED" {
 		t.Fatalf("after restart = %d %s", got.status, got.body)
+	}
+
+	t.Run("readyz is 503 dependency-unavailable while kafka is down", func(t *testing.T) {
+		assertKafkaDownReadiness(t, svc)
+	})
+}
+
+// assertKafkaDownReadiness stops the real broker and checks the contract:
+// /readyz answers 503 dependency-unavailable, /healthz stays 200, a write is
+// still accepted (the outbox holds the event) and the service stops cleanly.
+func assertKafkaDownReadiness(t *testing.T, svc *service) {
+	t.Helper()
+	kafkatest.Stop(t)
+	eventually(t, 60*time.Second, "readyz to report 503", func() bool {
+		return svc.call(t, "GET", "/readyz", "", "").status == http.StatusServiceUnavailable
+	})
+	ready := svc.call(t, "GET", "/readyz", "", "")
+	if ready.status != http.StatusServiceUnavailable || !strings.Contains(ready.body, "dependency-unavailable") {
+		t.Fatalf("readyz = %d %s", ready.status, ready.body)
+	}
+	if health := svc.call(t, "GET", "/healthz", "", ""); health.status != http.StatusOK {
+		t.Fatalf("healthz = %d %s", health.status, health.body)
+	}
+	if write := svc.call(t, "POST", "/shoppers", "shopper-offline", `{"email":"bo@example.com"}`); write.status != http.StatusCreated {
+		t.Fatalf("write while kafka is down = %d %s", write.status, write.body)
+	}
+	if err := svc.stop(); err != nil && err != context.Canceled {
+		t.Fatalf("stop: %v", err)
 	}
 }

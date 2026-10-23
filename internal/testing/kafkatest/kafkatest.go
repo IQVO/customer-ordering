@@ -74,6 +74,19 @@ func CreateTopic(t *testing.T, topic string) {
 	t.Fatalf("topic %s never got a leader", topic)
 }
 
+// Stop terminates the broker mid-test (the readiness subtest). Shutdown after
+// it is a no-op.
+func Stop(t *testing.T) {
+	t.Helper()
+	if container == nil {
+		t.Fatal("kafkatest.Stop: the broker was never started")
+	}
+	if err := testcontainers.TerminateContainer(container); err != nil {
+		t.Fatalf("stop kafka container: %v", err)
+	}
+	container = nil
+}
+
 // Message is a consumed or produced Kafka message in neutral terms, so test
 // files need not touch the Kafka client themselves.
 type Message struct {
