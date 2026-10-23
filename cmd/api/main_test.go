@@ -160,7 +160,15 @@ func serveOnce(t *testing.T, ctx context.Context, consumers []*worker, relay *wo
 func TestServeUntilSignalShutsDownCleanlyWhenTheContextEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	consumer, relay := &worker{name: "c", done: make(chan struct{})}, &worker{name: "relay", done: make(chan struct{})}
-	go func() { time.Sleep(50 * time.Millisecond); close(consumer.done); close(relay.done); cancel() }()
+	// The workers stop only AFTER the context ends, as on a real shutdown; closing
+	// them first would look like a worker that died on its own.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+		time.Sleep(50 * time.Millisecond)
+		close(consumer.done)
+		close(relay.done)
+	}()
 	_, readiness, err := serveOnce(t, ctx, []*worker{consumer}, relay)
 	if err != nil || readiness.Ready() {
 		t.Fatalf("err = %v ready = %v (readiness must flip first)", err, readiness.Ready())

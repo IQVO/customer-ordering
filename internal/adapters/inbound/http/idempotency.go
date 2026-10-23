@@ -26,8 +26,8 @@ const maxKeyLength = 255
 // RequireIdempotencyKey is the Idempotency-Key middleware of the three POST
 // routes, one instance per route name. The first response below 500 for a
 // (route, key) is stored for 24 hours (idempotency.TTL) in the store; the same
-// key and request replays it, the same key with another request is 409
-// idempotency-key-conflict. A 5xx is never stored, so the key can retry the real
+// key and request replays it, the same key with another request is 422
+// idempotency-key-reused. A 5xx is never stored, so the key can retry the real
 // work. Two concurrent first requests may both run: every command is idempotent
 // by itself (the order id is derived from the key, cancel is a no-op the second
 // time), and the store keeps the first record.
@@ -83,7 +83,7 @@ func requestHash(r *http.Request, body []byte) string {
 
 func replay(w http.ResponseWriter, r *http.Request, rec idempotency.Record, hash string) {
 	if rec.RequestHash != hash {
-		writeProblem(w, r, idempotencyKeyConflict, "the Idempotency-Key was used with a different request")
+		writeProblem(w, r, idempotencyKeyReused, "the Idempotency-Key was used with a different request")
 		return
 	}
 	if rec.ContentType != "" {

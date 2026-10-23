@@ -88,7 +88,7 @@ func TestEveryTypedErrorHasItsStatus(t *testing.T) {
 		status int
 		slug   string
 	}{
-		{ports.ErrNotFound, 404, "order-not-found"},
+		{ports.ErrNotFound, 404, "not-found"},
 		{ports.ErrPromiseOfferNotQuotable, 409, "offer-not-quotable"},
 		{ports.ErrPromiseCapacityExhausted, 409, "promise-capacity-exhausted"},
 		{ports.ErrPromiseBookClosed, 409, "book-closed"},
@@ -96,6 +96,7 @@ func TestEveryTypedErrorHasItsStatus(t *testing.T) {
 		{ports.ErrPromiseGroupSpansNodes, 422, "group-spans-nodes"},
 		{customerorder.ErrLineWithoutPromise, 422, "line-without-promise"},
 		{customerorder.ErrPromiseDestinationMismatch, 422, "promise-destination-mismatch"},
+		{customerorder.ErrStatusRegression, 409, "status-regression"},
 		{customerorder.ErrCancelAfterLock, 409, "cancel-after-lock"},
 		{shopper.ErrShopperExists, 409, "shopper-exists"},
 		{ports.ErrConcurrentUpdate, 409, "concurrent-update"},

@@ -38,7 +38,7 @@ func TestCheckoutIsIdempotentOnTheKey(t *testing.T) {
 		t.Fatalf("%d promises made, want 2 (the replay must not call delivery-promise)", n)
 	}
 	other := e.do("POST", "/checkout", "same", strings.Replace(checkoutBody, "sku-100", "sku-101", 1))
-	if other.Status != 409 || other.json(t)["type"] != "/problems/idempotency-key-conflict" {
+	if other.Status != 422 || other.json(t)["type"] != "/problems/idempotency-key-reused" {
 		t.Fatalf("a different body under the same key = %d %s", other.Status, other.Body)
 	}
 	if again := e.checkout("another-key"); again.json(t)["orderId"] == first.json(t)["orderId"] {
@@ -122,7 +122,7 @@ func TestGetOrderAndTracking(t *testing.T) {
 	}
 	for _, p := range []string{"/orders/unknown", "/orders/unknown/tracking", "/orders/unknown/ship-to", "/orders/" + strings.Repeat("x", 65)} {
 		r := e.do("GET", p, "", "")
-		if r.Status != 404 || r.json(t)["type"] != "/problems/order-not-found" {
+		if r.Status != 404 || r.json(t)["type"] != "/problems/not-found" {
 			t.Fatalf("%s = %d %s", p, r.Status, r.Body)
 		}
 	}
@@ -160,7 +160,7 @@ func TestCancelOrder(t *testing.T) {
 		status     int
 		slug       string
 	}{
-		{"/orders/nope:cancel", `{"reason":"x"}`, 404, "order-not-found"},
+		{"/orders/nope:cancel", `{"reason":"x"}`, 404, "not-found"},
 		{"/orders/" + id + ":cancel", `{"reason":""}`, 422, "validation-failed"},
 		{"/orders/" + id + ":cancel", `{"reasn":"x"}`, 400, "malformed-request"},
 	} {

@@ -32,7 +32,7 @@ event-fed local read model; every consumer is idempotent on the CloudEvents id
 Topics: `retailnetwork.delivery-promise.events`, `retailnetwork.order-sourcing.events`,
 `retailnetwork.shipping-and-tracking.events`; one consumer group each
 (`DELIVERY_PROMISE_CONSUMER_GROUP`, `ORDER_SOURCING_CONSUMER_GROUP`,
-`SHIPPING_TRACKING_CONSUMER_GROUP`, all mandatory). The inbox table `processed_events`
+`SHIPPING_CONSUMER_GROUP`, all mandatory). The inbox table `processed_events`
 (event id primary key) is written in the same transaction as the effect.
 
 | Full type | Effect |
@@ -55,7 +55,7 @@ Topics: `retailnetwork.delivery-promise.events`, `retailnetwork.order-sourcing.e
 Decoding is tolerant: only the fields listed in `apis/asyncapi.yaml` are read, unknown
 fields and unknown types are ignored. A message that is not a valid CloudEvents
 event, or whose `data` cannot be decoded, goes to the dead-letter topic
-`retailnetwork.customer-ordering.dlq` with the failure in headers (A7 lists the errors
+`<consumed topic>.dlq` (for example `retailnetwork.order-sourcing.events.dlq`) with the failure in headers (A7 lists the errors
 that are recorded and skipped instead).
 
 ### Local read models

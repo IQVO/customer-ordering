@@ -74,8 +74,7 @@ paths:
             An offer expired or was consumed or a promise could not be confirmed
             (offer-not-quotable, the body carries re-quoted offers), promise
             capacity exhausted (promise-capacity-exhausted), book closed
-            (book-closed), the Idempotency-Key was reused with another body
-            (idempotency-key-conflict) or a concurrent update (concurrent-update).
+            (book-closed) or a concurrent update (concurrent-update).
           content:
             application/problem+json:
               schema:
@@ -170,7 +169,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: cancel-after-lock (ErrCancelAfterLock), status-regression (ErrStatusRegression), concurrent-update or idempotency-key-conflict.
+          description: cancel-after-lock (ErrCancelAfterLock), status-regression (ErrStatusRegression), or concurrent-update.
           content:
             application/problem+json:
               schema:
@@ -223,7 +222,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
-          description: shopper-exists (ErrShopperExists) or idempotency-key-conflict.
+          description: shopper-exists (ErrShopperExists).
           content:
             application/problem+json:
               schema:
@@ -296,7 +295,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Unprocessable:
-      description: The body is well-formed JSON but breaks a value-object rule (validation-failed).
+      description: The body is well-formed JSON but breaks a value-object rule (validation-failed), or the Idempotency-Key was reused with another request (idempotency-key-reused).
       content:
         application/problem+json:
           schema:
