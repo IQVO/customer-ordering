@@ -195,3 +195,24 @@ func manyTNs(n int) []string {
 	}
 	return out
 }
+
+func TestLoadedVersionTracksWhatIsStored(t *testing.T) {
+	o := mustPlace(t, twoGroups())
+	if o.LoadedVersion() != 0 || o.Version() != 1 {
+		t.Fatalf("a new order is at version 1 and was never stored: loaded %d version %d", o.LoadedVersion(), o.Version())
+	}
+	o.MarkPersisted()
+	if o.LoadedVersion() != 1 {
+		t.Fatalf("loaded = %d after MarkPersisted", o.LoadedVersion())
+	}
+	mustNil(t, o.MarkInFulfillment(1, "as-1", "fc-1", at(10)))
+	mustNil(t, o.MarkGroupShipped(1, []string{"TRK-1"}, at(20)))
+	if o.Version() != 3 || o.LoadedVersion() != 1 {
+		t.Fatalf("two commands move the version, not the loaded one: %d %d", o.Version(), o.LoadedVersion())
+	}
+	back, err := Restore(o.Snapshot())
+	mustNil(t, err)
+	if back.LoadedVersion() != 3 || back.Version() != 3 {
+		t.Fatalf("a restored order was loaded at its version: %d %d", back.LoadedVersion(), back.Version())
+	}
+}

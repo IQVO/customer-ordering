@@ -311,6 +311,7 @@ func TestUpdateGroupPromiseRevisionRules(t *testing.T) {
 		t.Fatal("unknown promise found")
 	}
 	assertErr(t, o.UpdateGroupPromise("nope", 9, at(1), at(2), at(1), ""), ErrUnknownGroup)
+	assertErr(t, o.UpdateGroupPromise("nope", 0, zeroTime, zeroTime, zeroTime, ""), ErrUnknownGroup) // unknown wins over invalid
 }
 
 func TestUpdateGroupPromiseRejects(t *testing.T) {

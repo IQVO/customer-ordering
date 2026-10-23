@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
 )
@@ -135,9 +134,6 @@ func clean(s string) string {
 		}
 		return r
 	}, s)
-	s = strings.TrimSpace(s)
-	if utf8.RuneCountInString(s) > MaxReason {
-		s = strings.TrimSpace(string([]rune(s)[:MaxReason]))
-	}
-	return s
+	runes := []rune(strings.TrimSpace(s))
+	return strings.TrimSpace(string(runes[:min(len(runes), MaxReason)]))
 }

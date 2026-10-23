@@ -24,7 +24,7 @@ func Restore(s Snapshot) (*CustomerOrder, error) {
 	return &CustomerOrder{
 		id: s.ID, shopperID: s.ShopperID, shipTo: s.ShipTo, prefix: s.DestinationPostalPrefix, status: s.Status,
 		placedAt: shared.UTC(s.PlacedAt), cancelledAt: shared.UTC(s.CancelledAt), lines: append([]OrderLine{}, s.Lines...),
-		groups: groups, version: s.Version,
+		groups: groups, version: s.Version, loaded: s.Version,
 	}, nil
 }
 

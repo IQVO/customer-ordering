@@ -173,6 +173,7 @@ type CustomerOrder struct {
 	lines       []OrderLine
 	groups      []GroupPromise
 	version     int64
+	loaded      int64
 }
 
 // Snapshot is the persisted form of an order. Restore validates it.
@@ -210,8 +211,19 @@ func (o *CustomerOrder) PlacedAt() time.Time { return o.placedAt }
 // CancelledAt returns when the order became CANCELLED (zero before).
 func (o *CustomerOrder) CancelledAt() time.Time { return o.cancelledAt }
 
-// Version returns the aggregate version.
+// Version returns the aggregate version: it grows by one for every command
+// that changed the order.
 func (o *CustomerOrder) Version() int64 { return o.version }
+
+// LoadedVersion returns the version the order had when it was loaded from the
+// repository, 0 for an order that was never stored. A repository saves under
+// the rule "stored version == LoadedVersion" (several commands may run between
+// a load and a save, ADR 0002).
+func (o *CustomerOrder) LoadedVersion() int64 { return o.loaded }
+
+// MarkPersisted records that the current version is stored. Repositories call
+// it after a successful Save.
+func (o *CustomerOrder) MarkPersisted() { o.loaded = o.version }
 
 // Lines returns a copy of the order lines.
 func (o *CustomerOrder) Lines() []OrderLine { return append([]OrderLine{}, o.lines...) }

@@ -5,7 +5,6 @@ package shipto
 
 import (
 	"strings"
-	"unicode"
 
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
 )
@@ -79,7 +78,7 @@ func validCountry(c string) bool {
 func Normalize(postalCode string) string {
 	var b strings.Builder
 	for _, r := range strings.ToUpper(postalCode) {
-		if r < unicode.MaxASCII && (unicode.IsDigit(r) || unicode.IsLetter(r)) {
+		if r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
 			b.WriteRune(r)
 		}
 	}
@@ -91,10 +90,7 @@ func Normalize(postalCode string) string {
 // validated ShipTo.
 func (s ShipTo) DestinationPrefix() string {
 	n := Normalize(s.PostalCode)
-	if len(n) < PrefixLength {
-		return n
-	}
-	return n[:PrefixLength]
+	return n[:min(len(n), PrefixLength)]
 }
 
 // PrefixMatches reports whether prefix (a delivery-promise destination) is a

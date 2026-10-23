@@ -146,15 +146,15 @@ func (o *CustomerOrder) MarkGroupDelivered(groupNo int, trackingNumber string, d
 // the group state. A revision no newer than the stored one is a no-op; a
 // CANCELLED or DELIVERED group is illegal (A8).
 func (o *CustomerOrder) UpdateGroupPromise(promiseID string, revisionNo int, earliest, latest, shipBy time.Time, nodeID string) error {
+	i := o.indexByPromise(promiseID)
+	if i < 0 {
+		return wrapUnknownGroup("order %s has no group with promise %q", o.id, promiseID)
+	}
 	if revisionNo < 1 || revisionNo > MaxNumber || earliest.IsZero() || latest.IsZero() || latest.Before(earliest) || shipBy.IsZero() {
 		return shared.Invalid("a revision needs revisionNo >= 1, shipBy and a window with earliest <= latest")
 	}
 	if nodeID != "" && !shared.ValidID(nodeID) {
 		return shared.Invalid("nodeId %q is not a valid id", nodeID)
-	}
-	i := o.indexByPromise(promiseID)
-	if i < 0 {
-		return wrapUnknownGroup("order %s has no group with promise %q", o.id, promiseID)
 	}
 	g := &o.groups[i]
 	if g.Status == GroupCancelled || g.Status == GroupDelivered {
