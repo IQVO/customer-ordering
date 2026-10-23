@@ -11,6 +11,7 @@ import (
 	"time"
 
 	httpadapter "github.com/claudioed/customer-ordering/internal/adapters/inbound/http"
+	"github.com/claudioed/customer-ordering/internal/adapters/outbound/ids"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/memory"
 	"github.com/claudioed/customer-ordering/internal/application/promising"
 	"github.com/claudioed/customer-ordering/internal/application/usecases"
@@ -49,7 +50,7 @@ func newEnv(t *testing.T) *env {
 	api := &httpadapter.Server{
 		PlaceOrder: usecases.PlaceOrder{Deps: deps}, GetOrder: usecases.GetOrder{Deps: deps}, GetOrderTracking: usecases.GetOrderTracking{Deps: deps},
 		CancelOrder: usecases.CancelOrder{Deps: deps}, GetShipTo: usecases.GetShipTo{Deps: deps}, RegisterShopper: usecases.RegisterShopper{Deps: deps},
-		IdempotencyStore: s.Idempotency(), Clock: deps.Clock,
+		IdempotencyStore: s.Idempotency(), Clock: deps.Clock, IDs: ids.Generator{},
 	}
 	srv := httptest.NewServer(httpadapter.NewRouter(api))
 	t.Cleanup(srv.Close)

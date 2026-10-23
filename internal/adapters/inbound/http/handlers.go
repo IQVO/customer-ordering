@@ -5,25 +5,14 @@ import (
 	"net/url"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/usecases"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
 )
 
-// orderIDNamespace is the fixed UUID v5 namespace of the order ids derived from
-// an Idempotency-Key (ADR 0002, A13). Never change it: a retried checkout must
-// land on the same order.
-var orderIDNamespace = uuid.MustParse("6f1c1d1e-7a5b-5c7e-9b0a-3d2f4c1b8a90")
-
 // maxOrderIDLength bounds a path identifier; a longer one cannot name an order.
 const maxOrderIDLength = 64
-
-// orderIDFromKey derives the order id of a checkout from its Idempotency-Key.
-func orderIDFromKey(key string) customerorder.ID {
-	return customerorder.ID(uuid.NewSHA1(orderIDNamespace, []byte(key)).String())
-}
 
 // orderIDParam returns the {orderId} path parameter, or false after writing 404
 // for one that can never name an order.
@@ -51,7 +40,7 @@ func (s *Server) handlePlaceOrder(w http.ResponseWriter, r *http.Request) {
 		groups[i] = usecases.CheckoutGroup(g)
 	}
 	view, err := s.PlaceOrder.Execute(r.Context(), usecases.PlaceOrderInput{
-		OrderID: orderIDFromKey(r.Header.Get(IdempotencyKeyHeader)), ShopperID: req.ShopperID, ShipTo: req.ShipTo.domain(), Lines: req.lines(), Groups: groups,
+		OrderID: s.IDs.OrderIDFor(r.Header.Get(IdempotencyKeyHeader)), ShopperID: req.ShopperID, ShipTo: req.ShipTo.domain(), Lines: req.lines(), Groups: groups,
 	})
 	if err != nil {
 		writeError(w, r, err)

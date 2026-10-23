@@ -36,6 +36,8 @@ type Server struct {
 	// three POST routes.
 	IdempotencyStore ports.IdempotencyStore
 	Clock            ports.Clock
+	// IDs derives the order id of a checkout from its Idempotency-Key.
+	IDs ports.IDGenerator
 	// Readiness backs GET /readyz; nil means always ready (unit tests).
 	Readiness *Readiness
 }
