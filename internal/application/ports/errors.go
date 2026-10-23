@@ -31,6 +31,7 @@ var (
 	ErrPromiseUnavailable = errors.New("delivery-promise unavailable")
 	// ErrPromiseNotCancellable: delivery-promise refused the compensating
 	// cancel (404 not-found, or 409 illegal-transition because the promise is
-	// KEPT or BROKEN). Checkout logs it and goes on (ADR 0002, A14).
+	// not CONFIRMED or AT_RISK: PROVISIONAL, KEPT, BROKEN or RELEASED).
+	// Checkout logs it and goes on (ADR 0002, A14).
 	ErrPromiseNotCancellable = errors.New("promise not cancellable")
 )

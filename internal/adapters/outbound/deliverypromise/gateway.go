@@ -141,7 +141,8 @@ func (g *Gateway) ConfirmPromise(ctx context.Context, promiseID, orderID string,
 // CancelPromise implements ports.PromiseGateway: POST /promises/{id}:cancel
 // with no body and the Idempotency-Key "<orderId>:<groupNo>:cancel". 200 (also
 // for a promise that is already CANCELLED) is success; 404 not-found and 409
-// illegal-transition (KEPT or BROKEN) are ports.ErrPromiseNotCancellable.
+// illegal-transition (not CONFIRMED or AT_RISK: PROVISIONAL, KEPT, BROKEN,
+// RELEASED) are ports.ErrPromiseNotCancellable.
 func (g *Gateway) CancelPromise(ctx context.Context, promiseID, orderID string, groupNo int) error {
 	key := fmt.Sprintf("%s:%d:cancel", orderID, groupNo)
 	err := g.post(ctx, "/promises/"+url.PathEscape(promiseID)+":cancel", key, nil, nil)

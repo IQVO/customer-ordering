@@ -124,7 +124,8 @@ type PromiseGateway interface {
 	// CancelPromise releases the hold of a promise (compensation of a
 	// checkout whose later confirm failed, ADR 0002 A14). Idempotent: a repeat
 	// on a CANCELLED promise succeeds. ErrPromiseNotCancellable when the
-	// promise is unknown or already KEPT or BROKEN.
+	// promise is unknown or is not CONFIRMED or AT_RISK (PROVISIONAL, KEPT,
+	// BROKEN, RELEASED).
 	CancelPromise(ctx context.Context, promiseID, orderID string, groupNo int) error
 }
 

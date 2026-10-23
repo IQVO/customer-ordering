@@ -188,6 +188,14 @@ func (u PlaceOrder) compensate(ctx context.Context, orderID customerorder.ID, co
 	ctx = context.WithoutCancel(ctx)
 	for _, g := range confirmed {
 		err := u.Promises.CancelPromise(ctx, g.PromiseID, string(orderID), g.GroupNo)
+		if errors.Is(err, ports.ErrPromiseNotCancellable) {
+			// delivery-promise cancels CONFIRMED (or AT_RISK) promises only: a
+			// PROVISIONAL one (the confirm never applied) lapses by itself, and a
+			// KEPT, BROKEN or RELEASED one is closed. Nothing is left to release.
+			u.logger().WarnContext(ctx, "compensating cancel refused by delivery-promise; nothing to release",
+				"orderId", string(orderID), "groupNo", g.GroupNo, "promiseId", g.PromiseID, "error", err.Error())
+			continue
+		}
 		if err != nil {
 			u.logger().ErrorContext(ctx, "compensating cancel of a confirmed promise failed; the hold stays at delivery-promise",
 				"orderId", string(orderID), "groupNo", g.GroupNo, "promiseId", g.PromiseID, "error", err.Error())

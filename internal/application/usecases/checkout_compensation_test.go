@@ -110,3 +110,20 @@ func TestACheckoutThatSucceedsCancelsNothing(t *testing.T) {
 	}
 	assertCancelled(t, f.gw.Cancelled())
 }
+
+func TestARefusedCancelIsALowKeyWarningNotAnError(t *testing.T) {
+	f := newFx(t)
+	var logs bytes.Buffer
+	f.deps.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	f.gw.ConfirmErr["p-2"] = ports.ErrPromiseUnavailable
+	f.gw.CancelErr["p-2"] = ports.ErrPromiseNotCancellable // the confirm never applied: the promise is still PROVISIONAL
+	_, err := usecases.PlaceOrder{Deps: f.deps}.Execute(bg(), checkout("order-1"))
+	if !errorsIs(err, ports.ErrPromiseUnavailable) {
+		t.Fatalf("err = %v", err)
+	}
+	assertCancelled(t, f.gw.Cancelled(), cancelCall("p-1", 1), cancelCall("p-2", 2))
+	out := logs.String()
+	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "nothing to release") || strings.Contains(out, "level=ERROR") {
+		t.Fatalf("a refused cancel is a warning, never an error: %s", out)
+	}
+}
