@@ -26,19 +26,21 @@ Pure Go: no I/O, the clock and the ids are passed in, every aggregate has
 **CustomerOrder** (root `orderId`)
 
 - Order states: `PLACED`, `IN_FULFILLMENT`, `PARTIALLY_SHIPPED`, `SHIPPED`,
-  `PARTIALLY_DELIVERED` (G25), `DELIVERED`, `CANCELLED`.
+  `PARTIALLY_DELIVERED` (G25), `DELIVERED`, `LOST`, `RETURNED` (A19, A23), `CANCELLED`.
 - Group states (per `GroupPromise`, G25): `PROMISED` (no node locked: the group is
-  "unlocked"), `LOCKED`, `SHIPPED`, `DELIVERED`, `CANCELLATION_REQUESTED`,
-  `CANCELLED`.
+  "unlocked"), `LOCKED`, `SHIPPED`, `DELIVERED`, `LOST`, `RETURNED` (terminal, A19),
+  `CANCELLATION_REQUESTED`, `CANCELLED`.
 - Value objects: `ShipTo{name, line1, line2, city, region, postalCode,
   countryCode, phone}` (synthetic PII), `OrderLine{lineNo, catalogItemId,
   quantity}`, `GroupPromise{groupNo, promiseId, tier, witnessNodeId, shipBy,
   deliverByEarliest, deliverByLatest, lineNos[], status, revisionNo, assignmentId,
   nodeId, lockedAt, shippedAt, trackingNumbers[], deliveredTrackingNumbers[],
-  deliveredAt, cancelRequestedAt, cancelledAt, cancelRefusedReason}`.
+  deliveredAt, outcomeTrackingNumber, lostAt, returnedAt, cancelRequestedAt, cancelledAt,
+  cancelRefusedReason}`.
 - Commands: `PlaceOrder`, `MarkInFulfillment` (`FulfillmentLocked`),
   `MarkGroupShipped` (`FulfillmentShipped`), `MarkGroupDelivered`
-  (`PackageDelivered`), `CancelOrder` (REST, and `CancelUnkeepableGroup` for the
+  (`PackageDelivered`), `MarkGroupLost` / `MarkGroupReturned` (`PackageLost`,
+  `PackageReturned`, A19), `CancelOrder` (REST, and `CancelUnkeepableGroup` for the
   policy `CancelOnUnfulfillable`), `ConfirmGroupCancelled` and
   `RefuseGroupCancellation` (`FulfillmentCancelled`, `FulfillmentCancelRefused`),
   `UpdateGroupPromise` (`PromiseRevised`).
@@ -52,16 +54,23 @@ groups that are not `CANCELLED`:
 | remaining groups | status |
 |---|---|
 | none (all `CANCELLED`) | `CANCELLED` |
-| all `DELIVERED` | `DELIVERED` |
-| some `DELIVERED` | `PARTIALLY_DELIVERED` |
-| all `SHIPPED` | `SHIPPED` |
-| some `SHIPPED` | `PARTIALLY_SHIPPED` |
+| every group closed (`DELIVERED`, `LOST` or `RETURNED`): all `DELIVERED` | `DELIVERED` |
+| every group closed, some `DELIVERED` | `PARTIALLY_DELIVERED` |
+| every group closed, none `DELIVERED`, some `LOST` | `LOST` |
+| every group closed, none `DELIVERED`, none `LOST` | `RETURNED` |
+| (some group still open) some `DELIVERED` | `PARTIALLY_DELIVERED` |
+| every group `SHIPPED`, `LOST` or `RETURNED` | `SHIPPED` |
+| some group `SHIPPED`, `LOST` or `RETURNED` | `PARTIALLY_SHIPPED` |
 | some `LOCKED` | `IN_FULFILLMENT` |
 | otherwise | `PLACED` |
 
+Rows are read top to bottom, first match wins. A `LOST` or `RETURNED` group did ship,
+so beside open groups it counts as shipped progress (A23).
+
 A derived status that ranks below the current one is refused with
 `ErrStatusRegression`. Ranks: PLACED 0, IN_FULFILLMENT 1, PARTIALLY_SHIPPED 2,
-SHIPPED 3, PARTIALLY_DELIVERED 4, DELIVERED 5. `CANCELLED` is terminal and is reached
+SHIPPED 3, PARTIALLY_DELIVERED 4, DELIVERED 5; `LOST` and `RETURNED` are terminal
+like `DELIVERED` (nothing follows them). `CANCELLED` is terminal and is reached
 when every group is `CANCELLED`. A group can only be cancelled while unlocked, so an
 order with a locked, shipped or delivered group is never CANCELLED. PLACED -> CANCELLED
 is therefore the only reachable cancellation; the model transition
@@ -69,8 +78,10 @@ IN_FULFILLMENT -> CANCELLED stays legal in the table but cannot occur (G25 notes
 was unreachable; the per-group cancellation above replaces it).
 
 Group states move forward only: PROMISED 0, LOCKED 1, SHIPPED 2, DELIVERED 3;
+`LOST` and `RETURNED` are entered from SHIPPED only (A19).
 `CANCELLATION_REQUESTED` is entered from PROMISED only and leaves to `CANCELLED`
-(confirmed) or back to LOCKED (refused); `CANCELLED` and `DELIVERED` are terminal.
+(confirmed) or back to LOCKED (refused); `CANCELLED`, `DELIVERED`, `LOST` and
+`RETURNED` are terminal.
 
 Invariants (all in the domain, table-tested):
 
@@ -115,7 +126,7 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
   event is recorded and skipped.
 - **A6** `FulfillmentUnsourceable`, `PromiseAtRisk`, `PromiseKept`, `PromiseBroken`,
   `LabelIssued`, `LabelVoided`, `PackageScanned` and `PackageExceptionRaised` change
-  no aggregate: they feed the read model `OrderTrackingView` only (ADR 0003).
+  no aggregate (`PackageLost` and `PackageReturned` do: A19): they feed the read model `OrderTrackingView` only (ADR 0003).
 - **A7** Consumers: an unknown order, `ErrStatusRegression`, `ErrIllegalTransition`
   and an unknown group are recorded in the inbox and skipped ("a status-regressing
   event is recorded and skipped"); `ErrConcurrentUpdate` is retried in-process up to
@@ -176,9 +187,29 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
   to what Postgres stores (`timestamptz`, microseconds).
 - **A18** Ship-to is never returned by `GET /orders/{orderId}`, never logged and never
   put in an event; it is stored in the `customer_orders` row.
-- **A19** `PackageLost` / `PackageReturned` are not consumed: the journey state
-  (`LOST`, `RETURNED`) arrives on `PackageScanned.state` and returns/refunds are out of
-  this context.
+- **A19 (final)** Accepted. `PackageLost` and `PackageReturned` (shipping-and-tracking
+  `journey`, same topic and consumer group as the other package events; `data` is
+  `{trackingNumber, orderId, declaredAt | returnedAt}`) are consumed. They name a
+  package, not a group: the group is the one whose `FulfillmentShipped` announced the
+  tracking number. `SHIPPED` -> `LOST` / `RETURNED` (`MarkGroupLost`,
+  `MarkGroupReturned`), terminal, with `outcomeTrackingNumber` and `lostAt` /
+  `returnedAt`. One lost or returned package closes the whole group (the promise is
+  per group; delivery-promise judges it BROKEN on the same event); the packages
+  already delivered stay recorded. A repeat of the same outcome is a no-op (and the
+  inbox makes the same event id a no-op anyway); a different outcome after the first,
+  a delivery, a promise revision, a lock, a shipment or a cancel confirmation for a
+  `LOST` / `RETURNED` group, and a loss for a `DELIVERED`, `CANCELLED` or not yet
+  shipped group are recorded and skipped (A7). A package already reported delivered
+  cannot be lost. If the tracking number is not announced yet (cross-topic reordering,
+  like A21) the outcome is stored on the tracking package row (`outcome`,
+  `outcomeAt`; state `LOST` / `RETURNED`, a later scan never overwrites it) and replayed,
+  oldest first and after the early deliveries, when `FulfillmentShipped` is applied.
+  Decoding is tolerant (unknown fields ignored, a missing instant falls back to the
+  event time); a missing `trackingNumber` or `orderId` is a poison message (DLQ).
+  The tracking view shows the group status, `lostAt` / `returnedAt`,
+  `outcomePackage` and the package state. Returns and refunds stay outside this context.
+  Model sentence: *a package declared lost or returned closes its shipment group as
+  LOST or RETURNED, and the order status is derived from its groups.*
 - **A20** Group numbers are positive integers chosen by the storefront; line numbers
   likewise; both unique within the order.
 - **A21** A `PackageDelivered` for a group that is not yet `SHIPPED` (cross-topic
@@ -186,11 +217,28 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
   `FulfillmentShipped` is applied.
 - **A22** Wire types: ids strings, instants RFC 3339 UTC, enums UPPER_SNAKE, optional
   fields omitted (`apis/asyncapi.yaml`).
+- **A23 (final)** Order status with LOST / RETURNED groups (derivation table above).
+  The order enum gains `LOST` and `RETURNED` (REST `OrderStatus`, group `GroupStatus`,
+  database checks: migration `0002`). `CANCELLED` groups do not count. While any
+  counted group is open (`PROMISED`, `LOCKED`, `SHIPPED`, `CANCELLATION_REQUESTED`) the
+  order is never `LOST` / `RETURNED`; a lost or returned group is shipped progress
+  there (`SHIPPED` / `PARTIALLY_SHIPPED`) and a delivered group still gives
+  `PARTIALLY_DELIVERED`. Once every counted group is closed: all delivered
+  `DELIVERED`; some delivered `PARTIALLY_DELIVERED` (terminal, the groups say which
+  were lost or returned); none delivered `LOST` if any group is lost, else `RETURNED`
+  (a loss outranks a return). Examples, tested in `TestDeriveStatus`: `[LOST]` ->
+  `LOST`; `[RETURNED, RETURNED]` -> `RETURNED`; `[RETURNED, LOST]` -> `LOST`;
+  `[DELIVERED, LOST]` -> `PARTIALLY_DELIVERED`; `[LOST, SHIPPED]` -> `SHIPPED`;
+  `[LOST, LOCKED]` -> `PARTIALLY_SHIPPED`; `[CANCELLED, RETURNED]` -> `RETURNED`.
+  `CancelOrder` on a `LOST` or `RETURNED` order is `ErrStatusRegression`, like on a
+  `DELIVERED` one. The enum change is additive for REST clients and is a model gap:
+  retail-network-docs `OrderStatus` / `GroupStatus` need the two values.
 
 ## Consequences
 
 - The status derivation is one pure function; every consumed event is a command with
   a table of legal and illegal transitions.
 - `model_gaps` for the orchestrator: A11 (destination on the promise), A12 (confirm
-  body), A14 (resolved by the cancel route; the residual risk above), and the model's `GroupPromise` /
+  body), A14 (resolved by the cancel route; the residual risk above), A19 and A23 (LOST /
+  RETURNED are new group and order states, absent from the model's `OrderStatus`), and the model's `GroupPromise` /
   `OrderStatus` back-fill (A1, A2, A3).

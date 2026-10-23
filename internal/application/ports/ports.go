@@ -67,6 +67,14 @@ type TrackingRepository interface {
 	ApplyException(ctx context.Context, e readmodel.Exception) error
 	// ApplyVoid marks a LABELLED (or unscanned) package VOIDED.
 	ApplyVoid(ctx context.Context, trackingNumber string) error
+	// ApplyOutcome records PackageLost or PackageReturned on the package row,
+	// creating it: the first outcome wins, the package state becomes the
+	// outcome unless the package was reported delivered, and a later scan
+	// no longer changes the state.
+	ApplyOutcome(ctx context.Context, o readmodel.Outcome) error
+	// OutcomePackages returns the packages of the group that have an outcome,
+	// ordered by instant then tracking number.
+	OutcomePackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Outcome, error)
 	// DeliveredPackages returns the packages of the group reported delivered.
 	DeliveredPackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Delivery, error)
 	// PatchGroupSignal sets the non-nil fields of the group's signal row.

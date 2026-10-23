@@ -192,6 +192,22 @@ func OutboxRowState(t *testing.T, pool *pgxpool.Pool, id int64) (attempts int, l
 	return attempts, lastErr, published
 }
 
+// EventProcessed reports whether the consumer inbox of the database at dsn has
+// claimed the CloudEvents id (a consumed event was applied or skipped).
+func EventProcessed(t *testing.T, dsn, eventID string) bool {
+	t.Helper()
+	pool, err := postgres.NewPool(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+	var n int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM processed_events WHERE event_id = $1`, eventID).Scan(&n); err != nil {
+		t.Fatalf("read the inbox: %v", err)
+	}
+	return n > 0
+}
+
 // Shutdown terminates the shared container; call it from TestMain.
 func Shutdown() {
 	if container != nil {

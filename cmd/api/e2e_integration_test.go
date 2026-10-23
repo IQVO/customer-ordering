@@ -208,7 +208,7 @@ func TestTheShippedBinaryIsWiredEndToEnd(t *testing.T) {
 	}
 
 	// CustomerOrderPlaced reaches Kafka as a CloudEvent, without the address.
-	msgs := kafkatest.ReadN(t, topicEvents, 1, 60*time.Second)
+	msgs := kafkatest.ReadKeyed(t, topicEvents, orderID, 1, 60*time.Second)
 	if msgs[0].Key != orderID || !strings.Contains(string(msgs[0].Value), "customerorder.CustomerOrderPlaced") || strings.Contains(string(msgs[0].Value), "Sample Street") {
 		t.Fatalf("event = %s key %q", msgs[0].Value, msgs[0].Key)
 	}
@@ -250,9 +250,9 @@ func TestTheShippedBinaryIsWiredEndToEnd(t *testing.T) {
 	if cancelled := svc.call(t, "POST", "/orders/"+secondID+":cancel", "cancel-2", `{"reason":"changed my mind"}`); cancelled.status != 200 {
 		t.Fatalf("cancel = %d %s", cancelled.status, cancelled.body)
 	}
-	msgs = kafkatest.ReadN(t, topicEvents, 3, 60*time.Second)
-	if msgs[1].Key != secondID || !strings.Contains(string(msgs[2].Value), "CustomerOrderCancelled") || msgs[2].Key != secondID {
-		t.Fatalf("events = %s | %s", msgs[1].Value, msgs[2].Value)
+	msgs = kafkatest.ReadKeyed(t, topicEvents, secondID, 2, 60*time.Second)
+	if !strings.Contains(string(msgs[0].Value), "CustomerOrderPlaced") || !strings.Contains(string(msgs[1].Value), "CustomerOrderCancelled") {
+		t.Fatalf("events = %s | %s", msgs[0].Value, msgs[1].Value)
 	}
 
 	// A restart keeps everything: the state lives in Postgres.

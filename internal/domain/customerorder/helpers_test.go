@@ -88,6 +88,15 @@ func forceState(g *GroupPromise, s GroupStatus) {
 		g.AssignmentID, g.NodeID, g.LockedAt, g.ShippedAt, g.DeliveredAt = "as-"+string(rune('0'+g.GroupNo)), "fc-aus-1", at(10), at(20), at(30)
 		g.TrackingNumbers = []string{"TRK-" + string(rune('0'+g.GroupNo))}
 		g.DeliveredTrackingNumbers = append([]string{}, g.TrackingNumbers...)
+	case GroupLost, GroupReturned:
+		g.AssignmentID, g.NodeID, g.LockedAt, g.ShippedAt = "as-"+string(rune('0'+g.GroupNo)), "fc-aus-1", at(10), at(20)
+		g.TrackingNumbers = []string{"TRK-" + string(rune('0'+g.GroupNo))}
+		g.OutcomeTrackingNumber = g.TrackingNumbers[0]
+		if s == GroupLost {
+			g.LostAt = at(30)
+		} else {
+			g.ReturnedAt = at(30)
+		}
 	case GroupCancellationRequested:
 		g.CancelReason, g.CancelRequestedAt = "changed my mind", at(5)
 	case GroupCancelled:
@@ -137,3 +146,5 @@ func mustNil(t *testing.T, err error) {
 func isValidation(err error) bool { return errors.Is(err, shared.ErrValidation) }
 
 func errorsIs(err, target error) bool { return errors.Is(err, target) }
+
+var sharedIllegal = shared.ErrIllegalTransition

@@ -3,9 +3,10 @@
 // group and the customer-facing status.
 //
 // Order states: PLACED, IN_FULFILLMENT, PARTIALLY_SHIPPED, SHIPPED,
-// PARTIALLY_DELIVERED, DELIVERED, CANCELLED. The order status is derived from
-// the group states (derive in status.go, ADR 0002 A1); group states are
-// PROMISED, LOCKED, SHIPPED, DELIVERED, CANCELLATION_REQUESTED, CANCELLED.
+// PARTIALLY_DELIVERED, DELIVERED, LOST, RETURNED, CANCELLED. The order status
+// is derived from the group states (derive in status.go, ADR 0002 A1 and
+// A23); group states are PROMISED, LOCKED, SHIPPED, DELIVERED, LOST, RETURNED,
+// CANCELLATION_REQUESTED, CANCELLED.
 //
 // Invariants: every line is in exactly one group and every group has a promise
 // (ErrLineWithoutPromise); the promise destination matches the ship-to
@@ -67,14 +68,16 @@ const (
 	StatusShipped            Status = "SHIPPED"
 	StatusPartiallyDelivered Status = "PARTIALLY_DELIVERED"
 	StatusDelivered          Status = "DELIVERED"
+	StatusLost               Status = "LOST"
+	StatusReturned           Status = "RETURNED"
 	StatusCancelled          Status = "CANCELLED"
 )
 
-// Valid reports whether s is one of the seven order states.
+// Valid reports whether s is one of the nine order states.
 func (s Status) Valid() bool {
 	switch s {
 	case StatusPlaced, StatusInFulfillment, StatusPartiallyShipped, StatusShipped,
-		StatusPartiallyDelivered, StatusDelivered, StatusCancelled:
+		StatusPartiallyDelivered, StatusDelivered, StatusLost, StatusReturned, StatusCancelled:
 		return true
 	}
 	return false
@@ -89,14 +92,16 @@ const (
 	GroupLocked                GroupStatus = "LOCKED"
 	GroupShipped               GroupStatus = "SHIPPED"
 	GroupDelivered             GroupStatus = "DELIVERED"
+	GroupLost                  GroupStatus = "LOST"
+	GroupReturned              GroupStatus = "RETURNED"
 	GroupCancellationRequested GroupStatus = "CANCELLATION_REQUESTED"
 	GroupCancelled             GroupStatus = "CANCELLED"
 )
 
-// Valid reports whether s is one of the six group states.
+// Valid reports whether s is one of the eight group states.
 func (s GroupStatus) Valid() bool {
 	switch s {
-	case GroupPromised, GroupLocked, GroupShipped, GroupDelivered, GroupCancellationRequested, GroupCancelled:
+	case GroupPromised, GroupLocked, GroupShipped, GroupDelivered, GroupLost, GroupReturned, GroupCancellationRequested, GroupCancelled:
 		return true
 	}
 	return false
@@ -148,10 +153,28 @@ type GroupPromise struct {
 	DeliveredTrackingNumbers []string
 	DeliveredAt              time.Time
 
+	// OutcomeTrackingNumber is the package PackageLost or PackageReturned
+	// named; LostAt and ReturnedAt are the instants of the group's terminal
+	// outcome (ADR 0002, A19). All three are empty unless the group is LOST
+	// or RETURNED.
+	OutcomeTrackingNumber string
+	LostAt                time.Time
+	ReturnedAt            time.Time
+
 	CancelReason        string
 	CancelRequestedAt   time.Time
 	CancelledAt         time.Time
 	CancelRefusedReason string
+}
+
+// closedWithoutDelivery reports a LOST or RETURNED group (terminal, A19).
+func (g GroupPromise) closedWithoutDelivery() bool {
+	return g.Status == GroupLost || g.Status == GroupReturned
+}
+
+// terminal reports a group no command can change any more.
+func (g GroupPromise) terminal() bool {
+	return g.Status == GroupCancelled || g.Status == GroupDelivered || g.closedWithoutDelivery()
 }
 
 func (g GroupPromise) clone() GroupPromise {

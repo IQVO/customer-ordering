@@ -12,6 +12,9 @@ func TestSnapshotRestoreRoundTripsEveryReachableState(t *testing.T) {
 	orders := map[string]*CustomerOrder{
 		"placed":      mustPlace(t, twoGroups()),
 		"every state": orderWith(t, GroupPromised, GroupLocked, GroupShipped, GroupDelivered, GroupCancellationRequested, GroupCancelled),
+		"lost":        orderWith(t, GroupLost),
+		"returned":    orderWith(t, GroupReturned, GroupDelivered),
+		"mixed":       orderWith(t, GroupLost, GroupShipped, GroupReturned, GroupCancelled),
 		"cancelled":   orderWith(t, GroupCancelled, GroupCancelled),
 		"delivered":   orderWith(t, GroupDelivered),
 	}
@@ -131,6 +134,19 @@ func TestRestoreRejectsCorruptGroupStates(t *testing.T) {
 		"requested with ship":    {[]GroupStatus{GroupCancellationRequested}, func(g *GroupPromise) { g.ShippedAt = at(1) }},
 		"cancelled without at":   {[]GroupStatus{GroupCancelled, GroupPromised}, func(g *GroupPromise) { g.CancelledAt = zeroTime }},
 		"cancelled with shipped": {[]GroupStatus{GroupCancelled, GroupPromised}, func(g *GroupPromise) { g.ShippedAt = at(1) }},
+		"lost without lostAt":    {[]GroupStatus{GroupLost}, func(g *GroupPromise) { g.LostAt = zeroTime }},
+		"lost with returnedAt":   {[]GroupStatus{GroupLost}, func(g *GroupPromise) { g.ReturnedAt = at(1) }},
+		"returned with lostAt":   {[]GroupStatus{GroupReturned}, func(g *GroupPromise) { g.LostAt = at(1) }},
+		"lost without ship":      {[]GroupStatus{GroupLost}, func(g *GroupPromise) { g.ShippedAt = zeroTime }},
+		"lost with cancel":       {[]GroupStatus{GroupLost}, func(g *GroupPromise) { g.CancelledAt = at(1) }},
+		"lost without package":   {[]GroupStatus{GroupLost}, func(g *GroupPromise) { g.OutcomeTrackingNumber = "" }},
+		"lost unannounced":       {[]GroupStatus{GroupLost}, func(g *GroupPromise) { g.OutcomeTrackingNumber = "TRK-other" }},
+		"lost but delivered": {[]GroupStatus{GroupLost}, func(g *GroupPromise) {
+			g.DeliveredTrackingNumbers, g.DeliveredAt = []string{g.OutcomeTrackingNumber}, at(1)
+		}},
+		"shipped with lostAt":       {[]GroupStatus{GroupShipped}, func(g *GroupPromise) { g.LostAt = at(1) }},
+		"promised with a lost tn":   {[]GroupStatus{GroupPromised}, func(g *GroupPromise) { g.OutcomeTrackingNumber = "TRK-1" }},
+		"delivered with returnedAt": {[]GroupStatus{GroupDelivered}, func(g *GroupPromise) { g.ReturnedAt = at(1) }},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -47,6 +47,22 @@ type Exception struct {
 	At             time.Time
 }
 
+// The terminal package outcomes (PackageLost, PackageReturned), also the state
+// the tracking view shows for the package.
+const (
+	OutcomeLost     = "LOST"
+	OutcomeReturned = "RETURNED"
+)
+
+// Outcome is the effect of PackageLost or PackageReturned: Kind is
+// OutcomeLost or OutcomeReturned and At is declaredAt or returnedAt.
+type Outcome struct {
+	TrackingNumber string
+	OrderID        string
+	Kind           string
+	At             time.Time
+}
+
 // Package is one tracked package of an order, as the tracking view shows it.
 // Optional fields are empty or zero when unknown.
 type Package struct {
@@ -60,6 +76,10 @@ type Package struct {
 	LastScanAt      time.Time
 	DeliveredAt     time.Time
 	ExceptionReason string
+	// Outcome is OutcomeLost or OutcomeReturned once PackageLost or
+	// PackageReturned was applied (first one wins), with its instant.
+	Outcome   string
+	OutcomeAt time.Time
 }
 
 // GroupSignalPatch sets the signal fields that are non-nil for one group.

@@ -1,8 +1,14 @@
 package http_test
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/claudioed/customer-ordering/internal/adapters/outbound/memory"
+	"github.com/claudioed/customer-ordering/internal/application/usecases"
 )
 
 func TestCheckoutCreatesTheOrderAndNeverReturnsTheAddress(t *testing.T) {
@@ -212,5 +218,39 @@ func TestHealthAndReadiness(t *testing.T) {
 		if r := e.do("GET", p, "", ""); r.Status != 200 {
 			t.Fatalf("%s = %d", p, r.Status)
 		}
+	}
+}
+
+func TestTrackingShowsALostAndAReturnedGroup(t *testing.T) {
+	e := newEnv(t)
+	id := e.placed()
+	s := e.store
+	c := usecases.Consumer{Deps: usecases.Deps{
+		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
+		Promises: e.gw, Clock: memory.NewClock(t0), IDs: &memory.SequentialIDs{},
+	}}
+	ctx := context.Background()
+	for i, tn := range []string{"TRK-1", "TRK-2"} {
+		m := usecases.Meta{EventID: fmt.Sprintf("ship-%d", i), Type: "Shipped", At: t0}
+		if err := c.ApplyFulfillmentShipped(ctx, m, usecases.FulfillmentShipped{OrderID: id, GroupNo: i + 1, TrackingNumbers: []string{tn}, ShippedAt: t0}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.ApplyPackageLost(ctx, usecases.Meta{EventID: "lost", Type: "Lost", At: t0}, usecases.PackageLost{TrackingNumber: "TRK-1", OrderID: id, DeclaredAt: t0.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ApplyPackageReturned(ctx, usecases.Meta{EventID: "ret", Type: "Returned", At: t0}, usecases.PackageReturned{TrackingNumber: "TRK-2", OrderID: id, ReturnedAt: t0.Add(2 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	tr := e.do("GET", "/orders/"+id+"/tracking", "", "")
+	body := tr.json(t)
+	groups := body["groups"].([]any)
+	g1, g2 := groups[0].(map[string]any), groups[1].(map[string]any)
+	if tr.Status != 200 || body["status"] != "LOST" || g1["status"] != "LOST" || g1["lostAt"] != "2026-10-23T11:00:00Z" || g1["outcomePackage"] != "TRK-1" ||
+		g1["returnedAt"] != nil || g2["status"] != "RETURNED" || g2["returnedAt"] != "2026-10-23T12:00:00Z" || g2["lostAt"] != nil {
+		t.Fatalf("tracking = %d %s", tr.Status, tr.Body)
+	}
+	if o := e.do("GET", "/orders/"+id, "", "").json(t); o["status"] != "LOST" {
+		t.Fatalf("order = %v", o)
 	}
 }

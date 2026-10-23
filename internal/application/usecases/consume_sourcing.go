@@ -85,9 +85,10 @@ func quiet(fn func(o *customerorder.CustomerOrder) error) func(o *customerorder.
 	return func(o *customerorder.CustomerOrder) ([]shared.Event, error) { return nil, fn(o) }
 }
 
-// reconcileDeliveries replays the deliveries reported for the group before
-// its shipment was known (A21).
-func (c Consumer) reconcileDeliveries(ctx context.Context, o *customerorder.CustomerOrder, groupNo int) error {
+// reconcile replays what shipping-and-tracking reported for the group's
+// packages before its shipment was known: the deliveries (A21), then the
+// losses and returns (A19).
+func (c Consumer) reconcile(ctx context.Context, o *customerorder.CustomerOrder, groupNo int) error {
 	delivered, err := c.Tracking.DeliveredPackages(ctx, string(o.ID()), groupNo)
 	if err != nil {
 		return err
@@ -97,7 +98,7 @@ func (c Consumer) reconcileDeliveries(ctx context.Context, o *customerorder.Cust
 			return err
 		}
 	}
-	return nil
+	return c.reconcileOutcomes(ctx, o, groupNo)
 }
 
 // FulfillmentLocked is the consumed order-sourcing event of the same name.
@@ -121,7 +122,7 @@ func (c Consumer) ApplyFulfillmentLocked(ctx context.Context, m Meta, in Fulfill
 			if err := o.MarkInFulfillment(in.GroupNo, in.AssignmentID, in.NodeID, orElse(in.LockedAt, c.when(m))); err != nil {
 				return err
 			}
-			return c.reconcileDeliveries(ctx, o, in.GroupNo)
+			return c.reconcile(ctx, o, in.GroupNo)
 		}))
 	})
 }
@@ -145,7 +146,7 @@ func (c Consumer) ApplyFulfillmentShipped(ctx context.Context, m Meta, in Fulfil
 			if err := o.MarkGroupShipped(in.GroupNo, in.TrackingNumbers, orElse(in.ShippedAt, c.when(m))); err != nil {
 				return err
 			}
-			return c.reconcileDeliveries(ctx, o, in.GroupNo)
+			return c.reconcile(ctx, o, in.GroupNo)
 		}))
 	})
 }

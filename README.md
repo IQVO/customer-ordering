@@ -51,7 +51,7 @@ Contract: [`apis/asyncapi.yaml`](apis/asyncapi.yaml), catalogue in [ADR 0004](do
   Delivery is at-least-once with a stable event id (transactional outbox).
 - **Consumed**: delivery-promise `PromiseAtRisk`, `PromiseRevised`, `PromiseKept`, `PromiseBroken`, `PromiseUnkeepable`; order-sourcing `FulfillmentLocked`,
   `FulfillmentShipped`, `FulfillmentUnsourceable`, `FulfillmentCancelled`, `FulfillmentCancelRefused`; shipping-and-tracking `LabelIssued`, `LabelVoided`,
-  `PackageScanned`, `PackageDelivered`, `PackageExceptionRaised`. Idempotent on the CloudEvents id, dispatched on the full type, bad messages go to `<topic>.dlq`.
+  `PackageScanned`, `PackageDelivered`, `PackageExceptionRaised`, `PackageLost`, `PackageReturned` (the last two close the group: LOST / RETURNED, ADR 0002 A19). Idempotent on the CloudEvents id, dispatched on the full type, bad messages go to `<topic>.dlq`.
 - **Synchronous calls**: delivery-promise `POST /delivery-offers:quote`, `POST /promises`, `POST /promises/{promiseId}:confirm`, and the compensating `POST /promises/{promiseId}:cancel` (only after a later confirm failed).
 
 ## Run it

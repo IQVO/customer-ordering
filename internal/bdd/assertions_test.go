@@ -12,6 +12,7 @@ import (
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/kafka"
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/usecases"
+	"github.com/claudioed/customer-ordering/internal/application/views"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
 	"github.com/claudioed/customer-ordering/internal/domain/shopper"
@@ -269,6 +270,7 @@ func registerCallAssertions(sc *godog.ScenarioContext, w *world) {
 }
 
 func registerTrackingAssertions(sc *godog.ScenarioContext, w *world) {
+	registerOutcomeAssertion(sc, w)
 	sc.Step(`^the tracking of group (\d+) shows the verdict "([^"]*)" late by (\d+) minutes$`, func(n int, verdict string, minutes int) error {
 		v, err := usecases.GetOrderTracking{Deps: w.deps}.Execute(context.Background(), customerorder.ID(w.orderID))
 		if err != nil {
@@ -284,4 +286,35 @@ func registerTrackingAssertions(sc *godog.ScenarioContext, w *world) {
 		}
 		return fmt.Errorf("no group %d in the tracking", n)
 	})
+}
+
+func registerOutcomeAssertion(sc *godog.ScenarioContext, w *world) {
+	sc.Step(`^the tracking of group (\d+) is "([^"]*)" because of package "([^"]*)" and shows the package as "([^"]*)"$`, func(n int, status, tn, state string) error {
+		v, err := usecases.GetOrderTracking{Deps: w.deps}.Execute(context.Background(), customerorder.ID(w.orderID))
+		if err != nil {
+			return err
+		}
+		for _, g := range v.Groups {
+			if g.GroupNo == n {
+				return checkOutcomeTracking(g, status, tn, state)
+			}
+		}
+		return fmt.Errorf("no group %d in the tracking", n)
+	})
+}
+
+func checkOutcomeTracking(g views.TrackingGroup, status, tn, state string) error {
+	closedAt := g.LostAt
+	if status == "RETURNED" {
+		closedAt = g.ReturnedAt
+	}
+	if g.Status != status || g.OutcomePackage != tn || closedAt.IsZero() {
+		return fmt.Errorf("group %d tracking = %+v", g.GroupNo, g)
+	}
+	for _, p := range g.Packages {
+		if p.TrackingNumber == tn && p.State == state {
+			return nil
+		}
+	}
+	return fmt.Errorf("group %d shows no package %s in state %s: %+v", g.GroupNo, tn, state, g.Packages)
 }

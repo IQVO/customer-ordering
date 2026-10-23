@@ -109,7 +109,7 @@ func (r *TrackingRepository) ApplyScan(ctx context.Context, s readmodel.Scan) er
 	p := r.row(s.TrackingNumber)
 	if !s.At.Before(p.LastScanAt) {
 		p.LastScanAt, p.LastScanNodeID = shared.UTC(s.At), s.NodeID
-		if s.State != "" {
+		if s.State != "" && p.Outcome == "" {
 			p.State = s.State
 		}
 	}
@@ -125,6 +125,40 @@ func (r *TrackingRepository) ApplyDelivery(ctx context.Context, d readmodel.Deli
 	p.DeliveredAt, p.LastScanAt, p.State = later(p.DeliveredAt, at), later(p.LastScanAt, at), "DELIVERED"
 	r.s.packages[d.TrackingNumber] = r.identify(p, d.AssignmentID, d.OrderID)
 	return nil
+}
+
+// ApplyOutcome implements ports.TrackingRepository.
+func (r *TrackingRepository) ApplyOutcome(ctx context.Context, o readmodel.Outcome) error {
+	defer r.s.enter(ctx)()
+	p := r.row(o.TrackingNumber)
+	at := shared.UTC(o.At)
+	if p.Outcome == "" {
+		if p.State != "DELIVERED" {
+			p.State = o.Kind
+		}
+		p.Outcome, p.OutcomeAt = o.Kind, at
+	}
+	p.LastScanAt = later(p.LastScanAt, at)
+	r.s.packages[o.TrackingNumber] = r.identify(p, "", o.OrderID)
+	return nil
+}
+
+// OutcomePackages implements ports.TrackingRepository.
+func (r *TrackingRepository) OutcomePackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Outcome, error) {
+	defer r.s.enter(ctx)()
+	out := []readmodel.Outcome{}
+	for _, p := range r.s.packages {
+		if p.OrderID == orderID && p.GroupNo == groupNo && p.Outcome != "" {
+			out = append(out, readmodel.Outcome{TrackingNumber: p.TrackingNumber, OrderID: orderID, Kind: p.Outcome, At: p.OutcomeAt})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].At.Equal(out[j].At) {
+			return out[i].At.Before(out[j].At)
+		}
+		return out[i].TrackingNumber < out[j].TrackingNumber
+	})
+	return out, nil
 }
 
 // ApplyException implements ports.TrackingRepository.

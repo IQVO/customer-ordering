@@ -129,3 +129,73 @@ func groupOf(o *customerorder.CustomerOrder, in PackageDelivered) (int, bool) {
 	}
 	return o.GroupNoByAssignment(in.AssignmentID)
 }
+
+// PackageLost is the consumed shipping-and-tracking event of the same name.
+type PackageLost struct {
+	TrackingNumber string
+	OrderID        string
+	DeclaredAt     time.Time
+}
+
+// ApplyPackageLost records the outcome on the package row and runs
+// MarkGroupLost for the group that announced the package (A19). A loss for a
+// package whose shipment is not known yet stays on the row and is replayed
+// when FulfillmentShipped arrives.
+func (c Consumer) ApplyPackageLost(ctx context.Context, m Meta, in PackageLost) error {
+	return c.handle(ctx, m, func(ctx context.Context) error {
+		at := orElse(in.DeclaredAt, c.when(m))
+		return c.applyOutcome(ctx, readmodel.Outcome{TrackingNumber: in.TrackingNumber, OrderID: in.OrderID, Kind: readmodel.OutcomeLost, At: at})
+	})
+}
+
+// PackageReturned is the consumed shipping-and-tracking event of the same name.
+type PackageReturned struct {
+	TrackingNumber string
+	OrderID        string
+	ReturnedAt     time.Time
+}
+
+// ApplyPackageReturned records the outcome on the package row and runs
+// MarkGroupReturned for the group that announced the package (A19).
+func (c Consumer) ApplyPackageReturned(ctx context.Context, m Meta, in PackageReturned) error {
+	return c.handle(ctx, m, func(ctx context.Context) error {
+		at := orElse(in.ReturnedAt, c.when(m))
+		return c.applyOutcome(ctx, readmodel.Outcome{TrackingNumber: in.TrackingNumber, OrderID: in.OrderID, Kind: readmodel.OutcomeReturned, At: at})
+	})
+}
+
+func (c Consumer) applyOutcome(ctx context.Context, out readmodel.Outcome) error {
+	if err := c.Tracking.ApplyOutcome(ctx, out); err != nil {
+		return err
+	}
+	return c.mutate(ctx, out.OrderID, quiet(func(o *customerorder.CustomerOrder) error {
+		n, ok := o.GroupNoByTrackingNumber(out.TrackingNumber)
+		if !ok {
+			return nil // the shipment is not known yet: replayed by reconcile
+		}
+		return markOutcome(o, n, out)
+	}))
+}
+
+func markOutcome(o *customerorder.CustomerOrder, groupNo int, out readmodel.Outcome) error {
+	if out.Kind == readmodel.OutcomeLost {
+		return o.MarkGroupLost(groupNo, out.TrackingNumber, out.At)
+	}
+	return o.MarkGroupReturned(groupNo, out.TrackingNumber, out.At)
+}
+
+// reconcileOutcomes replays the outcomes reported for the group's packages
+// before its shipment was known (A19). An outcome the group can no longer take
+// (it was delivered first, or another outcome came first) is skipped.
+func (c Consumer) reconcileOutcomes(ctx context.Context, o *customerorder.CustomerOrder, groupNo int) error {
+	outcomes, err := c.Tracking.OutcomePackages(ctx, string(o.ID()), groupNo)
+	if err != nil {
+		return err
+	}
+	for _, out := range outcomes {
+		if err := markOutcome(o, groupNo, out); err != nil && !skippable(err) {
+			return err
+		}
+	}
+	return nil
+}

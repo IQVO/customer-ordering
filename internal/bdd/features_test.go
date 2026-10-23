@@ -193,6 +193,16 @@ func registerFulfilment(sc *godog.ScenarioContext, w *world) {
 			TrackingNumber: tn, OrderID: w.orderID, DeliveredAt: t0.Add(3 * time.Hour),
 		})
 	})
+	sc.Step(`^shipping-and-tracking declares package "([^"]*)" lost$`, func(tn string) error {
+		return w.consumer().ApplyPackageLost(context.Background(), w.meta("PackageLost"), usecases.PackageLost{
+			TrackingNumber: tn, OrderID: w.orderID, DeclaredAt: t0.Add(4 * time.Hour),
+		})
+	})
+	sc.Step(`^shipping-and-tracking returns package "([^"]*)" to the sender$`, func(tn string) error {
+		return w.consumer().ApplyPackageReturned(context.Background(), w.meta("PackageReturned"), usecases.PackageReturned{
+			TrackingNumber: tn, OrderID: w.orderID, ReturnedAt: t0.Add(5 * time.Hour),
+		})
+	})
 	sc.Step(`^delivery-promise revises the promise of group 1 one day later$`, func() error {
 		return w.consumer().ApplyPromiseRevised(context.Background(), w.meta("PromiseRevised"), usecases.PromiseRevised{
 			PromiseID: "p-1", OrderID: w.orderID, RevisionNo: 1, DeliverByEarliest: t0.Add(44 * time.Hour), DeliverByLatest: t0.Add(54 * time.Hour),

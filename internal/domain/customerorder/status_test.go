@@ -4,6 +4,7 @@ import "testing"
 
 func TestDeriveStatus(t *testing.T) {
 	P, L, S, D, R, C := GroupPromised, GroupLocked, GroupShipped, GroupDelivered, GroupCancellationRequested, GroupCancelled
+	X, B := GroupLost, GroupReturned // lost, returned back
 	cases := []struct {
 		name   string
 		groups []GroupStatus
@@ -25,6 +26,22 @@ func TestDeriveStatus(t *testing.T) {
 		{"cancelled ones do not count: promised", []GroupStatus{C, P}, StatusPlaced},
 		{"cancelled ones do not count: locked", []GroupStatus{L, C}, StatusInFulfillment},
 		{"requested beside shipped", []GroupStatus{R, S}, StatusPartiallyShipped},
+		// A23: LOST and RETURNED groups are closed without a delivery.
+		{"the only group lost", []GroupStatus{X}, StatusLost},
+		{"the only group returned", []GroupStatus{B}, StatusReturned},
+		{"all groups lost", []GroupStatus{X, X}, StatusLost},
+		{"all groups returned", []GroupStatus{B, B}, StatusReturned},
+		{"lost and returned: lost wins", []GroupStatus{B, X}, StatusLost},
+		{"delivered and lost is closed with a delivery", []GroupStatus{D, X}, StatusPartiallyDelivered},
+		{"delivered and returned is closed with a delivery", []GroupStatus{B, D}, StatusPartiallyDelivered},
+		{"delivered, lost and returned", []GroupStatus{D, X, B}, StatusPartiallyDelivered},
+		{"lost beside a shipped group stays shipped", []GroupStatus{X, S}, StatusShipped},
+		{"returned beside a shipped group stays shipped", []GroupStatus{S, B}, StatusShipped},
+		{"lost beside a locked group is partially shipped", []GroupStatus{X, L}, StatusPartiallyShipped},
+		{"returned beside a promised group is partially shipped", []GroupStatus{B, P}, StatusPartiallyShipped},
+		{"lost beside a delivered and an open group is partially delivered", []GroupStatus{X, D, S}, StatusPartiallyDelivered},
+		{"cancelled groups do not count: lost", []GroupStatus{C, X}, StatusLost},
+		{"cancelled groups do not count: returned and delivered", []GroupStatus{B, C, D}, StatusPartiallyDelivered},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -45,7 +62,12 @@ func TestStatusAndEnumValidity(t *testing.T) {
 			t.Errorf("%s must be valid", s)
 		}
 	}
-	if Status("LOST").Valid() || Status("").Valid() {
+	for _, s := range []Status{StatusLost, StatusReturned} {
+		if !s.Valid() {
+			t.Errorf("%s must be valid", s)
+		}
+	}
+	if Status("LOSTISH").Valid() || Status("").Valid() {
 		t.Error("unknown order status accepted")
 	}
 	for _, s := range []GroupStatus{GroupPromised, GroupLocked, GroupShipped, GroupDelivered, GroupCancellationRequested, GroupCancelled} {
@@ -53,7 +75,12 @@ func TestStatusAndEnumValidity(t *testing.T) {
 			t.Errorf("%s must be valid", s)
 		}
 	}
-	if GroupStatus("LOST").Valid() {
+	for _, s := range []GroupStatus{GroupLost, GroupReturned} {
+		if !s.Valid() {
+			t.Errorf("%s must be valid", s)
+		}
+	}
+	if GroupStatus("MISPLACED").Valid() {
 		t.Error("unknown group status accepted")
 	}
 	for _, tr := range []Tier{TierSameDay, TierNextDay, TierTwoDay, TierStandard} {

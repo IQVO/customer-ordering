@@ -39,6 +39,7 @@ func testOrders(t *testing.T, e Env) {
 			t.Fatalf("round trip changed the order:\n got %+v\nwant %+v", got.Snapshot(), o.Snapshot())
 		}
 	})
+	t.Run("a lost and a returned group round-trip with their facts", func(t *testing.T) { ordersLostAndReturnedRoundTrip(t, e) })
 	t.Run("a cancelled order keeps cancelledAt", func(t *testing.T) {
 		o := newOrder(t, "order-cancelled")
 		must(t, e.Orders.Save(bg(), o))
@@ -119,4 +120,23 @@ func testShoppers(t *testing.T, e Env) {
 		must(t, e.Shoppers.Save(bg(), newShopper(t, "shopper-c", "c@example.com")))
 		wantErr(t, e.Shoppers.Save(bg(), newShopper(t, "shopper-c", "c2@example.com")), ports.ErrConcurrentUpdate)
 	})
+}
+
+func ordersLostAndReturnedRoundTrip(t *testing.T, e Env) {
+	o := newOrder(t, "order-outcomes")
+	mustSave := func() { must(t, e.Orders.Save(bg(), o)) }
+	mustSave()
+	must(t, o.MarkGroupShipped(1, []string{"TRK-1", "TRK-2"}, at(20)))
+	must(t, o.MarkGroupShipped(2, []string{"TRK-3"}, at(21)))
+	must(t, o.MarkGroupLost(1, "TRK-2", at(30)))
+	must(t, o.MarkGroupReturned(2, "TRK-3", at(31)))
+	mustSave()
+	got, err := e.Orders.Get(bg(), "order-outcomes")
+	must(t, err)
+	if !reflect.DeepEqual(got.Snapshot(), o.Snapshot()) || got.Status() != customerorder.StatusLost {
+		t.Fatalf("round trip changed the order (status %s):\n got %+v\nwant %+v", got.Status(), got.Snapshot(), o.Snapshot())
+	}
+	if g := got.Groups(); g[0].LostAt.IsZero() || g[0].OutcomeTrackingNumber != "TRK-2" || g[1].ReturnedAt.IsZero() {
+		t.Fatalf("outcome facts lost: %+v", g)
+	}
 }

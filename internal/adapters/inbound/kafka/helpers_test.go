@@ -136,6 +136,28 @@ func (w *world) sourcing() *kafkaconsumer.Consumer {
 	}
 }
 
+func (w *world) shipping() *kafkaconsumer.Consumer {
+	return &kafkaconsumer.Consumer{
+		Name: "shipping-and-tracking", Topic: kafkaconsumer.ShippingAndTrackingTopic, Handlers: kafkaconsumer.ShippingAndTrackingHandlers(w.consumer()),
+		Logger: testLogger(), Retry: fastRetry, DLQ: &fakeDLQWriter{}, DeadLetterInvalid: true,
+	}
+}
+
+func (w *world) groupStatus(t *testing.T, groupNo int) string {
+	t.Helper()
+	o, err := w.store.Orders().Get(context.Background(), orderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range o.Groups() {
+		if g.GroupNo == groupNo {
+			return string(g.Status)
+		}
+	}
+	t.Fatalf("no group %d", groupNo)
+	return ""
+}
+
 func (w *world) status(t *testing.T) string {
 	t.Helper()
 	o, err := w.store.Orders().Get(context.Background(), orderID)

@@ -7,7 +7,7 @@ import (
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
 )
 
-var allGroupStates = []GroupStatus{GroupPromised, GroupLocked, GroupShipped, GroupDelivered, GroupCancellationRequested, GroupCancelled}
+var allGroupStates = []GroupStatus{GroupPromised, GroupLocked, GroupShipped, GroupDelivered, GroupLost, GroupReturned, GroupCancellationRequested, GroupCancelled}
 
 func TestMarkInFulfillmentByGroupState(t *testing.T) {
 	cases := []struct {
@@ -20,6 +20,8 @@ func TestMarkInFulfillmentByGroupState(t *testing.T) {
 		{GroupLocked, GroupLocked, nil, false},
 		{GroupShipped, GroupShipped, ErrStatusRegression, false},
 		{GroupDelivered, GroupDelivered, ErrStatusRegression, false},
+		{GroupLost, GroupLost, ErrStatusRegression, false},
+		{GroupReturned, GroupReturned, ErrStatusRegression, false},
 		{GroupCancellationRequested, GroupCancellationRequested, nil, true},
 		{GroupCancelled, GroupCancelled, shared.ErrIllegalTransition, false},
 	}
@@ -94,6 +96,8 @@ func TestMarkGroupShippedByGroupState(t *testing.T) {
 		{GroupCancellationRequested, GroupShipped, nil, true},
 		{GroupShipped, GroupShipped, nil, false},
 		{GroupDelivered, GroupDelivered, ErrStatusRegression, false},
+		{GroupLost, GroupLost, ErrStatusRegression, false},
+		{GroupReturned, GroupReturned, ErrStatusRegression, false},
 		{GroupCancelled, GroupCancelled, shared.ErrIllegalTransition, false},
 	}
 	for _, c := range cases {
@@ -185,6 +189,8 @@ func TestMarkGroupDeliveredByGroupState(t *testing.T) {
 		{GroupCancellationRequested, GroupCancellationRequested, nil},
 		{GroupShipped, GroupDelivered, nil},
 		{GroupDelivered, GroupDelivered, nil},
+		{GroupLost, GroupLost, shared.ErrIllegalTransition},
+		{GroupReturned, GroupReturned, shared.ErrIllegalTransition},
 		{GroupCancelled, GroupCancelled, shared.ErrIllegalTransition},
 	}
 	for _, c := range cases {
@@ -268,6 +274,7 @@ func TestUpdateGroupPromiseByGroupState(t *testing.T) {
 	}{
 		{GroupPromised, nil}, {GroupLocked, nil}, {GroupShipped, nil}, {GroupCancellationRequested, nil},
 		{GroupDelivered, shared.ErrIllegalTransition}, {GroupCancelled, shared.ErrIllegalTransition},
+		{GroupLost, shared.ErrIllegalTransition}, {GroupReturned, shared.ErrIllegalTransition},
 	}
 	for _, c := range cases {
 		t.Run(string(c.from), func(t *testing.T) {
@@ -335,7 +342,7 @@ func TestUpdateGroupPromiseRejects(t *testing.T) {
 }
 
 func TestEveryGroupStateIsCoveredByTheTables(t *testing.T) {
-	if len(allGroupStates) != 6 {
+	if len(allGroupStates) != 8 {
 		t.Fatal("update the by-state tables when a group state is added")
 	}
 }

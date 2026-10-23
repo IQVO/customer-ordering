@@ -93,6 +93,9 @@ func TestCancelOrderOutcomes(t *testing.T) {
 		{"partially delivered, rest locked", []GroupStatus{GroupDelivered, GroupLocked}, ErrCancelAfterLock, 0, 0},
 		{"delivered order", []GroupStatus{GroupDelivered}, ErrStatusRegression, 0, 0},
 		{"delivered order beside cancelled", []GroupStatus{GroupDelivered, GroupCancelled}, ErrStatusRegression, 0, 0},
+		{"lost order", []GroupStatus{GroupLost}, ErrStatusRegression, 0, 0},
+		{"returned order", []GroupStatus{GroupReturned, GroupLost}, ErrStatusRegression, 0, 0},
+		{"closed with a delivery stays cancel-after-lock", []GroupStatus{GroupDelivered, GroupLost}, ErrCancelAfterLock, 0, 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -143,7 +146,7 @@ func TestCancelUnkeepableGroup(t *testing.T) {
 }
 
 func TestCancelUnkeepableGroupRefusals(t *testing.T) {
-	for _, s := range []GroupStatus{GroupLocked, GroupShipped, GroupDelivered, GroupCancellationRequested, GroupCancelled} {
+	for _, s := range []GroupStatus{GroupLocked, GroupShipped, GroupDelivered, GroupLost, GroupReturned, GroupCancellationRequested, GroupCancelled} {
 		o := orderWith(t, s)
 		before := o.Version()
 		if _, err := o.CancelUnkeepableGroup(1, "x", at(100)); !errorsIs(err, shared.ErrIllegalTransition) {
@@ -182,6 +185,7 @@ func TestConfirmGroupCancelledByGroupState(t *testing.T) {
 	}{
 		{GroupPromised, nil, 1}, {GroupCancellationRequested, nil, 1}, {GroupLocked, nil, 1},
 		{GroupCancelled, nil, 0}, {GroupShipped, ErrStatusRegression, 0}, {GroupDelivered, ErrStatusRegression, 0},
+		{GroupLost, ErrStatusRegression, 0}, {GroupReturned, ErrStatusRegression, 0},
 	}
 	for _, c := range cases {
 		t.Run(string(c.from), func(t *testing.T) {
@@ -228,7 +232,8 @@ func TestRefuseGroupCancellationByGroupState(t *testing.T) {
 		err  error
 	}{
 		{GroupCancellationRequested, GroupLocked, nil}, {GroupLocked, GroupLocked, nil}, {GroupShipped, GroupShipped, nil},
-		{GroupDelivered, GroupDelivered, nil}, {GroupPromised, GroupPromised, shared.ErrIllegalTransition},
+		{GroupDelivered, GroupDelivered, nil}, {GroupLost, GroupLost, nil}, {GroupReturned, GroupReturned, nil},
+		{GroupPromised, GroupPromised, shared.ErrIllegalTransition},
 		{GroupCancelled, GroupCancelled, shared.ErrIllegalTransition},
 	}
 	for _, c := range cases {

@@ -118,6 +118,34 @@ func ReadN(t *testing.T, topic string, n int, timeout time.Duration) []Message {
 	return out
 }
 
+// ReadKeyed reads, from the start of the single partition of topic, the first n
+// messages whose key is key, skipping the messages of other keys (a shared
+// topic collects the events of every test of the package), and fails the test
+// if they do not arrive within timeout.
+func ReadKeyed(t *testing.T, topic, key string, n int, timeout time.Duration) []Message {
+	t.Helper()
+	reader := kafkago.NewReader(kafkago.ReaderConfig{Brokers: Brokers(t), Topic: topic, Partition: 0, MinBytes: 1, MaxBytes: 1 << 20})
+	defer func() { _ = reader.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	out := make([]Message, 0, n)
+	for len(out) < n {
+		m, err := reader.ReadMessage(ctx)
+		if err != nil {
+			t.Fatalf("read message %d of %d with key %q from %s: %v", len(out)+1, n, key, topic, err)
+		}
+		if string(m.Key) != key {
+			continue
+		}
+		headers := make(map[string]string, len(m.Headers))
+		for _, h := range m.Headers {
+			headers[h.Key] = string(h.Value)
+		}
+		out = append(out, Message{Key: key, Value: m.Value, Headers: headers})
+	}
+	return out
+}
+
 // Produce writes messages to topic (key and headers as given) and waits for
 // the broker's acknowledgement.
 func Produce(t *testing.T, topic string, msgs ...Message) {

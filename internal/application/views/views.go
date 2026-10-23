@@ -123,7 +123,12 @@ type TrackingGroup struct {
 	LockedAt            time.Time
 	ShippedAt           time.Time
 	CancelRefusedReason string
-	Packages            []TrackingPackage
+	// LostAt / ReturnedAt and OutcomePackage describe a LOST or RETURNED group
+	// (PackageLost, PackageReturned); zero or empty otherwise.
+	LostAt         time.Time
+	ReturnedAt     time.Time
+	OutcomePackage string
+	Packages       []TrackingPackage
 }
 
 // Tracking is the OrderTrackingView of one order.
@@ -158,7 +163,8 @@ func TrackingFrom(o *customerorder.CustomerOrder, signals []readmodel.GroupSigna
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Status: string(g.Status), DeliverByEarliest: g.DeliverByEarliest,
 			DeliverByLatest: g.DeliverByLatest, AtRiskReason: sig.AtRiskReason, UnsourceableReason: sig.UnsourceableReason,
 			PromiseVerdict: sig.PromiseVerdict, LateByMinutes: sig.LateByMinutes, LockedAt: g.LockedAt, ShippedAt: g.ShippedAt,
-			CancelRefusedReason: g.CancelRefusedReason, Packages: list,
+			CancelRefusedReason: g.CancelRefusedReason, LostAt: g.LostAt, ReturnedAt: g.ReturnedAt, OutcomePackage: g.OutcomeTrackingNumber,
+			Packages: list,
 		})
 	}
 	return Tracking{OrderID: string(o.ID()), Status: string(o.Status()), Groups: groups}
