@@ -194,3 +194,11 @@ func TestHeadersConvertToKafkaHeaders(t *testing.T) {
 		t.Fatalf("headers = %+v", got)
 	}
 }
+
+func TestEncoderTopicOverride(t *testing.T) {
+	_, evs := placedOrder(t)
+	msgs, err := (&kafka.Encoder{Topic: "custom.topic"}).Encode(evs...)
+	if err != nil || msgs[0].Topic != "custom.topic" {
+		t.Fatalf("Encode: %v %+v", err, msgs)
+	}
+}

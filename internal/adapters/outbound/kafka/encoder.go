@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -63,6 +64,9 @@ func ts(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 type Encoder struct {
 	// NewID mints a CloudEvents id; uuid.NewString when nil.
 	NewID func() string
+	// Topic overrides the destination topic (Topic when empty); tests use it
+	// to isolate their topic on a shared broker.
+	Topic string
 }
 
 // NewEncoder returns an Encoder minting random UUID v4 ids.
@@ -83,7 +87,7 @@ func (e *Encoder) Encode(events ...shared.Event) ([]outbox.Message, error) {
 		if err != nil {
 			return nil, err
 		}
-		msg, err := buildMessage(ev, newID(), data)
+		msg, err := buildMessage(ev, newID(), e.topic(), data)
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +96,14 @@ func (e *Encoder) Encode(events ...shared.Event) ([]outbox.Message, error) {
 	return out, nil
 }
 
-func buildMessage(ev shared.Event, id string, data any) (outbox.Message, error) {
+func (e *Encoder) topic() string {
+	if e.Topic != "" {
+		return e.Topic
+	}
+	return Topic
+}
+
+func buildMessage(ev shared.Event, id, topic string, data any) (outbox.Message, error) {
 	value, err := cloudevents.New(cloudevents.Spec{
 		ID: id, Entity: ev.Entity(), EventName: ev.EventName(), Subject: ev.SubjectID(), Time: ev.OccurredAt(),
 		Stream: cloudevents.StreamEvents, Version: schemaVersion, Data: data,
@@ -102,7 +113,7 @@ func buildMessage(ev shared.Event, id string, data any) (outbox.Message, error) 
 	}
 	ct := cloudevents.ContentTypeHeader()
 	return outbox.Message{
-		EventID: id, Topic: Topic, EventType: cloudevents.Type(ev.Entity(), ev.EventName()), Subject: ev.SubjectID(),
+		EventID: id, Topic: topic, EventType: cloudevents.Type(ev.Entity(), ev.EventName()), Subject: ev.SubjectID(),
 		Key: []byte(ev.SubjectID()), DataSchema: cloudevents.DataSchema(cloudevents.StreamEvents, ev.EventName(), schemaVersion),
 		Value: value, Headers: []outbox.Header{{Key: ct.Key, Value: string(ct.Value)}},
 	}, nil
@@ -142,4 +153,25 @@ func Headers(hs []outbox.Header) []kafkago.Header {
 		out[i] = kafkago.Header{Key: h.Key, Value: []byte(h.Value)}
 	}
 	return out
+}
+
+// Writer is the part of *kafkago.Writer the relay sink needs.
+type Writer interface {
+	WriteMessages(ctx context.Context, msgs ...kafkago.Message) error
+}
+
+// Sink writes outbox messages to Kafka; each message names its own topic, so
+// the writer behind it has none (see NewWriter).
+type Sink struct{ W Writer }
+
+// Send writes msgs, in order, and returns when the broker acknowledged them.
+func (s Sink) Send(ctx context.Context, msgs ...outbox.Message) error {
+	out := make([]kafkago.Message, len(msgs))
+	for i, m := range msgs {
+		out[i] = kafkago.Message{Topic: m.Topic, Key: m.Key, Value: m.Value, Headers: Headers(m.Headers)}
+	}
+	if err := s.W.WriteMessages(ctx, out...); err != nil {
+		return fmt.Errorf("write %d messages to kafka: %w", len(out), err)
+	}
+	return nil
 }
