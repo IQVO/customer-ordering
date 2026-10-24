@@ -205,4 +205,70 @@ helm template "$release" "$chart_dir" "${base[@]}" --set config.shutdownDrainDel
 expect_refusal "a drain delay the chart cannot size" "config.shutdownDrainDelay" "${base[@]}" --set config.shutdownDrainDelay=soon
 expect_refusal "an http address off the container port" "config.httpAddr" "${base[@]}" --set config.httpAddr=:9090
 
+# --- optional components (ADR 0005 mcp, ADR 0006 web remote) -------------------
+# Both are OFF by default: the default render stays exactly one Deployment and
+# one Service (asserted above). Here they render alone and together.
+
+# binary_env_of <main.go...>: the env literals one binary reads.
+binary_env_of() {
+  local f
+  for f in "$@"; do
+    grep -hoE '[Gg]etenv\("[A-Z][A-Z0-9_]*"' "$f" || true
+  done | sed -E 's/.*"([A-Z0-9_]+)".*/\1/' | sort -u
+}
+# assert_env_rendered <rendered> <label> <vars...>
+assert_env_rendered() {
+  local rendered="$1" label="$2"; shift 2
+  local var
+  for var in "$@"; do
+    grep -q "name: $var\$" <<<"$rendered" || fail "$label does not render $var, which its binary reads"
+  done
+}
+
+# mcp: its own env, never the api ConfigMap, never Kafka (ADR 0005).
+mcp_dep="$(helm template "$release" "$chart_dir" "${base[@]}" --set mcp.enabled=true --show-only templates/mcp-deployment.yaml)"
+grep -q 'app.kubernetes.io/component: mcp' <<<"$mcp_dep" || fail "the mcp Deployment was not rendered with mcp.enabled=true"
+grep -q 'command: \["/app/mcp"\]' <<<"$mcp_dep" || fail "the mcp Deployment must run /app/mcp"
+if grep -q 'configMapRef:' <<<"$mcp_dep"; then fail "mcp-deployment.yaml must not mount the api ConfigMap"; fi
+if grep -Eq 'name: (KAFKA_BROKERS|DELIVERY_PROMISE_[A-Z_]+|ORDER_SOURCING_[A-Z_]+|SHIPPING_[A-Z_]+|OUTBOX_[A-Z_]+|[A-Z]+_CONSUMER_GROUP)$' <<<"$mcp_dep"; then
+  fail "the mcp Deployment must not get Kafka/relay/consumer/delivery-promise env (read-only, never dials Kafka)"
+fi
+# shellcheck disable=SC2207
+mcp_vars=($(binary_env_of "$repo_dir"/cmd/mcp/main.go))
+(( ${#mcp_vars[@]} >= 5 )) || fail "found only ${#mcp_vars[@]} env literals in cmd/mcp/main.go; the scan is looking in the wrong place"
+assert_env_rendered "$mcp_dep" "the mcp Deployment" "${mcp_vars[@]}" DATABASE_URL MIGRATIONS_DATABASE_URL MCP_ADDR LOG_LEVEL SERVICE_VERSION ENVIRONMENT
+[[ "$(env_value "$mcp_dep" SERVICE_VERSION)" == "dev" ]] || fail "SERVICE_VERSION must come from mcp.serviceVersion"
+[[ "$(env_value "$mcp_dep" ENVIRONMENT)" == "production" ]] || fail "ENVIRONMENT must come from mcp.environment"
+mcp_svc="$(helm template "$release" "$chart_dir" "${base[@]}" --set mcp.enabled=true --show-only templates/mcp-service.yaml)"
+grep -q 'kind: Service' <<<"$mcp_svc" || fail "the mcp Service was not rendered with mcp.enabled=true"
+grep -q 'app.kubernetes.io/component: mcp' <<<"$mcp_svc" || fail "the mcp Service must select component=mcp"
+
+# The mcp route is a SEPARATE switch: mcp on alone exposes nothing.
+mcp_noroute="$(helm template "$release" "$chart_dir" "${base[@]}" --set mcp.enabled=true)"
+if grep -q 'kind: HTTPRoute' <<<"$mcp_noroute"; then fail "the mcp HTTPRoute must not render while mcp.route.enabled is false"; fi
+mcp_route="$(helm template "$release" "$chart_dir" "${base[@]}" --set mcp.enabled=true --set mcp.route.enabled=true --show-only templates/mcp-route.yaml)"
+grep -q 'value: /api/mcp/customer-ordering' <<<"$mcp_route" || fail "the mcp route must carry its configured host path"
+grep -q 'replacePrefixMatch: /mcp' <<<"$mcp_route" || fail "the mcp route must rewrite the prefix to /mcp (the SDK's canonical endpoint)"
+grep -q "name: $release-mcp" <<<"$mcp_route" || fail "the mcp route must target the mcp Service"
+
+# The web remote: its own nginx Deployment + ClusterIP Service, no DB/Kafka
+# env, and no route in this chart (the Nginx web gateway owns
+# /mfes/customer-ordering/).
+frontend_dep="$(helm template "$release" "$chart_dir" "${base[@]}" --set frontend.enabled=true --show-only templates/frontend-deployment.yaml)"
+frontend_svc="$(helm template "$release" "$chart_dir" "${base[@]}" --set frontend.enabled=true --show-only templates/frontend-service.yaml)"
+grep -q 'app.kubernetes.io/component: frontend' <<<"$frontend_dep" || fail "the frontend Deployment was not rendered with frontend.enabled=true"
+grep -q 'type: ClusterIP' <<<"$frontend_svc" || fail "the frontend Service must stay ClusterIP"
+if grep -Eq 'name: [A-Z_]+$' <<<"$frontend_dep"; then fail "the frontend Deployment must render no env at all (it serves static bytes)"; fi
+if helm template "$release" "$chart_dir" "${base[@]}" --set frontend.enabled=true | grep -E 'kind: (Ingress|HTTPRoute)' | grep -q frontend; then
+  fail "frontend routing must not live in this chart"
+fi
+
+# ALL optional components render TOGETHER (ct lint's values file).
+together="$(helm template "$release" "$chart_dir" -f "$chart_dir/ci/all-components-values.yaml")"
+for component in api mcp frontend; do
+  grep -q "app.kubernetes.io/component: $component\$" <<<"$together" || fail "the full render lacks the $component component"
+done
+[[ "$(grep -c '^kind: Deployment' <<<"$together")" == 3 ]] || fail "the full render must carry the api, mcp and frontend Deployments"
+[[ "$(grep -c '^kind: Service$' <<<"$together")" == 3 ]] || fail "the full render must carry the api, mcp and frontend Services"
+
 echo "PASS: customer-ordering chart render assertions"

@@ -40,7 +40,10 @@ WORKDIR /app
 # filesystem read-only. Logs go to stdout.
 COPY --from=build --chown=app:app /out/ ./
 USER 1000
-EXPOSE 8080
+# 8080 is cmd/api (HTTP); 8090 is cmd/mcp (Streamable HTTP /mcp and
+# /healthz). Documentation only: the chart picks the binary with
+# `command: ["/app/<dirname>"]` and the Service names the port.
+EXPOSE 8080 8090
 # cmd/api is the service's main binary (HTTP on :8080). Additional cmd/*
 # binaries are run by the chart with `command: ["/app/<dirname>"]`.
 ENTRYPOINT ["./api"]
