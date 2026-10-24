@@ -3,7 +3,7 @@
 harness-template: v4
 
 Retail network, bounded context Customer Ordering (Generic, commerce tier). Turns a cart into a customer order: promises and confirms every shipment group at checkout, holds the shopper and the ship-to address (synthetic PII, only here), shows status and tracking, handles cancellation. Publishes 2 events, consumes 17, makes 4 synchronous calls to delivery-promise (quote, make, confirm and the compensating cancel).
-Design source of truth: IQVO/retail-network-docs `model/model.yaml` (context customer-ordering). This service belongs to the retail network, not the warehouse-systems fleet.
+Design source of truth: IQVO/warehouse-docs `network/model/model.yaml` (context customer-ordering). This service belongs to the retail network, not the warehouse-systems fleet.
 This project is a domain-driven design study, not associated with any company: never name a real company, brand or product in code, comments, ADRs, specs, tests or fixtures (README `## Disclaimer`).
 
 ## Commands
