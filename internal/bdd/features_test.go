@@ -57,8 +57,8 @@ type world struct {
 }
 
 func newWorld() *world {
-	s := memory.NewStore()
-	w := &world{store: s, gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0), promiseOf: map[int]string{}}
+	w := &world{store: memory.NewStore(memory.NewClock(t0)), gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0), promiseOf: map[int]string{}}
+	s := w.store
 	w.deps = usecases.Deps{
 		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
 		Promises: w.gw, Clock: w.clock, IDs: &memory.SequentialIDs{},

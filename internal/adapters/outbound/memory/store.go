@@ -18,8 +18,10 @@ package memory
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/claudioed/customer-ordering/internal/application/idempotency"
+	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/readmodel"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
@@ -45,16 +47,26 @@ type Store struct {
 	inbox       map[string]string
 	outbox      []shared.Event
 	idempotency map[idemKey]idempotency.Record
+	clock       ports.Clock
 }
 
-// NewStore returns an empty store.
-func NewStore() *Store {
+// NewStore returns an empty store. The clock is the authority the
+// IdempotencyStore judges record TTL against: the doubles exist to test a
+// domain whose clock is frozen, so TTL must be measured on that same clock,
+// never on the wall -- a frozen 2026-10-23 fixture compared with time.Since
+// made every record look 24h-expired a day later and time-bombed the suites.
+func NewStore(clock ports.Clock) *Store {
 	return &Store{
 		orders: map[customerorder.ID]customerorder.Snapshot{}, shoppers: map[shopper.ID]shopper.Snapshot{}, emails: map[string]shopper.ID{},
 		links: map[string]readmodel.AssignmentLink{}, packages: map[string]readmodel.Package{},
 		signals: map[signalKey]readmodel.GroupSignal{}, inbox: map[string]string{}, idempotency: map[idemKey]idempotency.Record{},
+		clock: clock,
 	}
 }
+
+// now is the store's time: the injected clock. It mirrors the Postgres store,
+// where created_at and now() come from the same database clock.
+func (s *Store) now() time.Time { return s.clock.Now() }
 
 // state is a copy of everything a unit of work can change. Stored values are
 // replaced, never edited in place, so copying the maps is enough.
