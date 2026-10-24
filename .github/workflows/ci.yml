@@ -325,6 +325,41 @@ jobs:
         run: go test ./internal/architecture/... -v
 
   # ============================================================
+  # CLASSIFICATION: UNIT TESTING (web MFE remote)
+  # ============================================================
+  # The customer_ordering_mfe remote (web/): lint, typecheck, tests and a
+  # production build on every push and PR. @warehouse/ui-kit is a sibling
+  # repo consumed as file:../../warehouse-ui-kit, so it is checked out beside
+  # this repo and built first; the web/ package-lock then installs against
+  # the built ui-kit. npm is only ever run inside web/ (the repo root has no
+  # package.json).
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: customer-ordering/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: customer-ordering
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: IQVO/warehouse-ui-kit
+          ref: develop
+          path: warehouse-ui-kit
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+      - run: npm ci && npm run build
+        working-directory: warehouse-ui-kit
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc -b
+      - run: npm test
+      - run: npm run build
+
+  # ============================================================
   # CLASSIFICATION: PUBLISH (Docker image) -- push-to-main only
   # ============================================================
   docker-publish:
