@@ -3,6 +3,8 @@ package bdd
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -41,11 +43,17 @@ type world struct {
 	deps    usecases.Deps
 	orderID string
 	seq     int
+	lastKey string
 
 	lastErr     error
 	lastView    views.Order
 	shopperView views.Shopper
 	promiseOf   map[int]string
+
+	apiSrv    *httptest.Server
+	apiStatus int
+	apiBody   string
+	apiHeader http.Header
 }
 
 func newWorld() *world {
@@ -68,6 +76,10 @@ func (w *world) meta(typ string) usecases.Meta {
 func initializeScenario(sc *godog.ScenarioContext) {
 	w := newWorld()
 	sc.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
+		if w.apiSrv != nil {
+			w.apiSrv.Close()
+			w.apiSrv = nil
+		}
 		*w = *newWorld()
 		return ctx, nil
 	})
@@ -76,6 +88,7 @@ func initializeScenario(sc *godog.ScenarioContext) {
 	registerCancellation(sc, w)
 	registerFulfilment(sc, w)
 	registerAssertions(sc, w)
+	registerHTTP(sc, w)
 }
 
 func registerSetup(sc *godog.ScenarioContext, w *world) {
