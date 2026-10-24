@@ -32,8 +32,8 @@ type fx struct {
 
 func newFx(t *testing.T) *fx {
 	t.Helper()
-	s := memory.NewStore()
-	f := &fx{t: t, store: s, gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0)}
+	f := &fx{t: t, store: memory.NewStore(memory.NewClock(t0)), gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0)}
+	s := f.store
 	f.deps = usecases.Deps{
 		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
 		Promises: f.gw, Clock: f.clock, IDs: &memory.SequentialIDs{},

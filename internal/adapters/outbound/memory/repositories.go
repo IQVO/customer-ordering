@@ -3,7 +3,6 @@ package memory
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/claudioed/customer-ordering/internal/application/idempotency"
 	"github.com/claudioed/customer-ordering/internal/application/ports"
@@ -137,7 +136,7 @@ type IdempotencyStore struct{ s *Store }
 func (i *IdempotencyStore) Get(ctx context.Context, route, key string) (idempotency.Record, error) {
 	defer i.s.enter(ctx)()
 	rec, ok := i.s.idempotency[idemKey{route, key}]
-	if !ok || time.Since(rec.CreatedAt) > idempotency.TTL {
+	if !ok || i.s.now().Sub(rec.CreatedAt) > idempotency.TTL {
 		return idempotency.Record{}, ports.ErrNotFound
 	}
 	return rec, nil
@@ -147,7 +146,7 @@ func (i *IdempotencyStore) Get(ctx context.Context, route, key string) (idempote
 func (i *IdempotencyStore) Put(ctx context.Context, route, key string, rec idempotency.Record) (bool, error) {
 	defer i.s.enter(ctx)()
 	k := idemKey{route, key}
-	if old, ok := i.s.idempotency[k]; ok && time.Since(old.CreatedAt) <= idempotency.TTL {
+	if old, ok := i.s.idempotency[k]; ok && i.s.now().Sub(old.CreatedAt) <= idempotency.TTL {
 		return false, nil
 	}
 	i.s.idempotency[k] = rec

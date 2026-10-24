@@ -26,6 +26,11 @@ type Env struct {
 	Outbox      ports.EventOutbox
 	UoW         ports.UnitOfWork
 	Idempotency ports.IdempotencyStore
+	// Clock is the store's time authority: testIdempotency stamps records
+	// with it, so the expired-record case expires relative to the SAME clock
+	// the implementation under test judges TTL with (the memory double is
+	// driven by a frozen clock; the Postgres store by the database's now()).
+	Clock ports.Clock
 	// OutboxCount returns how many events the outbox holds.
 	OutboxCount func(t *testing.T) int
 }
