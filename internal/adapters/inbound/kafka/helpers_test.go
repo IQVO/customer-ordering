@@ -94,7 +94,7 @@ type world struct {
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
-	s := memory.NewStore()
+	s := memory.NewStore(memory.NewClock(t0))
 	gw := memory.NewPromiseGateway()
 	w := &world{store: s, orders: &flakyOrders{OrderRepository: s.Orders()}, uow: &countingUoW{inner: s.UnitOfWork()}}
 	w.deps = usecases.Deps{

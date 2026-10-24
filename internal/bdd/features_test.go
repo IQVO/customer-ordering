@@ -3,6 +3,8 @@ package bdd
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -41,16 +43,22 @@ type world struct {
 	deps    usecases.Deps
 	orderID string
 	seq     int
+	lastKey string
 
 	lastErr     error
 	lastView    views.Order
 	shopperView views.Shopper
 	promiseOf   map[int]string
+
+	apiSrv    *httptest.Server
+	apiStatus int
+	apiBody   string
+	apiHeader http.Header
 }
 
 func newWorld() *world {
-	s := memory.NewStore()
-	w := &world{store: s, gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0), promiseOf: map[int]string{}}
+	w := &world{store: memory.NewStore(memory.NewClock(t0)), gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0), promiseOf: map[int]string{}}
+	s := w.store
 	w.deps = usecases.Deps{
 		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
 		Promises: w.gw, Clock: w.clock, IDs: &memory.SequentialIDs{},
@@ -68,6 +76,10 @@ func (w *world) meta(typ string) usecases.Meta {
 func initializeScenario(sc *godog.ScenarioContext) {
 	w := newWorld()
 	sc.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
+		if w.apiSrv != nil {
+			w.apiSrv.Close()
+			w.apiSrv = nil
+		}
 		*w = *newWorld()
 		return ctx, nil
 	})
@@ -76,6 +88,7 @@ func initializeScenario(sc *godog.ScenarioContext) {
 	registerCancellation(sc, w)
 	registerFulfilment(sc, w)
 	registerAssertions(sc, w)
+	registerHTTP(sc, w)
 }
 
 func registerSetup(sc *godog.ScenarioContext, w *world) {

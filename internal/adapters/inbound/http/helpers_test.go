@@ -29,7 +29,7 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	s := memory.NewStore()
+	s := memory.NewStore(memory.NewClock(t0))
 	gw := memory.NewPromiseGateway()
 	deps := usecases.Deps{
 		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
