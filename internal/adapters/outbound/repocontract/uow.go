@@ -97,13 +97,13 @@ func mustEvents(t *testing.T) []shared.Event {
 func testIdempotency(t *testing.T, e Env) {
 	_, err := e.Idempotency.Get(bg(), "POST /checkout", "k1")
 	wantErr(t, err, ports.ErrNotFound)
-	rec := idempotency.Record{RequestHash: "h1", Status: 201, ContentType: "application/json", Body: []byte(`{"a":1}`), CreatedAt: time.Now().UTC()}
+	rec := idempotency.Record{RequestHash: "h1", Status: 201, ContentType: "application/json", Body: []byte(`{"a":1}`), CreatedAt: e.Clock.Now().UTC()}
 	stored, err := e.Idempotency.Put(bg(), "POST /checkout", "k1", rec)
 	must(t, err)
 	if !stored {
 		t.Fatal("the first Put must store")
 	}
-	stored, err = e.Idempotency.Put(bg(), "POST /checkout", "k1", idempotency.Record{RequestHash: "h2", Status: 500, CreatedAt: time.Now().UTC()})
+	stored, err = e.Idempotency.Put(bg(), "POST /checkout", "k1", idempotency.Record{RequestHash: "h2", Status: 500, CreatedAt: e.Clock.Now().UTC()})
 	must(t, err)
 	if stored {
 		t.Fatal("a second Put must not overwrite")
@@ -116,14 +116,14 @@ func testIdempotency(t *testing.T, e Env) {
 	if _, err := e.Idempotency.Get(bg(), "POST /shoppers", "k1"); !errors.Is(err, ports.ErrNotFound) {
 		t.Fatalf("the route is part of the key: %v", err)
 	}
-	old := idempotency.Record{RequestHash: "old", Status: 200, CreatedAt: time.Now().UTC().Add(-idempotency.TTL - time.Minute)}
+	old := idempotency.Record{RequestHash: "old", Status: 200, CreatedAt: e.Clock.Now().UTC().Add(-idempotency.TTL - time.Minute)}
 	if _, err := e.Idempotency.Put(bg(), "POST /shoppers", "k-old", old); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.Idempotency.Get(bg(), "POST /shoppers", "k-old"); !errors.Is(err, ports.ErrNotFound) {
 		t.Fatalf("an expired record must read as absent: %v", err)
 	}
-	replaced, err := e.Idempotency.Put(bg(), "POST /shoppers", "k-old", idempotency.Record{RequestHash: "new", Status: 201, CreatedAt: time.Now().UTC()})
+	replaced, err := e.Idempotency.Put(bg(), "POST /shoppers", "k-old", idempotency.Record{RequestHash: "new", Status: 201, CreatedAt: e.Clock.Now().UTC()})
 	must(t, err)
 	if !replaced {
 		t.Fatal("an expired record is replaceable")
