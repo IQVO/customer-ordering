@@ -283,7 +283,7 @@ components:
         maxLength: 200
   responses:
     BadRequest:
-      description: The request is not valid JSON, has an unknown field, a missing Idempotency-Key or contains a NUL character (invalid-request).
+      description: The request is not valid JSON, has an unknown field or contains a NUL character (malformed-request), or the Idempotency-Key header is missing (idempotency-key-required).
       content:
         application/problem+json:
           schema:
