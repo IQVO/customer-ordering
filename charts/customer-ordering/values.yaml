@@ -183,6 +183,77 @@ readinessProbe:
 # drain delay (a shorter period SIGKILLs a consumer or the relay mid-drain).
 terminationGracePeriodSeconds: 60
 
+# The optional MCP server (ADR 0005): cmd/mcp, a read-only second deployable
+# over the SAME read use cases the REST adapter serves (get_order,
+# get_order_tracking, get_ship_to). Never dials Kafka, runs no consumer and
+# no relay, calls no sibling context, and has NO auth (fleet-wide revert
+# 2026-09-11): access control is the in-cluster ClusterIP boundary. Needs
+# database.* like the api (the same Secret), nothing else.
+mcp:
+  enabled: false
+  replicaCount: 1
+  httpAddr: ":8090"                  # MCP_ADDR (Streamable HTTP /mcp + /healthz)
+  # SERVICE_VERSION / ENVIRONMENT: free-form labels cmd/mcp reports at boot.
+  serviceVersion: "dev"
+  environment: "production"
+  service:
+    type: ClusterIP
+    port: 8090
+    targetPort: 8090
+  # Gateway exposure: /api/mcp/customer-ordering -> Service :8090, prefix
+  # rewritten to /mcp (the SDK's canonical endpoint). Needs the Gateway
+  # parentRef from warehouse-infra; NO auth of any kind on the route.
+  route:
+    enabled: false
+    path: "/api/mcp/customer-ordering"
+    parentRefs:
+      - name: ""
+        namespace: ""
+        sectionName: "http"
+  extraEnv: []
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# web/ (customer_ordering_mfe, ADR 0006): the Module Federation remote served
+# by its own nginx pod, reached through warehouse-infra's Nginx web gateway at
+# /mfes/customer-ordering/. Never routed by this chart; ClusterIP only. No
+# env at all: the SPA resolves its API base from the console's runtime
+# /config.json.
+frontend:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/iqvo/customer-ordering-frontend
+    pullPolicy: IfNotPresent
+    # Empty = the chart's appVersion (warehouse-infra overrides repository and
+    # tag with a content-derived local-<hash> tag in the kind cluster).
+    tag: ""
+  service:
+    port: 80
+    targetPort: 8080
+  # nginx-unprivileged runs as uid 101.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 101
+    fsGroup: 101
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
