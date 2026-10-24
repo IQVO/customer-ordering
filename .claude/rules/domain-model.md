@@ -1,6 +1,6 @@
 # Domain model: ubiquitous language, aggregates, events, use cases
 
-Source of truth: retail-network-docs `model/model.yaml` (context `customer-ordering`).
+Source of truth: warehouse-docs `network/model/model.yaml` (context `customer-ordering`).
 Invariants, transitions and every assumption the model left open are in
 `docs/adr/0002-aggregates-and-invariants.md` (assumptions A1-A23). Consumed
 contracts and local read models are in `docs/adr/0003-consumed-contracts-and-local-read-models.md`.

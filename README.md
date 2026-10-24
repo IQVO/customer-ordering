@@ -8,7 +8,7 @@ This project is a domain-driven design study. It is not associated with, endorse
 
 Turns a shopper's cart into a customer order: obtains a promise for every shipment group at checkout, records the order with the shopper and ship-to address (synthetic PII, held only here), shows status and tracking, and handles customer cancellation.
 
-The design is proposed in [retail-network-docs](https://iqvo.github.io/retail-network-docs/contexts/customer-ordering); `model/model.yaml` there is the single source of truth.
+The design is proposed in [retail-network docs](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering); `model/model.yaml` there is the single source of truth.
 This repository is a service of the retail network, not of the warehouse-systems fleet; the fleet reaches the network only through the
 `vendor-connectivity` Vendor API.
 
