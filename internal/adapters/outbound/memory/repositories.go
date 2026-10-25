@@ -59,6 +59,17 @@ func (r *ShopperRepository) Get(ctx context.Context, id shopper.ID) (*shopper.Sh
 	return shopper.Restore(snap)
 }
 
+// FindByEmail implements ports.ShopperRepository: the e-mail arrives already
+// normalised and hits the same index Save maintains.
+func (r *ShopperRepository) FindByEmail(ctx context.Context, email string) (*shopper.Shopper, error) {
+	defer r.s.enter(ctx)()
+	id, ok := r.s.emails[email]
+	if !ok {
+		return nil, fmt.Errorf("shopper with email %q: %w", email, ports.ErrNotFound)
+	}
+	return shopper.Restore(r.s.shoppers[id])
+}
+
 // Save implements ports.ShopperRepository.
 func (r *ShopperRepository) Save(ctx context.Context, sh *shopper.Shopper) error {
 	defer r.s.enter(ctx)()

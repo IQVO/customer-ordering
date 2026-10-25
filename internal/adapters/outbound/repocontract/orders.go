@@ -120,6 +120,35 @@ func testShoppers(t *testing.T, e Env) {
 		must(t, e.Shoppers.Save(bg(), newShopper(t, "shopper-c", "c@example.com")))
 		wantErr(t, e.Shoppers.Save(bg(), newShopper(t, "shopper-c", "c2@example.com")), ports.ErrConcurrentUpdate)
 	})
+	t.Run("FindByEmail hits the normalised e-mail and misses politely", func(t *testing.T) {
+		_, err := e.Shoppers.FindByEmail(bg(), "nobody@example.com")
+		wantErr(t, err, ports.ErrNotFound)
+		s := newShopper(t, "shopper-em", "ana.find@example.com")
+		must(t, e.Shoppers.Save(bg(), s))
+		got, err := e.Shoppers.FindByEmail(bg(), "ana.find@example.com")
+		must(t, err)
+		if !reflect.DeepEqual(got.Snapshot(), s.Snapshot()) {
+			t.Fatalf("FindByEmail changed the shopper:\n got %+v\nwant %+v", got.Snapshot(), s.Snapshot())
+		}
+	})
+	t.Run("an added saved address survives the update round-trip", func(t *testing.T) {
+		s := newShopper(t, "shopper-addr", "addr@example.com")
+		must(t, e.Shoppers.Save(bg(), s))
+		loaded, err := e.Shoppers.Get(bg(), "shopper-addr")
+		must(t, err)
+		second := address()
+		second.City = "Dallas"
+		must(t, loaded.AddSavedAddress("addr-2", second))
+		must(t, e.Shoppers.Save(bg(), loaded))
+		got, err := e.Shoppers.Get(bg(), "shopper-addr")
+		must(t, err)
+		if !reflect.DeepEqual(got.Snapshot(), loaded.Snapshot()) {
+			t.Fatalf("update round trip changed the shopper:\n got %+v\nwant %+v", got.Snapshot(), loaded.Snapshot())
+		}
+		if len(got.SavedAddresses()) != 2 || got.SavedAddresses()[1].ID != "addr-2" {
+			t.Fatalf("addresses = %+v", got.SavedAddresses())
+		}
+	})
 }
 
 func ordersLostAndReturnedRoundTrip(t *testing.T, e Env) {
