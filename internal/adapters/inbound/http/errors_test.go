@@ -120,7 +120,7 @@ func TestReadinessReflectsDrainAndDependencies(t *testing.T) {
 		}
 		return nil
 	}})
-	srv := httptest.NewServer(httpadapter.NewRouter(&httpadapter.Server{Readiness: g}))
+	srv := httptest.NewServer(httpadapter.NewRouter(&httpadapter.Server{Readiness: g}, nil, ""))
 	defer srv.Close()
 	get := func() (int, string) {
 		resp, err := http.Get(srv.URL + "/readyz")
