@@ -21,6 +21,7 @@ const (
 	routeCheckout = "POST /checkout"
 	routeCancel   = "POST /orders/{orderId}:cancel"
 	routeShopper  = "POST /shoppers"
+	routeAddress  = "POST /shoppers/{shopperId}/addresses"
 )
 
 // Server holds the use cases the handlers call.
@@ -31,9 +32,15 @@ type Server struct {
 	CancelOrder      usecases.CancelOrder
 	GetShipTo        usecases.GetShipTo
 	RegisterShopper  usecases.RegisterShopper
+	AddSavedAddress  usecases.AddSavedAddress
+	GetShopper       usecases.GetShopper
+	// FindShopperByEmail backs GET /shoppers?email= (NG3).
+	FindShopperByEmail usecases.FindShopperByEmail
+	// ListOrdersByShopper backs GET /orders?shopperId= (NG2).
+	ListOrdersByShopper usecases.ListOrdersByShopper
 
 	// IdempotencyStore and Clock back the Idempotency-Key middleware of the
-	// three POST routes.
+	// POST routes.
 	IdempotencyStore ports.IdempotencyStore
 	Clock            ports.Clock
 	// IDs derives the order id of a checkout from its Idempotency-Key.
@@ -54,11 +61,15 @@ func NewRouter(s *Server) http.Handler {
 	r.Get("/readyz", s.handleReadyz)
 
 	r.With(s.idempotent(routeCheckout)).Post("/checkout", s.handlePlaceOrder)
+	r.Get("/orders", s.handleListOrders)
 	r.Get("/orders/{orderId}", s.handleGetOrder)
 	r.Get("/orders/{orderId}/tracking", s.handleGetTracking)
 	r.Get("/orders/{orderId}/ship-to", s.handleGetShipTo)
 	r.With(s.idempotent(routeCancel)).Post("/orders/{orderId}:cancel", s.handleCancelOrder)
+	r.Get("/shoppers", s.handleFindShopper)
 	r.With(s.idempotent(routeShopper)).Post("/shoppers", s.handleRegisterShopper)
+	r.Get("/shoppers/{shopperId}", s.handleGetShopper)
+	r.With(s.idempotent(routeAddress)).Post("/shoppers/{shopperId}/addresses", s.handleAddSavedAddress)
 	return r
 }
 

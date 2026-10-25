@@ -85,17 +85,55 @@ type ShipTo struct {
 // ShipToFrom maps the value object.
 func ShipToFrom(s shipto.ShipTo) ShipTo { return ShipTo(s) }
 
-// Shopper is a registered shopper.
+// SavedAddress is one saved address of a shopper: its id plus the ship-to
+// fields (NG1; synthetic PII, returned only on the shopper routes).
+type SavedAddress struct {
+	AddressID   string
+	Name        string
+	Line1       string
+	Line2       string
+	City        string
+	Region      string
+	PostalCode  string
+	CountryCode string
+	Phone       string
+}
+
+// SavedAddressFrom maps a domain saved address.
+func SavedAddressFrom(a shopper.SavedAddress) SavedAddress {
+	return SavedAddress{
+		AddressID: string(a.ID), Name: a.ShipTo.Name, Line1: a.ShipTo.Line1, Line2: a.ShipTo.Line2,
+		City: a.ShipTo.City, Region: a.ShipTo.Region, PostalCode: a.ShipTo.PostalCode,
+		CountryCode: a.ShipTo.CountryCode, Phone: a.ShipTo.Phone,
+	}
+}
+
+// Shopper is a registered shopper with its saved addresses (NG1).
 type Shopper struct {
-	ShopperID    string
-	Email        string
-	Status       string
-	RegisteredAt time.Time
+	ShopperID      string
+	Email          string
+	Status         string
+	RegisteredAt   time.Time
+	SavedAddresses []SavedAddress
 }
 
 // ShopperFrom maps a shopper aggregate.
 func ShopperFrom(s *shopper.Shopper) Shopper {
-	return Shopper{ShopperID: string(s.ID()), Email: s.Email(), Status: string(s.Status()), RegisteredAt: s.RegisteredAt()}
+	addresses := make([]SavedAddress, 0, len(s.SavedAddresses()))
+	for _, a := range s.SavedAddresses() {
+		addresses = append(addresses, SavedAddressFrom(a))
+	}
+	return Shopper{
+		ShopperID: string(s.ID()), Email: s.Email(), Status: string(s.Status()), RegisteredAt: s.RegisteredAt(),
+		SavedAddresses: addresses,
+	}
+}
+
+// OrderList is one page of a shopper's order history (NG2). NextCursor is
+// empty when the page is the last.
+type OrderList struct {
+	Items      []Order
+	NextCursor string
 }
 
 // TrackingPackage is one package of a group.

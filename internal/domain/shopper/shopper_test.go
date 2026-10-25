@@ -2,6 +2,7 @@ package shopper
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ func addr() shipto.ShipTo {
 
 func TestRegisterNormalisesAndStarts(t *testing.T) {
 	brt := time.FixedZone("BRT", -3*3600)
-	s, err := Register(NewShopper{ID: "shopper-1", Email: "  Ana.Example@Example.COM ", SavedAddresses: []shipto.ShipTo{addr()}}, t0.In(brt))
+	s, err := Register(NewShopper{ID: "shopper-1", Email: "  Ana.Example@Example.COM ", SavedAddresses: []SavedAddress{{ID: "addr-1", ShipTo: addr()}}}, t0.In(brt))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +29,7 @@ func TestRegisterNormalisesAndStarts(t *testing.T) {
 	if s.RegisteredAt().Location() != time.UTC || !s.RegisteredAt().Equal(t0) {
 		t.Fatalf("registeredAt must be UTC: %v", s.RegisteredAt())
 	}
-	if len(s.SavedAddresses()) != 1 {
+	if len(s.SavedAddresses()) != 1 || s.SavedAddresses()[0].ID != "addr-1" {
 		t.Fatal("saved address lost")
 	}
 }
@@ -36,9 +37,9 @@ func TestRegisterNormalisesAndStarts(t *testing.T) {
 func TestRegisterRejects(t *testing.T) {
 	bad := addr()
 	bad.Name = ""
-	many := make([]shipto.ShipTo, MaxSavedAddresses+1)
+	many := make([]SavedAddress, MaxSavedAddresses+1)
 	for i := range many {
-		many[i] = addr()
+		many[i] = SavedAddress{ID: AddressID(fmt.Sprintf("addr-%d", i)), ShipTo: addr()}
 	}
 	longLocal := strings.Repeat("a", MaxEmail-len("@e.com")+1) + "@e.com"
 	cases := map[string]NewShopper{
@@ -49,7 +50,7 @@ func TestRegisterRejects(t *testing.T) {
 		"no dot in host":  {ID: "s1", Email: "a@localhost"},
 		"display name":    {ID: "s1", Email: "Ana <a@b.com>"},
 		"too long":        {ID: "s1", Email: longLocal},
-		"bad address":     {ID: "s1", Email: "a@b.com", SavedAddresses: []shipto.ShipTo{bad}},
+		"bad address":     {ID: "s1", Email: "a@b.com", SavedAddresses: []SavedAddress{{ID: "addr-1", ShipTo: bad}}},
 		"too many saved":  {ID: "s1", Email: "a@b.com", SavedAddresses: many},
 		"empty local":     {ID: "s1", Email: "@b.com"},
 		"space in middle": {ID: "s1", Email: "a b@c.com"},
@@ -68,9 +69,9 @@ func TestRegisterAcceptsTheLimits(t *testing.T) {
 	if len(email) != MaxEmail {
 		t.Fatalf("test setup: %d", len(email))
 	}
-	many := make([]shipto.ShipTo, MaxSavedAddresses)
+	many := make([]SavedAddress, MaxSavedAddresses)
 	for i := range many {
-		many[i] = addr()
+		many[i] = SavedAddress{ID: AddressID(fmt.Sprintf("addr-%d", i)), ShipTo: addr()}
 	}
 	if _, err := Register(NewShopper{ID: "s1", Email: email, SavedAddresses: many}, t0); err != nil {
 		t.Fatalf("limits are inclusive: %v", err)
@@ -78,18 +79,18 @@ func TestRegisterAcceptsTheLimits(t *testing.T) {
 }
 
 func TestRegisterCopiesTheSavedAddresses(t *testing.T) {
-	list := []shipto.ShipTo{addr()}
+	list := []SavedAddress{{ID: "addr-1", ShipTo: addr()}}
 	s, _ := Register(NewShopper{ID: "s1", Email: "a@b.com", SavedAddresses: list}, t0)
-	list[0].Name = "changed"
+	list[0].ShipTo.Name = "changed"
 	out := s.SavedAddresses()
-	out[0].Name = "changed too"
-	if s.SavedAddresses()[0].Name != "Ana Example" {
+	out[0].ShipTo.Name = "changed too"
+	if s.SavedAddresses()[0].ShipTo.Name != "Ana Example" {
 		t.Fatal("the aggregate must own its addresses")
 	}
 }
 
 func TestSnapshotRestoreRoundTrip(t *testing.T) {
-	s, _ := Register(NewShopper{ID: "s1", Email: "a@b.com", SavedAddresses: []shipto.ShipTo{addr()}}, t0)
+	s, _ := Register(NewShopper{ID: "s1", Email: "a@b.com", SavedAddresses: []SavedAddress{{ID: "addr-1", ShipTo: addr()}}}, t0)
 	back, err := Restore(s.Snapshot())
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +116,7 @@ func TestRestoreBoundaries(t *testing.T) {
 		"status":         func(s *Snapshot) { s.Status = "DELETED" },
 		"no registered":  func(s *Snapshot) { s.RegisteredAt = time.Time{} },
 		"version zero":   func(s *Snapshot) { s.Version = 0 },
-		"bad saved addr": func(s *Snapshot) { s.SavedAddresses = []shipto.ShipTo{badAddr} },
+		"bad saved addr": func(s *Snapshot) { s.SavedAddresses = []SavedAddress{{ID: "addr-1", ShipTo: badAddr}} },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

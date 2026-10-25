@@ -85,6 +85,50 @@ func (r *OrderRepository) Get(ctx context.Context, id customerorder.ID) (*custom
 	return loadOrder(ctx, tx, id, "")
 }
 
+// ListByShopper implements ports.OrderRepository: one page of the shopper's
+// orders, newest first (placed_at DESC, order_id ASC), strictly after the
+// keyset position when afterPlacedAt is set (ADR 0002 A26). One read-only
+// REPEATABLE READ transaction gives every order of the page the same snapshot.
+func (r *OrderRepository) ListByShopper(ctx context.Context, shopperID string, afterPlacedAt time.Time, afterOrderID string, limit int) ([]*customerorder.CustomerOrder, error) {
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, fmt.Errorf("begin order history of %s: %w", shopperID, err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	rows, err := tx.Query(ctx, `
+		SELECT order_id FROM customer_orders
+		WHERE shopper_id = $1
+		  AND ($2::timestamptz IS NULL OR placed_at < $2 OR (placed_at = $2 AND order_id > $3))
+		ORDER BY placed_at DESC, order_id ASC
+		LIMIT $4`, shopperID, nullTime(afterPlacedAt), afterOrderID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("read order history of %s: %w", shopperID, err)
+	}
+	var ids []customerorder.ID
+	for rows.Next() {
+		var id customerorder.ID
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan order history of %s: %w", shopperID, err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("read order history of %s: %w", shopperID, err)
+	}
+	rows.Close()
+	out := make([]*customerorder.CustomerOrder, 0, len(ids))
+	for _, id := range ids {
+		o, err := loadOrder(ctx, tx, id, "")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, nil
+}
+
 func loadOrder(ctx context.Context, q querier, id customerorder.ID, lock string) (*customerorder.CustomerOrder, error) {
 	var (
 		snap      customerorder.Snapshot

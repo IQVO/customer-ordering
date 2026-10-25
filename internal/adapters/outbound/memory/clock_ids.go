@@ -42,12 +42,14 @@ func (c *Clock) Advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// SequentialIDs is a ports.IDGenerator minting shopper-1, shopper-2, ... and
-// deriving order ids as "order-<key>" (the key is made of valid id characters
-// in tests).
+// SequentialIDs is a ports.IDGenerator minting shopper-1, shopper-2, ...,
+// address-1, address-2, ... for registration-time addresses and deriving order
+// ids as "order-<key>" and added-address ids as "address-<shopperID>:<key>"
+// (the key is made of valid id characters in tests).
 type SequentialIDs struct {
-	mu       sync.Mutex
-	shoppers int
+	mu        sync.Mutex
+	shoppers  int
+	addresses int
 }
 
 // NewShopperID returns the next shopper id.
@@ -56,6 +58,20 @@ func (g *SequentialIDs) NewShopperID() shopper.ID {
 	defer g.mu.Unlock()
 	g.shoppers++
 	return shopper.ID(fmt.Sprintf("shopper-%d", g.shoppers))
+}
+
+// NewAddressID returns the next registration-time address id.
+func (g *SequentialIDs) NewAddressID() shopper.AddressID {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.addresses++
+	return shopper.AddressID(fmt.Sprintf("address-%d", g.addresses))
+}
+
+// AddressIDFor returns "address-<shopperID>:<key>": the same (shopper, key)
+// always yields the same id, like the production UUID v5 derivation.
+func (g *SequentialIDs) AddressIDFor(id shopper.ID, key string) shopper.AddressID {
+	return shopper.AddressID("address-" + string(id) + ":" + key)
 }
 
 // OrderIDFor returns "order-" plus the key.

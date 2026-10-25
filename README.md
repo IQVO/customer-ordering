@@ -35,11 +35,14 @@ with another request is 422 `idempotency-key-reused`.
 
 | Method and path | Operation |
 | --- | --- |
-| `POST /checkout` | place an order (PlaceOrder) |
+| `POST /checkout` | place an order (PlaceOrder; inline `shipTo` or a saved `shipToAddressId`) |
+| `GET /orders?shopperId=&after=&limit=` | a shopper's order history, newest first (ListOrdersByShopper) |
 | `GET /orders/{orderId}`, `GET /orders/{orderId}/tracking` | status, tracking |
 | `POST /orders/{orderId}:cancel` | request cancellation |
 | `GET /orders/{orderId}/ship-to` | restricted: the address, for shipping-and-tracking |
 | `POST /shoppers` | register a shopper |
+| `GET /shoppers/{shopperId}`, `GET /shoppers?email=` | shopper profile with saved addresses, shopper by e-mail |
+| `POST /shoppers/{shopperId}/addresses` | save an address (max 20, `too-many-addresses`) |
 | `GET /healthz`, `GET /readyz` | liveness, readiness |
 
 ## MCP server

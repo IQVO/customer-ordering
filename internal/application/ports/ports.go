@@ -32,12 +32,20 @@ type OrderRepository interface {
 	// Save persists the order snapshot under the concurrency rule of the
 	// package comment.
 	Save(ctx context.Context, o *customerorder.CustomerOrder) error
+	// ListByShopper returns up to limit orders of the shopper, newest first
+	// (placedAt DESC, orderId ASC as the tiebreak, ADR 0002 A26), starting
+	// strictly after (afterPlacedAt, afterOrderID) when afterPlacedAt is not
+	// zero. A shopper without orders is an empty page, never ErrNotFound.
+	ListByShopper(ctx context.Context, shopperID string, afterPlacedAt time.Time, afterOrderID string, limit int) ([]*customerorder.CustomerOrder, error)
 }
 
 // ShopperRepository persists Shopper aggregates.
 type ShopperRepository interface {
 	// Get returns the shopper, or ErrNotFound.
 	Get(ctx context.Context, id shopper.ID) (*shopper.Shopper, error)
+	// FindByEmail returns the shopper of the NORMALISED e-mail (trimmed and
+	// lower-cased by the caller, ADR 0002 A16), or ErrNotFound.
+	FindByEmail(ctx context.Context, email string) (*shopper.Shopper, error)
 	// Save persists the shopper under the concurrency rule of the package
 	// comment. A second shopper with the same e-mail (lower-cased) is
 	// shopper.ErrShopperExists (unique index).
@@ -147,6 +155,12 @@ type Clock interface {
 type IDGenerator interface {
 	// NewShopperID mints a shopper id.
 	NewShopperID() shopper.ID
+	// NewAddressID mints the id of a registration-time saved address.
+	NewAddressID() shopper.AddressID
+	// AddressIDFor derives the id of an address added under an
+	// Idempotency-Key (ADR 0002, A24): the same (shopper, key) always yields
+	// the same id, so a replayed add is a no-op.
+	AddressIDFor(shopperID shopper.ID, key string) shopper.AddressID
 	// OrderIDFor derives the order id of a checkout from its Idempotency-Key
 	// (ADR 0002, A13): the same key always yields the same id.
 	OrderIDFor(idempotencyKey string) customerorder.ID

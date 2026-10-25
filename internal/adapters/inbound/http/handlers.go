@@ -3,12 +3,15 @@ package http
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/usecases"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
+	"github.com/claudioed/customer-ordering/internal/domain/shared"
+	"github.com/claudioed/customer-ordering/internal/domain/shopper"
 )
 
 // maxOrderIDLength bounds a path identifier; a longer one cannot name an order.
@@ -23,6 +26,17 @@ func orderIDParam(w http.ResponseWriter, r *http.Request) (customerorder.ID, boo
 		return "", false
 	}
 	return customerorder.ID(id), true
+}
+
+// shopperIDParam returns the {shopperId} path parameter, or false after
+// writing 404 for one that can never name a shopper.
+func shopperIDParam(w http.ResponseWriter, r *http.Request) (string, bool) {
+	id := chi.URLParam(r, "shopperId")
+	if id == "" || len(id) > maxOrderIDLength {
+		writeError(w, r, ports.ErrNotFound)
+		return "", false
+	}
+	return id, true
 }
 
 func handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -40,7 +54,8 @@ func (s *Server) handlePlaceOrder(w http.ResponseWriter, r *http.Request) {
 		groups[i] = usecases.CheckoutGroup(g)
 	}
 	view, err := s.PlaceOrder.Execute(r.Context(), usecases.PlaceOrderInput{
-		OrderID: s.IDs.OrderIDFor(r.Header.Get(IdempotencyKeyHeader)), ShopperID: req.ShopperID, ShipTo: req.ShipTo.domain(), Lines: req.lines(), Groups: groups,
+		OrderID: s.IDs.OrderIDFor(r.Header.Get(IdempotencyKeyHeader)), ShopperID: req.ShopperID,
+		ShipTo: req.ShipTo.domain(), ShipToAddressID: req.ShipToAddressID, Lines: req.lines(), Groups: groups,
 	})
 	if err != nil {
 		writeError(w, r, err)
@@ -127,4 +142,83 @@ func (s *Server) handleRegisterShopper(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Location", "/shoppers/"+url.PathEscape(view.ShopperID))
 	writeJSON(w, http.StatusCreated, shopperView(view))
+}
+
+// handleGetShopper serves GET /shoppers/{shopperId} (NG1): the profile with
+// its saved addresses. The addresses are synthetic PII and leave the service
+// only here and on the add route's answer.
+func (s *Server) handleGetShopper(w http.ResponseWriter, r *http.Request) {
+	id, ok := shopperIDParam(w, r)
+	if !ok {
+		return
+	}
+	view, err := s.GetShopper.Execute(r.Context(), shopper.ID(id))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, shopperView(view))
+}
+
+// handleFindShopper serves GET /shoppers?email= (NG3): the match is trimmed
+// and lower-cased (A16); no shopper answers 404 not-found.
+func (s *Server) handleFindShopper(w http.ResponseWriter, r *http.Request) {
+	view, err := s.FindShopperByEmail.Execute(r.Context(), r.URL.Query().Get("email"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, shopperView(view))
+}
+
+// handleAddSavedAddress serves POST /shoppers/{shopperId}/addresses (NG1):
+// the address id derives from the Idempotency-Key, so a replay after the
+// idempotency record expired still returns the same address.
+func (s *Server) handleAddSavedAddress(w http.ResponseWriter, r *http.Request) {
+	id, ok := shopperIDParam(w, r)
+	if !ok {
+		return
+	}
+	var req shipToDTO
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	view, err := s.AddSavedAddress.Execute(r.Context(), usecases.AddSavedAddressInput{
+		ShopperID: id, Address: req.domain(), IdempotencyKey: r.Header.Get(IdempotencyKeyHeader),
+	})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	w.Header().Set("Location", "/shoppers/"+url.PathEscape(id)+"/addresses/"+url.PathEscape(view.AddressID))
+	writeJSON(w, http.StatusCreated, savedAddressView(view))
+}
+
+// handleListOrders serves GET /orders?shopperId=&after=&limit= (NG2): newest
+// first, the cursor of the previous page in after. The items never carry the
+// address.
+func (s *Server) handleListOrders(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	if query.Get("shopperId") == "" {
+		writeError(w, r, shared.Invalid("shopperId is required"))
+		return
+	}
+	limit := 0
+	if raw := query.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, r, shared.Invalid("limit must be an integer between 1 and %d", usecases.MaxOrderListLimit))
+			return
+		}
+		limit = n
+	}
+	view, err := s.ListOrdersByShopper.Execute(r.Context(), usecases.ListOrdersInput{
+		ShopperID: query.Get("shopperId"), After: query.Get("after"), Limit: limit,
+	})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, orderListView(view))
 }

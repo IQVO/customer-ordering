@@ -51,6 +51,7 @@ var problemCatalogue = []struct {
 	{customerorder.ErrStatusRegression, problem{http.StatusConflict, "status-regression", "The order status can only move forward"}},
 	{customerorder.ErrCancelAfterLock, problem{http.StatusConflict, "cancel-after-lock", "Every shipment group is locked; cancellation is now a return"}},
 	{shopper.ErrShopperExists, problem{http.StatusConflict, "shopper-exists", "A shopper with this e-mail exists"}},
+	{shopper.ErrTooManyAddresses, problem{http.StatusUnprocessableEntity, "too-many-addresses", "A shopper holds at most 20 saved addresses"}},
 	{ports.ErrConcurrentUpdate, problem{http.StatusConflict, "concurrent-update", "The resource was modified by another request; retry"}},
 	{shared.ErrIllegalTransition, problem{http.StatusConflict, "illegal-transition", "The order does not allow this change in its current state"}},
 	{shared.ErrValidation, problem{http.StatusUnprocessableEntity, "validation-failed", "Validation failed"}},
