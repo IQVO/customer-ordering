@@ -97,6 +97,14 @@ All settings, the probes, the shutdown order, the outbox runbook and the Helm ch
 On Kubernetes: `helm upgrade --install customer-ordering charts/customer-ordering` with the mandatory values (`database.*`, `kafka.brokers`,
 `config.deliveryPromiseUrl`, the three `config.*ConsumerGroup` ids); the chart fails to render, naming the value, without them.
 
+## Observability
+
+Logs, metrics and traces follow the fleet standard ([ADR 0007](docs/adr/0007-fleet-observability-standard.md)): JSON logs on stdout carry `trace_id`/`span_id`
+and a `request_id`; `cmd/api` and `cmd/mcp` export OTLP/gRPC to the Collector (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `SERVICE_VERSION`, `ENVIRONMENT`;
+export never blocks, so no Collector costs telemetry, nothing else) with HTTP request duration, Go runtime metrics and the business counter
+`ordering.orders.placed` (`outcome`, `reason`); the trace continues across Kafka in the `traceparent` header of each published event and is picked up by the
+consumers. The chart's `otel.*` values render the env.
+
 ## Console remote (web)
 
 `web/` is the `customer_ordering_mfe` Module Federation remote for the warehouse-console shell: three read-only screens (the order with its lines and promises, the
