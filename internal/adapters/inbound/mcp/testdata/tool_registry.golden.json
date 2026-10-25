@@ -1,0 +1,350 @@
+[
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read a placed customer order by id: its status (PLACED, IN_FULFILLMENT, PARTIALLY_SHIPPED, SHIPPED, PARTIALLY_DELIVERED, DELIVERED, LOST, RETURNED or CANCELLED), the shopper, the destination postal prefix and when it was placed, the cart lines (lineNo, catalogItemId, quantity) and every shipment group with its promise (promiseId, tier, shipBy, deliverByEarliest, deliverByLatest), the line numbers it ships, its status and revision, and the cancellation request or refusal facts when there were any. The ship-to address is NOT part of it (use get_ship_to). Read-only; an unknown or malformed order id fails with not-found.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "orderId": {
+          "description": "the order id, e.g. ord-3f9c1a2b",
+          "type": "string"
+        }
+      },
+      "required": [
+        "orderId"
+      ],
+      "type": "object"
+    },
+    "name": "get_order",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "cancelledAt": {
+          "type": "string"
+        },
+        "destinationPostalPrefix": {
+          "type": "string"
+        },
+        "groups": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cancelReason": {
+                "type": "string"
+              },
+              "cancelRefusedReason": {
+                "type": "string"
+              },
+              "cancelRequestedAt": {
+                "type": "string"
+              },
+              "deliverByEarliest": {
+                "type": "string"
+              },
+              "deliverByLatest": {
+                "type": "string"
+              },
+              "groupNo": {
+                "type": "integer"
+              },
+              "lineNos": {
+                "items": {
+                  "type": "integer"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "promiseId": {
+                "type": "string"
+              },
+              "revisionNo": {
+                "type": "integer"
+              },
+              "shipBy": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "tier": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "groupNo",
+              "promiseId",
+              "tier",
+              "shipBy",
+              "deliverByEarliest",
+              "deliverByLatest",
+              "lineNos",
+              "status"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "lines": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "catalogItemId": {
+                "type": "string"
+              },
+              "lineNo": {
+                "type": "integer"
+              },
+              "quantity": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "lineNo",
+              "catalogItemId",
+              "quantity"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "orderId": {
+          "type": "string"
+        },
+        "placedAt": {
+          "type": "string"
+        },
+        "shopperId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "orderId",
+        "shopperId",
+        "status",
+        "destinationPostalPrefix",
+        "placedAt",
+        "lines",
+        "groups"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read how one order is travelling: for every shipment group its promise window (deliverByEarliest, deliverByLatest), its status (PROMISED, LOCKED, SHIPPED, DELIVERED, LOST, RETURNED, CANCELLATION_REQUESTED or CANCELLED), when it locked and shipped, the at-risk and unsourceable signals, the promise verdict (and how many minutes late it ran), and its packages with carrier, state, last scan node and time, delivery time and exception reason; a lost or returned group also carries lostAt/returnedAt and the outcome package. Read-only; an unknown or malformed order id fails with not-found.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "orderId": {
+          "description": "the order id, e.g. ord-3f9c1a2b",
+          "type": "string"
+        }
+      },
+      "required": [
+        "orderId"
+      ],
+      "type": "object"
+    },
+    "name": "get_order_tracking",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "groups": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "atRiskReason": {
+                "type": "string"
+              },
+              "cancelRefusedReason": {
+                "type": "string"
+              },
+              "deliverByEarliest": {
+                "type": "string"
+              },
+              "deliverByLatest": {
+                "type": "string"
+              },
+              "groupNo": {
+                "type": "integer"
+              },
+              "lateByMinutes": {
+                "type": [
+                  "null",
+                  "integer"
+                ]
+              },
+              "lockedAt": {
+                "type": "string"
+              },
+              "lostAt": {
+                "type": "string"
+              },
+              "outcomePackage": {
+                "type": "string"
+              },
+              "packages": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "carrier": {
+                      "type": "string"
+                    },
+                    "deliveredAt": {
+                      "type": "string"
+                    },
+                    "exceptionReason": {
+                      "type": "string"
+                    },
+                    "lastScanAt": {
+                      "type": "string"
+                    },
+                    "lastScanNodeId": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "trackingNumber": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "trackingNumber"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "promiseId": {
+                "type": "string"
+              },
+              "promiseVerdict": {
+                "type": "string"
+              },
+              "returnedAt": {
+                "type": "string"
+              },
+              "shippedAt": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "unsourceableReason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "groupNo",
+              "promiseId",
+              "status",
+              "deliverByEarliest",
+              "deliverByLatest",
+              "packages"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "orderId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "orderId",
+        "status",
+        "groups"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read the ship-to delivery address of one order (name, line1, line2, city, region, postalCode, countryCode, phone). It is synthetic PII held only by this context and served by this one read, which REST restricts to label printing; it never appears in an event. Read-only; an unknown or malformed order id fails with not-found.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "orderId": {
+          "description": "the order id, e.g. ord-3f9c1a2b",
+          "type": "string"
+        }
+      },
+      "required": [
+        "orderId"
+      ],
+      "type": "object"
+    },
+    "name": "get_ship_to",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "city": {
+          "type": "string"
+        },
+        "countryCode": {
+          "type": "string"
+        },
+        "line1": {
+          "type": "string"
+        },
+        "line2": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "postalCode": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "line1",
+        "city",
+        "region",
+        "postalCode",
+        "countryCode"
+      ],
+      "type": "object"
+    }
+  }
+]

@@ -42,6 +42,26 @@ with another request is 422 `idempotency-key-reused`.
 | `POST /shoppers` | register a shopper |
 | `GET /healthz`, `GET /readyz` | liveness, readiness |
 
+## MCP server
+
+`cmd/mcp` is a second, read-only deployable: the same three read use cases the REST adapter serves, exposed as MCP tools over Streamable HTTP
+(`github.com/modelcontextprotocol/go-sdk`, `/mcp` and `/`, port 8090). No auth of any kind (fleet decision; the boundary is the in-cluster ClusterIP), no Kafka, no
+relay, no consumers — it can never write ([ADR 0005](docs/adr/0005-mcp-server-adoption.md)).
+
+| Tool | Read |
+| --- | --- |
+| `get_order(orderId)` | `GET /orders/{orderId}`: status, lines, the promise of every group |
+| `get_order_tracking(orderId)` | `GET /orders/{orderId}/tracking`: verdicts, signals, packages, outcomes |
+| `get_ship_to(orderId)` | `GET /orders/{orderId}/ship-to`: the restricted address read |
+
+```sh
+export DATABASE_URL=postgres://user:***@localhost:5432/customer_ordering?sslmode=disable
+go run ./cmd/mcp                           # listens on :8090 (MCP_ADDR), /healthz + /mcp
+```
+
+On Kubernetes the optional `mcp` chart component (default off) renders the Deployment and Service; `mcp.route.enabled` exposes
+`/api/mcp/customer-ordering` through the gateway, rewritten to `/mcp`.
+
 ## Events
 
 Contract: [`apis/asyncapi.yaml`](apis/asyncapi.yaml), catalogue in [ADR 0004](docs/adr/0004-cloudevents-envelope-and-type-catalogue.md).
@@ -74,6 +94,19 @@ All settings, the probes, the shutdown order, the outbox runbook and the Helm ch
 On Kubernetes: `helm upgrade --install customer-ordering charts/customer-ordering` with the mandatory values (`database.*`, `kafka.brokers`,
 `config.deliveryPromiseUrl`, the three `config.*ConsumerGroup` ids); the chart fails to render, naming the value, without them.
 
+## Console remote (web)
+
+`web/` is the `customer_ordering_mfe` Module Federation remote for the warehouse-console shell: three read-only screens (the order with its lines and promises, the
+tracking view, the restricted ship-to) over the REST reads above. The API base is resolved at runtime from the console's `/config.json` (`apiOrigin`), never baked in;
+production assets live under `/mfes/customer-ordering/` behind the Nginx web gateway; the optional `frontend` chart component (default off) serves them
+([ADR 0006](docs/adr/0006-console-remote.md)).
+
+```sh
+cd web && npm ci
+npm run dev        # standalone on http://localhost:4012 (the shell is not needed)
+npm run lint && npx tsc -b && npm test && npm run build
+```
+
 ## Develop
 
 | Command | What it runs |
@@ -85,8 +118,12 @@ On Kubernetes: `helm upgrade --install customer-ordering charts/customer-orderin
 | `make integration` | testcontainers Postgres and Kafka: repositories, relay, real-wiring test (needs Docker) |
 | `make vuln` | govulncheck |
 
+The web remote's gates (run inside `web/`, never at the repo root): `npm run lint`, `npx tsc -b`, `npm test`, `npm run build` (the CI `web` job runs exactly these
+against a sibling `warehouse-ui-kit` checkout).
+
 Layout: `internal/domain/{shared,shipto,shopper,customerorder}` (pure Go), `internal/application/{ports,views,usecases,readmodel,promising,outbox,idempotency}`,
-`internal/adapters/inbound/{http,kafka}`, `internal/adapters/outbound/{postgres,kafka,outbox,deliverypromise,clock,ids,memory,repocontract}`, `cmd/api`, `features/` (godog
-feature files, run from `internal/bdd`). The `memory` and `repocontract` packages are test doubles; `cmd/**` never imports them.
+`internal/adapters/inbound/{http,kafka,mcp}`, `internal/adapters/outbound/{postgres,kafka,outbox,deliverypromise,clock,ids,memory,repocontract}`, `cmd/{api,mcp}`,
+`web/` (the console remote), `features/` (godog feature files, run from `internal/bdd`). The `memory` and `repocontract` packages are test doubles; `cmd/**` never
+imports them.
 
 Decisions: [docs/adr/](docs/adr/index.md). Packaging checklist: [docs/before-first-release.md](docs/before-first-release.md).
