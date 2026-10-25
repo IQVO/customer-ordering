@@ -2,7 +2,7 @@
 
 Source of truth: warehouse-docs `network/model/model.yaml` (context `customer-ordering`).
 Invariants, transitions and every assumption the model left open are in
-`docs/adr/0002-aggregates-and-invariants.md` (assumptions A1-A23). Consumed
+`docs/adr/0002-aggregates-and-invariants.md` (assumptions A1-A27). Consumed
 contracts and local read models are in `docs/adr/0003-consumed-contracts-and-local-read-models.md`.
 
 ## Ubiquitous Language (use these exact names)
@@ -11,6 +11,10 @@ contracts and local read models are in `docs/adr/0003-consumed-contracts-and-loc
   lines, the ship-to, one `GroupPromise` per shipment group and a DERIVED status.
   Invariant: every line belongs to exactly one group and every group has a promise.
 - **Shopper** — a registered buyer (`shopperId`), unique by lower-cased e-mail.
+- **SavedAddress** — a `ShipTo` under a stable `addressId` (A24): at most 20 per
+  shopper (`ErrTooManyAddresses`); the id of an add derives from its
+  Idempotency-Key, so a replay is a no-op. Checkout copies the saved address
+  into the order at placement (A25).
 - **ShipTo** — the delivery address: synthetic PII held only in this service and
   returned only by `GET /orders/{orderId}/ship-to`; never in an event, a log or the
   order view. The events carry `destinationPostalPrefix` (first 3 characters).
@@ -37,7 +41,8 @@ contracts and local read models are in `docs/adr/0003-consumed-contracts-and-loc
   `restore.go` (validating `Restore`). Errors: `ErrLineWithoutPromise`,
   `ErrPromiseDestinationMismatch`, `ErrCancelAfterLock` (advisory),
   `ErrStatusRegression`, `ErrUnknownGroup`.
-- **Shopper** (`internal/domain/shopper`): `RegisterShopper`; `ErrShopperExists`.
+- **Shopper** (`internal/domain/shopper`): `RegisterShopper`, `AddSavedAddress`;
+  `ErrShopperExists`, `ErrTooManyAddresses`.
 - **ShipTo** (`internal/domain/shipto`): value object with field limits.
 - `internal/domain/shared`: `Event`, `Header`, `ErrValidation`,
   `ErrIllegalTransition`, `ErrInvalidSnapshot`, id and text checks.
@@ -68,7 +73,8 @@ One per REST operation and per consumed event; commands run in ONE
 
 - `PlaceOrder` (`checkout.go`): quote check, MakePromise per group, ConfirmPromise
   per group, then place; a failed confirm returns `RequoteRequired` and no order.
-- `CancelOrder` (`cancel.go`), `RegisterShopper` (`shopper.go`).
+- `CancelOrder` (`cancel.go`), `RegisterShopper`, `AddSavedAddress`, `GetShopper`,
+  `FindShopperByEmail` (`shopper.go`), `ListOrdersByShopper` (`orders_history.go`).
 - Queries (`queries.go`): `GetOrder`, `GetOrderTracking`, `GetShipTo`.
 - Consumers (`consume_promise.go`, `consume_sourcing.go`, `consume_tracking.go`):
   `Consumer.Apply<Event>` for each consumed event, deduplicated by the inbox

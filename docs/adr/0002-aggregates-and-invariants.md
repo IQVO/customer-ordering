@@ -237,6 +237,39 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
   `CancelOrder` on a `LOST` or `RETURNED` order is `ErrStatusRegression`, like on a
   `DELIVERED` one. The enum change is additive for REST clients and is a model gap:
   retail-network-docs `OrderStatus` / `GroupStatus` need the two values.
+- **A24** Saved addresses are rows, each under a stable `addressId` (NG1). An
+  address added through `POST /shoppers/{shopperId}/addresses` takes the UUID v5
+  of (shopper id, `Idempotency-Key`) in a fixed namespace (like the order id
+  A13), so a replay of the same key — even after the 24 h idempotency record
+  expired — derives the same id and is a no-op returning the stored address;
+  addresses saved at registration get a random UUID v4. The cap of 20
+  (A15) is `ErrTooManyAddresses` (422 `too-many-addresses`), and the ids are
+  unique per shopper (`shopper_addresses`, migration `0003`; addresses stored
+  before the ids existed keep a deterministic `legacy-<md5(shopper, position)>`
+  id). No new events: an address is not a fact the network needs.
+- **A25** Checkout by saved address (NG1): `POST /checkout` takes exactly one
+  of `shipTo` / `shipToAddressId` (both or neither is `ErrValidationFailed`).
+  The id resolves against *the checkout's shopper*: an unknown id, or an id the
+  shopper does not hold, is `ErrValidationFailed` (422 `validation-failed`),
+  checked before delivery-promise is called. The address is COPIED into the
+  order at placement — a later edit or removal of the saved address never
+  changes a placed order — so the stored order and the restricted ship-to
+  route keep their shape.
+- **A26** Order history (NG2): `GET /orders?shopperId=&after=&limit=` returns
+  the shopper's orders newest first (`placed_at DESC`, `orderId ASC` as the
+  tiebreak; index `customer_orders_history_idx`, migration `0003`), keyset
+  paginated like the catalog list: `after` is the opaque `nextCursor` of the
+  previous page (base64 of RFC 3339Nano `placedAt` + `|` + `orderId`); anything
+  malformed is 422 `validation-failed`. `limit` defaults to 20 and is capped at
+  100. An unknown shopper is 404; a shopper without orders is an empty page,
+  never an error. The items never carry the address.
+- **A27** Shopper reads (NG1, NG3): `GET /shoppers/{shopperId}` returns the
+  profile with `savedAddresses[]` (possibly empty, oldest first); the addresses
+  are synthetic PII that leave the service only on the shopper routes. `GET
+  /shoppers?email=` matches on the A16 normalisation (trimmed, lower-cased);
+  an absent or empty `email` matches nothing and answers 404 `not-found` — the
+  query parameter is required, and "no match" reads more honestly from it
+  than a 400 (least-surprise reading of a silent contract; model gap).
 
 ## Consequences
 
@@ -244,5 +277,8 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
   a table of legal and illegal transitions.
 - `model_gaps` for the orchestrator: A11 (destination on the promise), A12 (confirm
   body), A14 (resolved by the cancel route; the residual risk above), A19 and A23 (LOST /
-  RETURNED are new group and order states, absent from the model's `OrderStatus`), and the model's `GroupPromise` /
-  `OrderStatus` back-fill (A1, A2, A3).
+  RETURNED are new group and order states, absent from the model's `OrderStatus`), the model's `GroupPromise` /
+  `OrderStatus` back-fill (A1, A2, A3), and the storefront extension NG1-NG3 (A24-A27):
+  the network model's customer-ordering REST section needs the four routes
+  (POST/GET on shoppers, GET /orders) with `SavedAddress`, `Shopper.savedAddresses`,
+  `CustomerOrderList` and the `too-many-addresses` problem.
