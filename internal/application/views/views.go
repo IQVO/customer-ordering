@@ -129,6 +129,13 @@ func ShopperFrom(s *shopper.Shopper) Shopper {
 	}
 }
 
+// OrderList is one page of a shopper's order history (NG2). NextCursor is
+// empty when the page is the last.
+type OrderList struct {
+	Items      []Order
+	NextCursor string
+}
+
 // TrackingPackage is one package of a group.
 type TrackingPackage struct {
 	TrackingNumber  string

@@ -32,6 +32,11 @@ type OrderRepository interface {
 	// Save persists the order snapshot under the concurrency rule of the
 	// package comment.
 	Save(ctx context.Context, o *customerorder.CustomerOrder) error
+	// ListByShopper returns up to limit orders of the shopper, newest first
+	// (placedAt DESC, orderId ASC as the tiebreak, ADR 0002 A26), starting
+	// strictly after (afterPlacedAt, afterOrderID) when afterPlacedAt is not
+	// zero. A shopper without orders is an empty page, never ErrNotFound.
+	ListByShopper(ctx context.Context, shopperID string, afterPlacedAt time.Time, afterOrderID string, limit int) ([]*customerorder.CustomerOrder, error)
 }
 
 // ShopperRepository persists Shopper aggregates.

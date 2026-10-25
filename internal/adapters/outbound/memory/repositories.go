@@ -3,6 +3,8 @@ package memory
 import (
 	"context"
 	"fmt"
+	"sort"
+	"time"
 
 	"github.com/claudioed/customer-ordering/internal/application/idempotency"
 	"github.com/claudioed/customer-ordering/internal/application/ports"
@@ -44,6 +46,49 @@ func (r *OrderRepository) Save(ctx context.Context, o *customerorder.CustomerOrd
 	r.s.orders[o.ID()] = o.Snapshot()
 	o.MarkPersisted()
 	return nil
+}
+
+// ListByShopper implements ports.OrderRepository: newest first (placedAt DESC,
+// orderId ASC), strictly after the cursor position when it is set.
+func (r *OrderRepository) ListByShopper(ctx context.Context, shopperID string, afterPlacedAt time.Time, afterOrderID string, limit int) ([]*customerorder.CustomerOrder, error) {
+	defer r.s.enter(ctx)()
+	var page []customerorder.Snapshot
+	for _, snap := range r.s.orders {
+		if snap.ShopperID != shopperID {
+			continue
+		}
+		if !afterPlacedAt.IsZero() && !afterCursor(snap, afterPlacedAt, afterOrderID) {
+			continue
+		}
+		page = append(page, snap)
+	}
+	sort.Slice(page, func(i, j int) bool {
+		if page[i].PlacedAt.Equal(page[j].PlacedAt) {
+			return page[i].ID < page[j].ID
+		}
+		return page[i].PlacedAt.After(page[j].PlacedAt)
+	})
+	if len(page) > limit {
+		page = page[:limit]
+	}
+	out := make([]*customerorder.CustomerOrder, 0, len(page))
+	for _, snap := range page {
+		o, err := customerorder.Restore(snap)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, nil
+}
+
+// afterCursor reports whether the snapshot sorts strictly after the cursor in
+// the (placedAt DESC, orderId ASC) order.
+func afterCursor(snap customerorder.Snapshot, at time.Time, id string) bool {
+	if snap.PlacedAt.Equal(at) {
+		return string(snap.ID) > id
+	}
+	return snap.PlacedAt.Before(at)
 }
 
 // ShopperRepository is the in-memory ports.ShopperRepository.

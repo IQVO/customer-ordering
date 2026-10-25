@@ -54,6 +54,7 @@ func testOrders(t *testing.T, e Env) {
 			t.Fatalf("status/cancelledAt = %s %v", got.Status(), got.CancelledAt())
 		}
 	})
+	t.Run("ListByShopper pages newest first without other shoppers", func(t *testing.T) { testListByShopper(t, e) })
 	t.Run("optimistic concurrency", func(t *testing.T) {
 		o := newOrder(t, "order-cc")
 		must(t, e.Orders.Save(bg(), o))
