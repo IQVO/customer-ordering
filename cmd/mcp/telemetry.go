@@ -30,17 +30,18 @@ type telemetryEnv struct {
 }
 
 func loadTelemetryEnv(env func(string) string) telemetryEnv {
-	or := func(key, fallback string) string {
-		if v := env(key); v != "" {
-			return v
-		}
-		return fallback
-	}
 	return telemetryEnv{
-		serviceName:    or("OTEL_SERVICE_NAME", defaultServiceName),
-		serviceVersion: or("SERVICE_VERSION", telemetry.DefaultServiceVersion),
-		otlpEndpoint:   or("OTEL_EXPORTER_OTLP_ENDPOINT", telemetry.DefaultEndpoint),
+		serviceName:    orDefault(env("OTEL_SERVICE_NAME"), defaultServiceName),
+		serviceVersion: orDefault(env("SERVICE_VERSION"), telemetry.DefaultServiceVersion),
+		otlpEndpoint:   orDefault(env("OTEL_EXPORTER_OTLP_ENDPOINT"), telemetry.DefaultEndpoint),
 	}
+}
+
+func orDefault(v, fallback string) string {
+	if v != "" {
+		return v
+	}
+	return fallback
 }
 
 // startTelemetry brings OpenTelemetry up and returns the flush func to defer.
