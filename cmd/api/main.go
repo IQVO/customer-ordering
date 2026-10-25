@@ -51,6 +51,7 @@ import (
 	outboundkafka "github.com/claudioed/customer-ordering/internal/adapters/outbound/kafka"
 	outboxrelay "github.com/claudioed/customer-ordering/internal/adapters/outbound/outbox"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/postgres"
+	"github.com/claudioed/customer-ordering/internal/adapters/outbound/telemetry"
 	"github.com/claudioed/customer-ordering/internal/application/usecases"
 	"github.com/claudioed/customer-ordering/internal/bootretry"
 )
@@ -102,6 +103,13 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer closeAdapters()
+
+	// The business counter binds to the MeterProvider telemetry.Setup installed.
+	orderMetrics, err := telemetry.NewOrderMetrics()
+	if err != nil {
+		return err
+	}
+	ad.deps.Metrics = orderMetrics
 
 	readiness := newReadiness(ad.pool.Ping, rt.brokers)
 	httpServer := &http.Server{
