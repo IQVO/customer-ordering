@@ -158,6 +158,8 @@ func buildServer(ad adapters, readiness *inboundhttp.Readiness) *inboundhttp.Ser
 	return &inboundhttp.Server{
 		PlaceOrder: usecases.PlaceOrder{Deps: d}, GetOrder: usecases.GetOrder{Deps: d}, GetOrderTracking: usecases.GetOrderTracking{Deps: d},
 		CancelOrder: usecases.CancelOrder{Deps: d}, GetShipTo: usecases.GetShipTo{Deps: d}, RegisterShopper: usecases.RegisterShopper{Deps: d},
+		AddSavedAddress: usecases.AddSavedAddress{Deps: d}, GetShopper: usecases.GetShopper{Deps: d},
+		FindShopperByEmail: usecases.FindShopperByEmail{Deps: d}, ListOrdersByShopper: usecases.ListOrdersByShopper{Deps: d},
 		IdempotencyStore: ad.idempotency, Clock: ad.clock, IDs: ad.ids, Readiness: readiness,
 	}
 }

@@ -44,10 +44,13 @@ type checkoutGroupDTO struct {
 }
 
 type checkoutRequest struct {
-	ShopperID string             `json:"shopperId"`
-	ShipTo    shipToDTO          `json:"shipTo"`
-	Lines     []lineDTO          `json:"lines"`
-	Groups    []checkoutGroupDTO `json:"groups"`
+	ShopperID string    `json:"shopperId"`
+	ShipTo    shipToDTO `json:"shipTo"`
+	// ShipToAddressID names a saved address of the shopper (NG1): exactly one
+	// of shipTo / shipToAddressId, the address is copied into the order.
+	ShipToAddressID string             `json:"shipToAddressId"`
+	Lines           []lineDTO          `json:"lines"`
+	Groups          []checkoutGroupDTO `json:"groups"`
 }
 
 func (c checkoutRequest) lines() []customerorder.OrderLine {
@@ -171,15 +174,56 @@ func trackingView(t views.Tracking) trackingDTO {
 	return trackingDTO{OrderID: t.OrderID, Status: t.Status, Groups: groups}
 }
 
+// savedAddressDTO is a saved address with its id (NG1): the ShipTo fields the
+// caller sent plus addressId.
+type savedAddressDTO struct {
+	AddressID   string `json:"addressId"`
+	Name        string `json:"name"`
+	Line1       string `json:"line1"`
+	Line2       string `json:"line2,omitempty"`
+	City        string `json:"city"`
+	Region      string `json:"region"`
+	PostalCode  string `json:"postalCode"`
+	CountryCode string `json:"countryCode"`
+	Phone       string `json:"phone,omitempty"`
+}
+
+func savedAddressView(a views.SavedAddress) savedAddressDTO {
+	return savedAddressDTO{
+		AddressID: a.AddressID, Name: a.Name, Line1: a.Line1, Line2: a.Line2, City: a.City,
+		Region: a.Region, PostalCode: a.PostalCode, CountryCode: a.CountryCode, Phone: a.Phone,
+	}
+}
+
 type shopperDTO struct {
-	ShopperID    string `json:"shopperId"`
-	Email        string `json:"email"`
-	Status       string `json:"status"`
-	RegisteredAt string `json:"registeredAt"`
+	ShopperID      string            `json:"shopperId"`
+	Email          string            `json:"email"`
+	Status         string            `json:"status"`
+	RegisteredAt   string            `json:"registeredAt"`
+	SavedAddresses []savedAddressDTO `json:"savedAddresses"`
 }
 
 func shopperView(s views.Shopper) shopperDTO {
-	return shopperDTO{ShopperID: s.ShopperID, Email: s.Email, Status: s.Status, RegisteredAt: ts(s.RegisteredAt)}
+	addresses := make([]savedAddressDTO, 0, len(s.SavedAddresses))
+	for _, a := range s.SavedAddresses {
+		addresses = append(addresses, savedAddressView(a))
+	}
+	return shopperDTO{ShopperID: s.ShopperID, Email: s.Email, Status: s.Status, RegisteredAt: ts(s.RegisteredAt), SavedAddresses: addresses}
+}
+
+// orderListDTO is one page of the order history (NG2): items never carry the
+// address; nextCursor is present unless the page is the last.
+type orderListDTO struct {
+	Items      []orderDTO `json:"items"`
+	NextCursor string     `json:"nextCursor,omitempty"`
+}
+
+func orderListView(l views.OrderList) orderListDTO {
+	items := make([]orderDTO, 0, len(l.Items))
+	for _, o := range l.Items {
+		items = append(items, orderView(o))
+	}
+	return orderListDTO{Items: items, NextCursor: l.NextCursor}
 }
 
 type requotedOfferDTO struct {

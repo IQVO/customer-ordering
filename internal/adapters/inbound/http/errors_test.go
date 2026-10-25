@@ -99,6 +99,7 @@ func TestEveryTypedErrorHasItsStatus(t *testing.T) {
 		{customerorder.ErrStatusRegression, 409, "status-regression"},
 		{customerorder.ErrCancelAfterLock, 409, "cancel-after-lock"},
 		{shopper.ErrShopperExists, 409, "shopper-exists"},
+		{shopper.ErrTooManyAddresses, 422, "too-many-addresses"},
 		{ports.ErrConcurrentUpdate, 409, "concurrent-update"},
 		{shared.ErrIllegalTransition, 409, "illegal-transition"},
 		{shared.ErrValidation, 422, "validation-failed"},
