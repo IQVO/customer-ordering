@@ -165,3 +165,18 @@ type IDGenerator interface {
 	// (ADR 0002, A13): the same key always yields the same id.
 	OrderIDFor(idempotencyKey string) customerorder.ID
 }
+
+// OrderMetrics records the business outcome of every checkout attempt (Tier 2
+// of the fleet metrics convention). The use case calls it once per attempt:
+// OrderPlaced when an order was stored, OrderRejected otherwise, with the
+// problem slug that says why (the `type` suffix the REST adapter answers with:
+// "offer-not-quotable", "validation-failed", ...). A replayed checkout is not an
+// attempt. The implementation lives in internal/adapters/outbound/telemetry; a
+// nil Deps.Metrics records nothing.
+type OrderMetrics interface {
+	// OrderPlaced counts an order that was placed.
+	OrderPlaced(ctx context.Context)
+	// OrderRejected counts a checkout that placed no order; reason is a
+	// stable, low-cardinality slug.
+	OrderRejected(ctx context.Context, reason string)
+}

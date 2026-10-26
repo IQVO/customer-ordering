@@ -30,6 +30,9 @@ type Deps struct {
 	IDs      ports.IDGenerator
 	// Log receives the events a consumer skipped; nil discards them.
 	Log *slog.Logger
+	// Metrics records the business outcome of each checkout; nil records
+	// nothing, so unit tests need no wiring.
+	Metrics ports.OrderMetrics
 }
 
 const (
@@ -49,6 +52,20 @@ func (d Deps) logger() *slog.Logger {
 	}
 	return slog.New(slog.DiscardHandler)
 }
+
+// metrics returns the configured OrderMetrics or a no-op.
+func (d Deps) metrics() ports.OrderMetrics {
+	if d.Metrics != nil {
+		return d.Metrics
+	}
+	return noMetrics{}
+}
+
+// noMetrics is the OrderMetrics of a Deps without one.
+type noMetrics struct{}
+
+func (noMetrics) OrderPlaced(context.Context)           {}
+func (noMetrics) OrderRejected(context.Context, string) {}
 
 func (d Deps) publish(ctx context.Context, events []shared.Event) error {
 	if err := d.Outbox.Append(ctx, events...); err != nil {

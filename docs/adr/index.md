@@ -12,3 +12,4 @@ The *Status* column is copied from each ADR's own `## Status` section.
 | [0004](./0004-cloudevents-envelope-and-type-catalogue.md) | CloudEvents envelope and type catalogue | Accepted (2026-10-23) |
 | [0005](./0005-mcp-server-adoption.md) | a read-only MCP server | Accepted (2026-10-24) |
 | [0006](./0006-console-remote.md) | the console remote (customer_ordering_mfe) — a read-only screen over the existing REST | Accepted (2026-10-24) |
+| [0007](./0007-fleet-observability-standard.md) | Adopt the fleet observability standard (logs, metrics, traces) | Accepted (2026-10-25) |

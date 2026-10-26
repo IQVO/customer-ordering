@@ -215,7 +215,7 @@ func (d Deps) getOrder(ctx context.Context, in orderIDInput) (orderView, error) 
 	}
 	view, err := d.GetOrder.Execute(ctx, id)
 	if err != nil {
-		return orderView{}, mapError(err)
+		return orderView{}, mapError(ctx, err)
 	}
 	return toOrder(view), nil
 }
@@ -228,7 +228,7 @@ func (d Deps) getOrderTracking(ctx context.Context, in orderIDInput) (trackingVi
 	}
 	view, err := d.GetOrderTracking.Execute(ctx, id)
 	if err != nil {
-		return trackingView{}, mapError(err)
+		return trackingView{}, mapError(ctx, err)
 	}
 	return toTracking(view), nil
 }
@@ -242,7 +242,7 @@ func (d Deps) getShipTo(ctx context.Context, in orderIDInput) (shipToView, error
 	}
 	view, err := d.GetShipTo.Execute(ctx, id)
 	if err != nil {
-		return shipToView{}, mapError(err)
+		return shipToView{}, mapError(ctx, err)
 	}
 	return toShipTo(view), nil
 }
