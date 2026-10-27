@@ -50,6 +50,11 @@ type world struct {
 	shopperView views.Shopper
 	promiseOf   map[int]string
 
+	// addressIDs maps an add-address Idempotency-Key to the addressId it
+	// minted; historyShopper is the shopper of the last history request.
+	addressIDs     map[string]string
+	historyShopper string
+
 	apiSrv    *httptest.Server
 	apiStatus int
 	apiBody   string
@@ -57,7 +62,7 @@ type world struct {
 }
 
 func newWorld() *world {
-	w := &world{store: memory.NewStore(memory.NewClock(t0)), gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0), promiseOf: map[int]string{}}
+	w := &world{store: memory.NewStore(memory.NewClock(t0)), gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0), promiseOf: map[int]string{}, addressIDs: map[string]string{}}
 	s := w.store
 	w.deps = usecases.Deps{
 		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
@@ -85,6 +90,7 @@ func initializeScenario(sc *godog.ScenarioContext) {
 	})
 	registerSetup(sc, w)
 	registerCheckout(sc, w)
+	registerShopperExt(sc, w)
 	registerCancellation(sc, w)
 	registerFulfilment(sc, w)
 	registerAssertions(sc, w)

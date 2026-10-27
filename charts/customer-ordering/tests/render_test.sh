@@ -160,6 +160,34 @@ for off in HorizontalPodAutoscaler Ingress HTTPRoute; do
   grep -q "^kind: $off" <<<"$render_all" || fail "$off must render when enabled"
 done
 
+# --- observability (ADR 0007, fleet standard item 7) -----------------------------
+# The api renders the fleet pipeline's env: the Collector endpoint, the service
+# name, the version (image tag, appVersion when empty) and the environment.
+otel_endpoint="otel-collector.observability.svc.cluster.local:4317"
+[[ "$(env_value "$api_deployment" OTEL_EXPORTER_OTLP_ENDPOINT)" == "$otel_endpoint" ]] \
+  || fail "the api Deployment does not render OTEL_EXPORTER_OTLP_ENDPOINT from otel.endpoint"
+[[ "$(env_value "$api_deployment" OTEL_SERVICE_NAME)" == "customer-ordering" ]] \
+  || fail "the api Deployment does not render OTEL_SERVICE_NAME=customer-ordering from otel.serviceName"
+[[ "$(env_value "$api_deployment" SERVICE_VERSION)" == "0.1.0" ]] \
+  || fail "SERVICE_VERSION must default to the chart appVersion"
+[[ "$(env_value "$api_deployment" ENVIRONMENT)" == "production" ]] || fail "ENVIRONMENT must come from environment"
+tagged="$(helm template "$release" "$chart_dir" "${base[@]}" --set image.tag=v9.9.9 --set otel.serviceName=orders --set otel.endpoint=http://collector:4317 \
+  --set environment=staging --show-only templates/deployment.yaml)"
+[[ "$(env_value "$tagged" SERVICE_VERSION)" == "v9.9.9" ]] || fail "SERVICE_VERSION must follow image.tag"
+[[ "$(env_value "$tagged" OTEL_SERVICE_NAME)" == "orders" ]] || fail "OTEL_SERVICE_NAME must follow otel.serviceName"
+[[ "$(env_value "$tagged" OTEL_EXPORTER_OTLP_ENDPOINT)" == "http://collector:4317" ]] || fail "OTEL_EXPORTER_OTLP_ENDPOINT must follow otel.endpoint"
+[[ "$(env_value "$tagged" ENVIRONMENT)" == "staging" ]] || fail "ENVIRONMENT must follow environment"
+# otel.enabled=false renders no OTEL_* env (SERVICE_VERSION stays: it also labels the logs' build).
+otel_off="$(helm template "$release" "$chart_dir" "${base[@]}" --set otel.enabled=false --set mcp.enabled=true)"
+if grep -q 'name: OTEL_' <<<"$otel_off"; then fail "otel.enabled=false must render no OTEL_* env in any component"; fi
+grep -q 'name: SERVICE_VERSION$' <<<"$otel_off" || fail "SERVICE_VERSION must still render with otel.enabled=false"
+# The values are chart-owned: extraEnv may not set them a second time.
+for owned in OTEL_SERVICE_NAME OTEL_EXPORTER_OTLP_ENDPOINT SERVICE_VERSION ENVIRONMENT; do
+  err="$(helm template "$release" "$chart_dir" "${base[@]}" --set "extraEnv[0].name=$owned" --set 'extraEnv[0].value=x' 2>&1)" \
+    && fail "extraEnv must not be able to set $owned"
+  grep -qF "extraEnv sets $owned" <<<"$err" || fail "the refusal for extraEnv $owned does not name it: $err"
+done
+
 # --- refusals: the mandatory values name themselves ---------------------------------
 expect_refusal() { # expect_refusal <why> <needle> <helm args...>
   local why="$1" needle="$2" err; shift 2
@@ -213,7 +241,7 @@ expect_refusal "an http address off the container port" "config.httpAddr" "${bas
 binary_env_of() {
   local f
   for f in "$@"; do
-    grep -hoE '[Gg]etenv\("[A-Z][A-Z0-9_]*"' "$f" || true
+    grep -hoE '(Getenv|getenv|env)\("[A-Z][A-Z0-9_]*"' "$f" || true
   done | sed -E 's/.*"([A-Z0-9_]+)".*/\1/' | sort -u
 }
 # assert_env_rendered <rendered> <label> <vars...>
@@ -234,10 +262,17 @@ if grep -Eq 'name: (KAFKA_BROKERS|DELIVERY_PROMISE_[A-Z_]+|ORDER_SOURCING_[A-Z_]
   fail "the mcp Deployment must not get Kafka/relay/consumer/delivery-promise env (read-only, never dials Kafka)"
 fi
 # shellcheck disable=SC2207
-mcp_vars=($(binary_env_of "$repo_dir"/cmd/mcp/main.go))
+mcp_vars=($(binary_env_of "$repo_dir"/cmd/mcp/main.go "$repo_dir"/cmd/mcp/telemetry.go))
 (( ${#mcp_vars[@]} >= 5 )) || fail "found only ${#mcp_vars[@]} env literals in cmd/mcp/main.go; the scan is looking in the wrong place"
-assert_env_rendered "$mcp_dep" "the mcp Deployment" "${mcp_vars[@]}" DATABASE_URL MIGRATIONS_DATABASE_URL MCP_ADDR LOG_LEVEL SERVICE_VERSION ENVIRONMENT
-[[ "$(env_value "$mcp_dep" SERVICE_VERSION)" == "dev" ]] || fail "SERVICE_VERSION must come from mcp.serviceVersion"
+assert_env_rendered "$mcp_dep" "the mcp Deployment" "${mcp_vars[@]}" DATABASE_URL MIGRATIONS_DATABASE_URL MCP_ADDR LOG_LEVEL SERVICE_VERSION ENVIRONMENT \
+  OTEL_SERVICE_NAME OTEL_EXPORTER_OTLP_ENDPOINT
+mcp_versioned="$(helm template "$release" "$chart_dir" "${base[@]}" --set mcp.enabled=true --set mcp.serviceVersion=dev --show-only templates/mcp-deployment.yaml)"
+[[ "$(env_value "$mcp_versioned" SERVICE_VERSION)" == "dev" ]] || fail "SERVICE_VERSION must come from mcp.serviceVersion"
+[[ "$(env_value "$mcp_dep" SERVICE_VERSION)" == "0.1.0" ]] || fail "the mcp SERVICE_VERSION must default to the image tag / appVersion, like the api"
+[[ "$(env_value "$mcp_dep" OTEL_SERVICE_NAME)" == "customer-ordering-mcp" ]] || fail "the mcp component must export as <otel.serviceName>-mcp"
+[[ "$(env_value "$mcp_dep" OTEL_EXPORTER_OTLP_ENDPOINT)" == "$otel_endpoint" ]] || fail "the mcp component must export to otel.endpoint"
+mcp_named="$(helm template "$release" "$chart_dir" "${base[@]}" --set mcp.enabled=true --set otel.serviceName=orders --show-only templates/mcp-deployment.yaml)"
+[[ "$(env_value "$mcp_named" OTEL_SERVICE_NAME)" == "orders-mcp" ]] || fail "the mcp service name must follow otel.serviceName"
 [[ "$(env_value "$mcp_dep" ENVIRONMENT)" == "production" ]] || fail "ENVIRONMENT must come from mcp.environment"
 mcp_svc="$(helm template "$release" "$chart_dir" "${base[@]}" --set mcp.enabled=true --show-only templates/mcp-service.yaml)"
 grep -q 'kind: Service' <<<"$mcp_svc" || fail "the mcp Service was not rendered with mcp.enabled=true"

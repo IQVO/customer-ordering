@@ -18,7 +18,11 @@
 //	OUTBOX_RELAY_INTERVAL            relay poll interval (Go duration or seconds, default 1s)
 //	OUTBOX_MAX_ATTEMPTS              failures before the relay excludes a row (default 20, 0 = unlimited)
 //	SHUTDOWN_DRAIN_DELAY             wait after flipping /readyz before closing (default 5s)
-//	LOG_LEVEL
+//	LOG_LEVEL                        debug | info | warn | error (default info)
+//	OTEL_SERVICE_NAME                service.name of spans and metrics (default customer-ordering)
+//	OTEL_EXPORTER_OTLP_ENDPOINT      Collector OTLP/gRPC endpoint (default telemetry.DefaultEndpoint); export never blocks
+//	SERVICE_VERSION                  service.version (default dev)
+//	ENVIRONMENT                      deployment.environment.name (default local)
 //
 // GET /readyz is 200 only while Postgres answers a ping AND a Kafka broker
 // answers a metadata request (verdict cached 3s, bounded 2s); /healthz is
@@ -47,6 +51,7 @@ import (
 	outboundkafka "github.com/claudioed/customer-ordering/internal/adapters/outbound/kafka"
 	outboxrelay "github.com/claudioed/customer-ordering/internal/adapters/outbound/outbox"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/postgres"
+	"github.com/claudioed/customer-ordering/internal/adapters/outbound/telemetry"
 	"github.com/claudioed/customer-ordering/internal/application/usecases"
 	"github.com/claudioed/customer-ordering/internal/bootretry"
 )
@@ -81,6 +86,16 @@ func run(ctx context.Context) error {
 		return err
 	}
 
+	// Telemetry comes up before the router is built (otelchimetric binds the
+	// global MeterProvider at construction) and is flushed LAST: deferred before
+	// everything below, so the final spans of the drain still leave the process.
+	tel := loadTelemetryEnv(os.Getenv)
+	flushTelemetry, err := startTelemetry(logger, tel)
+	if err != nil {
+		return err
+	}
+	defer flushTelemetry()
+
 	// closeAdapters (pool.Close) is deferred FIRST so it runs LAST, after the
 	// HTTP drain, the consumers and the relay have all stopped.
 	ad, closeAdapters, err := buildAdapters(ctx, rt, logger)
@@ -89,10 +104,17 @@ func run(ctx context.Context) error {
 	}
 	defer closeAdapters()
 
+	// The business counter binds to the MeterProvider telemetry.Setup installed.
+	orderMetrics, err := telemetry.NewOrderMetrics()
+	if err != nil {
+		return err
+	}
+	ad.deps.Metrics = orderMetrics
+
 	readiness := newReadiness(ad.pool.Ping, rt.brokers)
 	httpServer := &http.Server{
 		Addr:              getenv("HTTP_ADDR", ":8080"),
-		Handler:           inboundhttp.NewRouter(buildServer(ad, readiness)),
+		Handler:           inboundhttp.NewRouter(buildServer(ad, readiness), logger, tel.serviceName),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -158,6 +180,8 @@ func buildServer(ad adapters, readiness *inboundhttp.Readiness) *inboundhttp.Ser
 	return &inboundhttp.Server{
 		PlaceOrder: usecases.PlaceOrder{Deps: d}, GetOrder: usecases.GetOrder{Deps: d}, GetOrderTracking: usecases.GetOrderTracking{Deps: d},
 		CancelOrder: usecases.CancelOrder{Deps: d}, GetShipTo: usecases.GetShipTo{Deps: d}, RegisterShopper: usecases.RegisterShopper{Deps: d},
+		AddSavedAddress: usecases.AddSavedAddress{Deps: d}, GetShopper: usecases.GetShopper{Deps: d},
+		FindShopperByEmail: usecases.FindShopperByEmail{Deps: d}, ListOrdersByShopper: usecases.ListOrdersByShopper{Deps: d},
 		IdempotencyStore: ad.idempotency, Clock: ad.clock, IDs: ad.ids, Readiness: readiness,
 	}
 }

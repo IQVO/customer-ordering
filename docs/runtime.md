@@ -19,6 +19,9 @@
 | `OUTBOX_MAX_ATTEMPTS` | `20` | Failures before the relay excludes a row; `0` = unlimited. |
 | `SHUTDOWN_DRAIN_DELAY` | `5s` | Wait between flipping `/readyz` to 503 and closing the listener. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
+| `OTEL_SERVICE_NAME` | `customer-ordering` | `service.name` of spans and metrics (ADR 0007). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | Collector OTLP/gRPC, `host:port` or URL; export never blocks. |
+| `SERVICE_VERSION` / `ENVIRONMENT` | `dev` / `local` | `service.version` / `deployment.environment.name`. |
 
 Consumer group ids are stable and service-prefixed; they are never derived from the pod name. The first Postgres dial retries with backoff
 (`internal/bootretry`); on exhaustion the process exits non-zero.
@@ -29,6 +32,24 @@ Consumer group ids are stable and service-prefixed; they are never derived from 
 - `GET /readyz`: 200 only while the drain gate is open AND Postgres answers a ping AND a Kafka broker answers a metadata request with an empty,
   non-nil topic list (a fresh connection per check; it never needs a topic to exist). The verdict is cached 3 s and bounded to 2 s. A failing
   dependency is 503 `dependency-unavailable` naming the dependency. Writes keep being accepted while Kafka is down: the outbox holds the events.
+
+## Routes
+
+The routes of `apis/openapi.yaml` (wired in `cmd/api` `buildServer`; errors are RFC 9457 problems, see `.claude/rules/rest-api.md`):
+
+| Route | Use case | Notes |
+| --- | --- | --- |
+| `POST /checkout` | `PlaceOrder` | `Idempotency-Key` required; exactly one of `shipTo` / `shipToAddressId` (ADR 0002 A25). |
+| `GET /orders?shopperId=&after=&limit=` | `ListOrdersByShopper` | Order history, newest first, keyset cursor `after`; limit default 20 max 100; unknown shopper 404 (A26). |
+| `GET /orders/{orderId}` | `GetOrder` | Never carries the address. |
+| `GET /orders/{orderId}/tracking` | `GetOrderTracking` | Event-fed read model. |
+| `GET /orders/{orderId}/ship-to` | `GetShipTo` | Restricted, in-organization (label printing); the only order route returning the address; `Cache-Control: no-store`. |
+| `POST /orders/{orderId}:cancel` | `CancelOrder` | `Idempotency-Key` required. |
+| `POST /shoppers` | `RegisterShopper` | `Idempotency-Key` required; unique lower-cased e-mail. |
+| `GET /shoppers/{shopperId}` | `GetShopper` | Profile with `savedAddresses[]` (synthetic PII, A27). |
+| `GET /shoppers?email=` | `FindShopperByEmail` | Trimmed, lower-cased match; no match 404. |
+| `POST /shoppers/{shopperId}/addresses` | `AddSavedAddress` | `Idempotency-Key` required; `addressId` derives from it (A24); max 20 addresses (`too-many-addresses`). |
+| `GET /healthz`, `GET /readyz` | — | Probes, not business operations. |
 
 ## Shutdown order
 
@@ -80,6 +101,7 @@ helm upgrade --install customer-ordering charts/customer-ordering \
 | `DELIVERY_PROMISE_URL`, `DELIVERY_PROMISE_TIMEOUT` | `config.deliveryPromiseUrl`, `config.deliveryPromiseTimeout` |
 | `DELIVERY_PROMISE_CONSUMER_GROUP`, `ORDER_SOURCING_CONSUMER_GROUP`, `SHIPPING_CONSUMER_GROUP` | `config.deliveryPromiseConsumerGroup`, `config.orderSourcingConsumerGroup`, `config.shippingConsumerGroup` |
 | `HTTP_ADDR`, `LOG_LEVEL` | `config.httpAddr` (its port must equal `service.targetPort`), `config.logLevel` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `SERVICE_VERSION`, `ENVIRONMENT` | `otel.endpoint`, `otel.serviceName` (`<name>-mcp` for the mcp component), `image.tag` or appVersion, `environment` |
 | `OUTBOX_RELAY_INTERVAL`, `OUTBOX_MAX_ATTEMPTS`, `SHUTDOWN_DRAIN_DELAY` | `config.outboxRelayInterval`, `config.outboxMaxAttempts`, `config.shutdownDrainDelay` |
 
 The chart also refuses a `*_MODE` or `*_CONSUMER_GROUP` variable (or one it renders itself) in `extraEnv`, and a `terminationGracePeriodSeconds` that does

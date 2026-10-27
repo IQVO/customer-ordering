@@ -102,7 +102,10 @@ var bg = context.Background
 
 func newShopper(t *testing.T, id, email string) *shopper.Shopper {
 	t.Helper()
-	s, err := shopper.Register(shopper.NewShopper{ID: shopper.ID(id), Email: email, SavedAddresses: []shipto.ShipTo{address()}}, t0)
+	s, err := shopper.Register(shopper.NewShopper{
+		ID: shopper.ID(id), Email: email,
+		SavedAddresses: []shopper.SavedAddress{{ID: "addr-1", ShipTo: address()}},
+	}, t0)
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}

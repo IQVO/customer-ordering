@@ -28,9 +28,11 @@ func (w *world) api() *httptest.Server {
 		s := &httpadapter.Server{
 			PlaceOrder: usecases.PlaceOrder{Deps: w.deps}, GetOrder: usecases.GetOrder{Deps: w.deps}, GetOrderTracking: usecases.GetOrderTracking{Deps: w.deps},
 			CancelOrder: usecases.CancelOrder{Deps: w.deps}, GetShipTo: usecases.GetShipTo{Deps: w.deps}, RegisterShopper: usecases.RegisterShopper{Deps: w.deps},
+			AddSavedAddress: usecases.AddSavedAddress{Deps: w.deps}, GetShopper: usecases.GetShopper{Deps: w.deps},
+			FindShopperByEmail: usecases.FindShopperByEmail{Deps: w.deps}, ListOrdersByShopper: usecases.ListOrdersByShopper{Deps: w.deps},
 			IdempotencyStore: w.store.Idempotency(), Clock: w.deps.Clock, IDs: w.deps.IDs,
 		}
-		w.apiSrv = httptest.NewServer(httpadapter.NewRouter(s))
+		w.apiSrv = httptest.NewServer(httpadapter.NewRouter(s, nil, ""))
 	}
 	return w.apiSrv
 }

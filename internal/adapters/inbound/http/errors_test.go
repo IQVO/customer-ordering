@@ -99,6 +99,7 @@ func TestEveryTypedErrorHasItsStatus(t *testing.T) {
 		{customerorder.ErrStatusRegression, 409, "status-regression"},
 		{customerorder.ErrCancelAfterLock, 409, "cancel-after-lock"},
 		{shopper.ErrShopperExists, 409, "shopper-exists"},
+		{shopper.ErrTooManyAddresses, 422, "too-many-addresses"},
 		{ports.ErrConcurrentUpdate, 409, "concurrent-update"},
 		{shared.ErrIllegalTransition, 409, "illegal-transition"},
 		{shared.ErrValidation, 422, "validation-failed"},
@@ -119,7 +120,7 @@ func TestReadinessReflectsDrainAndDependencies(t *testing.T) {
 		}
 		return nil
 	}})
-	srv := httptest.NewServer(httpadapter.NewRouter(&httpadapter.Server{Readiness: g}))
+	srv := httptest.NewServer(httpadapter.NewRouter(&httpadapter.Server{Readiness: g}, nil, ""))
 	defer srv.Close()
 	get := func() (int, string) {
 		resp, err := http.Get(srv.URL + "/readyz")

@@ -35,11 +35,14 @@ with another request is 422 `idempotency-key-reused`.
 
 | Method and path | Operation |
 | --- | --- |
-| `POST /checkout` | place an order (PlaceOrder) |
+| `POST /checkout` | place an order (PlaceOrder; inline `shipTo` or a saved `shipToAddressId`) |
+| `GET /orders?shopperId=&after=&limit=` | a shopper's order history, newest first (ListOrdersByShopper) |
 | `GET /orders/{orderId}`, `GET /orders/{orderId}/tracking` | status, tracking |
 | `POST /orders/{orderId}:cancel` | request cancellation |
 | `GET /orders/{orderId}/ship-to` | restricted: the address, for shipping-and-tracking |
 | `POST /shoppers` | register a shopper |
+| `GET /shoppers/{shopperId}`, `GET /shoppers?email=` | shopper profile with saved addresses, shopper by e-mail |
+| `POST /shoppers/{shopperId}/addresses` | save an address (max 20, `too-many-addresses`) |
 | `GET /healthz`, `GET /readyz` | liveness, readiness |
 
 ## MCP server
@@ -93,6 +96,14 @@ All settings, the probes, the shutdown order, the outbox runbook and the Helm ch
 
 On Kubernetes: `helm upgrade --install customer-ordering charts/customer-ordering` with the mandatory values (`database.*`, `kafka.brokers`,
 `config.deliveryPromiseUrl`, the three `config.*ConsumerGroup` ids); the chart fails to render, naming the value, without them.
+
+## Observability
+
+Logs, metrics and traces follow the fleet standard ([ADR 0007](docs/adr/0007-fleet-observability-standard.md)): JSON logs on stdout carry `trace_id`/`span_id`
+and a `request_id`; `cmd/api` and `cmd/mcp` export OTLP/gRPC to the Collector (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `SERVICE_VERSION`, `ENVIRONMENT`;
+export never blocks, so no Collector costs telemetry, nothing else) with HTTP request duration, Go runtime metrics and the business counter
+`ordering.orders.placed` (`outcome`, `reason`); the trace continues across Kafka in the `traceparent` header of each published event and is picked up by the
+consumers. The chart's `otel.*` values render the env.
 
 ## Console remote (web)
 

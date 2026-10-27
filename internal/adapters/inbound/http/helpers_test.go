@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,16 +25,22 @@ type env struct {
 	t     *testing.T
 	store *memory.Store
 	gw    *memory.PromiseGateway
+	clock *memory.Clock
 	srv   *httptest.Server
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvLogged(t, slog.New(slog.DiscardHandler)) }
+
+// newEnvLogged is newEnv with the router's request logger set (newEnv discards
+// it so the access lines do not flood the test output).
+func newEnvLogged(t *testing.T, logger *slog.Logger) *env {
 	t.Helper()
 	s := memory.NewStore(memory.NewClock(t0))
 	gw := memory.NewPromiseGateway()
+	clock := memory.NewClock(t0)
 	deps := usecases.Deps{
 		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
-		Promises: gw, Clock: memory.NewClock(t0), IDs: &memory.SequentialIDs{},
+		Promises: gw, Clock: clock, IDs: &memory.SequentialIDs{},
 	}
 	sh, err := shopper.Register(shopper.NewShopper{ID: "shopper-1", Email: "ana@example.com"}, t0)
 	if err != nil {
@@ -50,11 +57,13 @@ func newEnv(t *testing.T) *env {
 	api := &httpadapter.Server{
 		PlaceOrder: usecases.PlaceOrder{Deps: deps}, GetOrder: usecases.GetOrder{Deps: deps}, GetOrderTracking: usecases.GetOrderTracking{Deps: deps},
 		CancelOrder: usecases.CancelOrder{Deps: deps}, GetShipTo: usecases.GetShipTo{Deps: deps}, RegisterShopper: usecases.RegisterShopper{Deps: deps},
+		AddSavedAddress: usecases.AddSavedAddress{Deps: deps}, GetShopper: usecases.GetShopper{Deps: deps},
+		FindShopperByEmail: usecases.FindShopperByEmail{Deps: deps}, ListOrdersByShopper: usecases.ListOrdersByShopper{Deps: deps},
 		IdempotencyStore: s.Idempotency(), Clock: deps.Clock, IDs: ids.Generator{},
 	}
-	srv := httptest.NewServer(httpadapter.NewRouter(api))
+	srv := httptest.NewServer(httpadapter.NewRouter(api, logger, ""))
 	t.Cleanup(srv.Close)
-	return &env{t: t, store: s, gw: gw, srv: srv}
+	return &env{t: t, store: s, gw: gw, clock: clock, srv: srv}
 }
 
 type reply struct {

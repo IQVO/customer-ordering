@@ -56,6 +56,33 @@ Feature: Checkout turns a cart into an order with a confirmed promise per shipme
     And delivery-promise cancelled the promise of group 1
     And no order exists
 
+  Scenario: Checkout by a saved address copies it into the order
+    And the shopper saved an address with Idempotency-Key "home"
+    When the shopper checks out a cart of 3 lines in 2 groups by saved address "home"
+    Then the order is "PLACED"
+    And every group is "PROMISED"
+    And the stored order ships to the saved address
+    And the event "CustomerOrderPlaced" was published once with destination prefix "787"
+
+  Scenario: Checkout with both an address and an address id is refused
+    And the shopper saved an address with Idempotency-Key "home"
+    When the API posts to "/checkout" with Idempotency-Key "both-given" the body:
+      """
+      {"shopperId":"shopper-1","shipToAddressId":"address-shopper-1:home","shipTo":{"name":"Ana Example","line1":"1 Sample Street","city":"Austin","region":"TX","postalCode":"78701","countryCode":"US"},"lines":[{"lineNo":1,"catalogItemId":"sku-100","quantity":2}],"groups":[{"groupNo":1,"offerId":"offer-1","lineNos":[1]}]}
+      """
+    Then the API answers 422 with problem "validation-failed"
+    And delivery-promise was not called
+    And no order exists
+
+  Scenario: Checkout with an unknown address id is refused
+    When the API posts to "/checkout" with Idempotency-Key "unknown-address" the body:
+      """
+      {"shopperId":"shopper-1","shipToAddressId":"address-nope","lines":[{"lineNo":1,"catalogItemId":"sku-100","quantity":2}],"groups":[{"groupNo":1,"offerId":"offer-1","lineNos":[1]}]}
+      """
+    Then the API answers 422 with problem "validation-failed"
+    And delivery-promise was not called
+    And no order exists
+
   Scenario: Repeating a checkout with the same Idempotency-Key returns the same order
     When the shopper checks out a cart of 3 lines in 2 groups to postal code "78701"
     And the same checkout is repeated

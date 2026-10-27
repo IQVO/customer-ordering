@@ -22,13 +22,16 @@ type CheckoutGroup struct {
 }
 
 // PlaceOrderInput is the command PlaceOrder. OrderID is derived from the
-// Idempotency-Key by the caller (ADR 0002, A13).
+// Idempotency-Key by the caller (ADR 0002, A13). Exactly one of ShipTo /
+// ShipToAddressID is required (NG1): a saved address is resolved against the
+// shopper and COPIED into the order at placement (A25).
 type PlaceOrderInput struct {
-	OrderID   customerorder.ID
-	ShopperID string
-	ShipTo    shipto.ShipTo
-	Lines     []customerorder.OrderLine
-	Groups    []CheckoutGroup
+	OrderID         customerorder.ID
+	ShopperID       string
+	ShipTo          shipto.ShipTo
+	ShipToAddressID string
+	Lines           []customerorder.OrderLine
+	Groups          []CheckoutGroup
 }
 
 // RequoteRequired is returned when an offer expired, was consumed or could not
@@ -52,23 +55,39 @@ type PlaceOrder struct{ Deps }
 // order. See RequoteRequired and the ports.ErrPromise... sentinels for the
 // delivery-promise failures.
 func (u PlaceOrder) Execute(ctx context.Context, in PlaceOrderInput) (views.Order, error) {
-	if err := u.preflight(in); err != nil {
-		return views.Order{}, err
+	v, replayed, err := u.execute(ctx, in)
+	if !replayed {
+		u.recordOutcome(ctx, err)
+	}
+	return v, err
+}
+
+// execute is the checkout proper; replayed reports that the stored order of an
+// earlier identical checkout was returned, which is not a new attempt.
+func (u PlaceOrder) execute(ctx context.Context, in PlaceOrderInput) (_ views.Order, replayed bool, _ error) {
+	if err := checkAddressChoice(in); err != nil {
+		return views.Order{}, false, err
 	}
 	if v, found, err := u.replay(ctx, in); found || err != nil {
-		return v, err
+		return v, found, err
+	}
+	if err := u.resolveAddress(ctx, &in); err != nil {
+		return views.Order{}, false, err
+	}
+	if err := u.preflight(in); err != nil {
+		return views.Order{}, false, err
 	}
 	if err := u.requireShopper(ctx, in.ShopperID); err != nil {
-		return views.Order{}, err
+		return views.Order{}, false, err
 	}
 	groups, err := u.promiseGroups(ctx, in)
 	if errors.Is(err, ports.ErrPromiseOfferNotQuotable) {
-		return views.Order{}, u.requote(ctx, in)
+		return views.Order{}, false, u.requote(ctx, in)
 	}
 	if err != nil {
-		return views.Order{}, err
+		return views.Order{}, false, err
 	}
-	return transact(ctx, u.UoW, commandAttempts, func(ctx context.Context) (views.Order, error) {
+	placed, err := transact(ctx, u.UoW, commandAttempts, func(ctx context.Context) (views.Order, error) {
 		o, events, err := customerorder.Place(newOrder(in, groups), u.now())
 		if err != nil {
 			return views.Order{}, err
@@ -81,10 +100,43 @@ func (u PlaceOrder) Execute(ctx context.Context, in PlaceOrderInput) (views.Orde
 		}
 		return views.OrderFrom(o), nil
 	})
+	return placed, false, err
 }
 
 func newOrder(in PlaceOrderInput, groups []customerorder.GroupInput) customerorder.NewOrder {
 	return customerorder.NewOrder{ID: in.OrderID, ShopperID: in.ShopperID, ShipTo: in.ShipTo, Lines: in.Lines, Groups: groups}
+}
+
+// checkAddressChoice enforces NG1: exactly one of shipTo / shipToAddressId.
+func checkAddressChoice(in PlaceOrderInput) error {
+	inline := in.ShipTo != (shipto.ShipTo{})
+	byID := in.ShipToAddressID != ""
+	if inline == byID {
+		return shared.Invalid("exactly one of shipTo and shipToAddressId is required")
+	}
+	return nil
+}
+
+// resolveAddress copies the saved address into the input (NG1, A25). An
+// unknown id, or the id of another shopper's address, is shared.ErrValidation;
+// so is an unregistered shopper (A9).
+func (u PlaceOrder) resolveAddress(ctx context.Context, in *PlaceOrderInput) error {
+	if in.ShipToAddressID == "" {
+		return nil
+	}
+	s, err := u.Shoppers.Get(ctx, shopper.ID(in.ShopperID))
+	if errors.Is(err, ports.ErrNotFound) {
+		return shared.Invalid("shopper %q is not registered", in.ShopperID)
+	}
+	if err != nil {
+		return err
+	}
+	a, found := s.Address(shopper.AddressID(in.ShipToAddressID))
+	if !found {
+		return shared.Invalid("shipToAddressId %q is not a saved address of shopper %q", in.ShipToAddressID, in.ShopperID)
+	}
+	in.ShipTo = a
+	return nil
 }
 
 // preflight runs every check that needs no promise by placing a throw-away
