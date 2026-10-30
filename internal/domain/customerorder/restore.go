@@ -93,6 +93,9 @@ func checkGroupSnapshot(g GroupPromise) error {
 	if g.ShipBy.IsZero() || g.DeliverByEarliest.IsZero() || g.DeliverByLatest.Before(g.DeliverByEarliest) {
 		return errors.New("shipBy and a delivery window with earliest <= latest are required")
 	}
+	if g.TimeZone != "" && !shared.ValidTimeZone(g.TimeZone) {
+		return fmt.Errorf("timeZone %q is not an IANA time-zone name", g.TimeZone)
+	}
 	if !g.Status.Valid() {
 		return fmt.Errorf("status %q is not a group state", g.Status)
 	}

@@ -279,7 +279,7 @@ func TestUpdateGroupPromiseByGroupState(t *testing.T) {
 	for _, c := range cases {
 		t.Run(string(c.from), func(t *testing.T) {
 			o := orderWith(t, c.from)
-			err := o.UpdateGroupPromise("p-1", 1, at(2000), at(2300), at(1900), "fc-new")
+			err := o.UpdateGroupPromise("p-1", 1, at(2000), at(2300), at(1900), "fc-new", "")
 			assertErr(t, err, c.err)
 			g := o.Groups()[0]
 			if c.err != nil {
@@ -297,19 +297,19 @@ func TestUpdateGroupPromiseByGroupState(t *testing.T) {
 
 func TestUpdateGroupPromiseRevisionRules(t *testing.T) {
 	o := mustPlace(t, oneGroup())
-	mustNil(t, o.UpdateGroupPromise("p-1", 2, at(2000), at(2300), at(1900), ""))
+	mustNil(t, o.UpdateGroupPromise("p-1", 2, at(2000), at(2300), at(1900), "", ""))
 	if g := o.Groups()[0]; g.WitnessNodeID != "fc-aus-1" || g.RevisionNo != 2 {
 		t.Fatalf("an empty node keeps the witness node: %+v", g)
 	}
 	v := o.Version()
 	for _, rev := range []int{2, 1} {
-		mustNil(t, o.UpdateGroupPromise("p-1", rev, at(3000), at(3300), at(2900), "fc-x"))
+		mustNil(t, o.UpdateGroupPromise("p-1", rev, at(3000), at(3300), at(2900), "fc-x", ""))
 	}
 	assertVersion(t, o, v)
 	if g := o.Groups()[0]; !g.DeliverByLatest.Equal(at(2300)) {
 		t.Fatal("a stale revision must not apply")
 	}
-	mustNil(t, o.UpdateGroupPromise("p-1", 3, at(3000), at(3000), at(2900), ""))
+	mustNil(t, o.UpdateGroupPromise("p-1", 3, at(3000), at(3000), at(2900), "", ""))
 	assertVersion(t, o, v+1)
 	if n, ok := o.GroupNoByPromise("p-1"); !ok || n != 1 {
 		t.Fatalf("promise lookup = %d %v", n, ok)
@@ -317,20 +317,20 @@ func TestUpdateGroupPromiseRevisionRules(t *testing.T) {
 	if _, ok := o.GroupNoByPromise("nope"); ok {
 		t.Fatal("unknown promise found")
 	}
-	assertErr(t, o.UpdateGroupPromise("nope", 9, at(1), at(2), at(1), ""), ErrUnknownGroup)
-	assertErr(t, o.UpdateGroupPromise("nope", 0, zeroTime, zeroTime, zeroTime, ""), ErrUnknownGroup) // unknown wins over invalid
+	assertErr(t, o.UpdateGroupPromise("nope", 9, at(1), at(2), at(1), "", ""), ErrUnknownGroup)
+	assertErr(t, o.UpdateGroupPromise("nope", 0, zeroTime, zeroTime, zeroTime, "", ""), ErrUnknownGroup) // unknown wins over invalid
 }
 
 func TestUpdateGroupPromiseRejects(t *testing.T) {
 	o := mustPlace(t, oneGroup())
 	cases := map[string]func() error{
-		"revision zero":   func() error { return o.UpdateGroupPromise("p-1", 0, at(1), at(2), at(1), "") },
-		"revision max+1":  func() error { return o.UpdateGroupPromise("p-1", MaxNumber+1, at(1), at(2), at(1), "") },
-		"no earliest":     func() error { return o.UpdateGroupPromise("p-1", 1, zeroTime, at(2), at(1), "") },
-		"no latest":       func() error { return o.UpdateGroupPromise("p-1", 1, at(1), zeroTime, at(1), "") },
-		"latest<earliest": func() error { return o.UpdateGroupPromise("p-1", 1, at(2), at(1), at(1), "") },
-		"no shipBy":       func() error { return o.UpdateGroupPromise("p-1", 1, at(1), at(2), zeroTime, "") },
-		"bad node":        func() error { return o.UpdateGroupPromise("p-1", 1, at(1), at(2), at(1), "-n") },
+		"revision zero":   func() error { return o.UpdateGroupPromise("p-1", 0, at(1), at(2), at(1), "", "") },
+		"revision max+1":  func() error { return o.UpdateGroupPromise("p-1", MaxNumber+1, at(1), at(2), at(1), "", "") },
+		"no earliest":     func() error { return o.UpdateGroupPromise("p-1", 1, zeroTime, at(2), at(1), "", "") },
+		"no latest":       func() error { return o.UpdateGroupPromise("p-1", 1, at(1), zeroTime, at(1), "", "") },
+		"latest<earliest": func() error { return o.UpdateGroupPromise("p-1", 1, at(2), at(1), at(1), "", "") },
+		"no shipBy":       func() error { return o.UpdateGroupPromise("p-1", 1, at(1), at(2), zeroTime, "", "") },
+		"bad node":        func() error { return o.UpdateGroupPromise("p-1", 1, at(1), at(2), at(1), "-n", "") },
 	}
 	for name, fn := range cases {
 		if err := fn(); !isValidation(err) {
@@ -338,7 +338,7 @@ func TestUpdateGroupPromiseRejects(t *testing.T) {
 		}
 	}
 	assertVersion(t, o, 1)
-	mustNil(t, o.UpdateGroupPromise("p-1", MaxNumber, at(1), at(2), at(1), ""))
+	mustNil(t, o.UpdateGroupPromise("p-1", MaxNumber, at(1), at(2), at(1), "", ""))
 }
 
 func TestEveryGroupStateIsCoveredByTheTables(t *testing.T) {

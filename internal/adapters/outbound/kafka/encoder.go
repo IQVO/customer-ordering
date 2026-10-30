@@ -37,6 +37,7 @@ type placedGroupData struct {
 	ShipBy            string     `json:"shipBy"`
 	DeliverByEarliest string     `json:"deliverByEarliest"`
 	DeliverByLatest   string     `json:"deliverByLatest"`
+	TimeZone          string     `json:"timeZone,omitempty"`
 	Lines             []lineData `json:"lines"`
 }
 
@@ -138,7 +139,7 @@ func placedPayload(e customerorder.CustomerOrderPlaced) placedData {
 		}
 		groups[i] = placedGroupData{
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: string(g.Tier), WitnessNodeID: g.WitnessNodeID, ShipBy: ts(g.ShipBy),
-			DeliverByEarliest: ts(g.DeliverByEarliest), DeliverByLatest: ts(g.DeliverByLatest), Lines: lines,
+			DeliverByEarliest: ts(g.DeliverByEarliest), DeliverByLatest: ts(g.DeliverByLatest), TimeZone: g.TimeZone, Lines: lines,
 		}
 	}
 	return placedData{

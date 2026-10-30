@@ -28,6 +28,7 @@ type OrderGroup struct {
 	ShipBy              time.Time
 	DeliverByEarliest   time.Time
 	DeliverByLatest     time.Time
+	TimeZone            string // optional IANA zone of the window; empty = unknown (ADR 0009)
 	LineNos             []int
 	Status              string
 	RevisionNo          int
@@ -58,7 +59,7 @@ func OrderFrom(o *customerorder.CustomerOrder) Order {
 	for _, g := range o.Groups() {
 		groups = append(groups, OrderGroup{
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: string(g.Tier), ShipBy: g.ShipBy,
-			DeliverByEarliest: g.DeliverByEarliest, DeliverByLatest: g.DeliverByLatest, LineNos: g.LineNos,
+			DeliverByEarliest: g.DeliverByEarliest, DeliverByLatest: g.DeliverByLatest, TimeZone: g.TimeZone, LineNos: g.LineNos,
 			Status: string(g.Status), RevisionNo: g.RevisionNo, CancelReason: g.CancelReason,
 			CancelRequestedAt: g.CancelRequestedAt, CancelRefusedReason: g.CancelRefusedReason,
 		})
@@ -154,6 +155,7 @@ type TrackingGroup struct {
 	Status              string
 	DeliverByEarliest   time.Time
 	DeliverByLatest     time.Time
+	TimeZone            string // optional IANA zone of the window; empty = unknown (ADR 0009)
 	AtRiskReason        string
 	UnsourceableReason  string
 	PromiseVerdict      string
@@ -199,7 +201,7 @@ func TrackingFrom(o *customerorder.CustomerOrder, signals []readmodel.GroupSigna
 		}
 		groups = append(groups, TrackingGroup{
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Status: string(g.Status), DeliverByEarliest: g.DeliverByEarliest,
-			DeliverByLatest: g.DeliverByLatest, AtRiskReason: sig.AtRiskReason, UnsourceableReason: sig.UnsourceableReason,
+			DeliverByLatest: g.DeliverByLatest, TimeZone: g.TimeZone, AtRiskReason: sig.AtRiskReason, UnsourceableReason: sig.UnsourceableReason,
 			PromiseVerdict: sig.PromiseVerdict, LateByMinutes: sig.LateByMinutes, LockedAt: g.LockedAt, ShippedAt: g.ShippedAt,
 			CancelRefusedReason: g.CancelRefusedReason, LostAt: g.LostAt, ReturnedAt: g.ReturnedAt, OutcomePackage: g.OutcomeTrackingNumber,
 			Packages: list,
@@ -215,6 +217,7 @@ type RequotedOffer struct {
 	Tier              string
 	DeliverByEarliest time.Time
 	DeliverByLatest   time.Time
+	TimeZone          string // optional IANA zone of the window; empty = unknown (ADR 0009)
 	ExpiresAt         time.Time
 }
 
@@ -224,7 +227,7 @@ func RequotedFrom(groupNo int, offers []promising.Offer) []RequotedOffer {
 	for _, o := range offers {
 		out = append(out, RequotedOffer{
 			GroupNo: groupNo, OfferID: o.OfferID, Tier: o.Tier, DeliverByEarliest: o.DeliverByEarliest,
-			DeliverByLatest: o.DeliverByLatest, ExpiresAt: o.ExpiresAt,
+			DeliverByLatest: o.DeliverByLatest, TimeZone: o.TimeZone, ExpiresAt: o.ExpiresAt,
 		})
 	}
 	return out

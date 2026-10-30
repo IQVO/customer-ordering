@@ -208,3 +208,43 @@ func TestConstructorsBuildConsumersWithoutDialling(t *testing.T) {
 		}
 	}
 }
+
+// PromiseRevised carries the window's optional timeZone (delivery-promise ADR
+// 0011): a named zone is stored on the group; an absent or malformed one keeps
+// the group's own and the revision still applies (ADR 0009).
+func TestPromiseRevisedCarriesTheWindowTimeZone(t *testing.T) {
+	w := newWorld(t)
+	c := &kafkaconsumer.Consumer{Name: "p", Topic: kafkaconsumer.DeliveryPromiseTopic, Handlers: kafkaconsumer.DeliveryPromiseHandlers(w.consumer()), Logger: testLogger(), DLQ: &fakeDLQWriter{}, DeadLetterInvalid: true}
+	revised := func(id string, rev int, zone any) []byte {
+		data := map[string]any{"promiseId": "p-1", "orderId": orderID, "revisionNo": rev, "deliverByEarliest": "2026-10-31T14:00:00Z", "deliverByLatest": "2026-11-01T02:00:00Z"}
+		if zone != nil {
+			data["timeZone"] = zone
+		}
+		return event(id, kafkaconsumer.TypePromiseRevised, data)
+	}
+	group := func() (zone string, rev int) {
+		o, err := w.store.Orders().Get(context.Background(), orderID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return o.Groups()[0].TimeZone, o.Groups()[0].RevisionNo
+	}
+	for _, s := range []struct {
+		id       string
+		rev      int
+		zone     any
+		wantZone string
+	}{
+		{"tz1", 1, "America/Chicago", "America/Chicago"},
+		{"tz2", 2, "not a zone", "America/Chicago"},
+		{"tz3", 3, nil, "America/Chicago"},
+		{"tz4", 4, "America/Denver", "America/Denver"},
+	} {
+		if err := handle(t, c, revised(s.id, s.rev, s.zone)); err != nil {
+			t.Fatalf("%s: %v", s.id, err)
+		}
+		if zone, rev := group(); zone != s.wantZone || rev != s.rev {
+			t.Fatalf("%s: group zone %q revision %d, want %q %d", s.id, zone, rev, s.wantZone, s.rev)
+		}
+	}
+}
