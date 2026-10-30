@@ -17,6 +17,7 @@ type GroupInput struct {
 	ShipBy                  time.Time
 	DeliverByEarliest       time.Time
 	DeliverByLatest         time.Time
+	TimeZone                string // optional IANA zone of the window (ADR 0009)
 	LineNos                 []int
 	DestinationPostalPrefix string
 }
@@ -74,7 +75,7 @@ func placedGroups(o *CustomerOrder) []PlacedGroup {
 		}
 		out[i] = PlacedGroup{
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: g.Tier, WitnessNodeID: g.WitnessNodeID, ShipBy: g.ShipBy,
-			DeliverByEarliest: g.DeliverByEarliest, DeliverByLatest: g.DeliverByLatest, Lines: lines,
+			DeliverByEarliest: g.DeliverByEarliest, DeliverByLatest: g.DeliverByLatest, TimeZone: g.TimeZone, Lines: lines,
 		}
 	}
 	return out
@@ -144,6 +145,9 @@ func checkGroup(g GroupInput, to shipto.ShipTo) error {
 	if g.ShipBy.IsZero() || g.DeliverByEarliest.IsZero() || g.DeliverByLatest.IsZero() || g.DeliverByLatest.Before(g.DeliverByEarliest) {
 		return shared.Invalid("group %d: shipBy and a delivery window with earliest <= latest are required", g.GroupNo)
 	}
+	if g.TimeZone != "" && !shared.ValidTimeZone(g.TimeZone) {
+		return shared.Invalid("group %d: timeZone %q is not an IANA time-zone name", g.GroupNo, g.TimeZone)
+	}
 	if !to.PrefixMatches(g.DestinationPostalPrefix) {
 		return wrapDestination(g.GroupNo, g.DestinationPostalPrefix)
 	}
@@ -171,7 +175,7 @@ func newGroup(g GroupInput) GroupPromise {
 	return GroupPromise{
 		GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: g.Tier, WitnessNodeID: g.WitnessNodeID,
 		ShipBy: shared.UTC(g.ShipBy), DeliverByEarliest: shared.UTC(g.DeliverByEarliest), DeliverByLatest: shared.UTC(g.DeliverByLatest),
-		LineNos: append([]int{}, g.LineNos...), Status: GroupPromised,
+		TimeZone: g.TimeZone, LineNos: append([]int{}, g.LineNos...), Status: GroupPromised,
 		TrackingNumbers: []string{}, DeliveredTrackingNumbers: []string{},
 	}
 }

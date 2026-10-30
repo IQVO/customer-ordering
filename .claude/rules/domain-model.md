@@ -21,7 +21,7 @@ contracts and local read models are in `docs/adr/0003-consumed-contracts-and-loc
 - **Shipment group** — the lines that ship together from one node; the unit of
   promising, locking, shipping, delivery and cancellation (`groupNo`).
 - **GroupPromise** — the promise of one group: `promiseId`, `tier`, `shipBy`,
-  delivery window, witness node, `revisionNo`, and the group status.
+  delivery window and its optional IANA `timeZone` (ADR 0009), witness node, `revisionNo`, and the group status.
 - **Group status** — `PROMISED` (no node locked: "unlocked"), `LOCKED`, `SHIPPED`,
   `DELIVERED`, `LOST`, `RETURNED` (terminal, from `PackageLost` / `PackageReturned`),
   `CANCELLATION_REQUESTED`, `CANCELLED`. Moves forward only.

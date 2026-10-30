@@ -20,6 +20,7 @@ import (
 
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/promising"
+	"github.com/claudioed/customer-ordering/internal/domain/shared"
 )
 
 // DefaultTimeout bounds one call; a slower delivery-promise is unavailable.
@@ -61,6 +62,17 @@ func linesDTO(in []promising.Line) []lineDTO {
 type windowDTO struct {
 	Earliest time.Time `json:"earliest"`
 	Latest   time.Time `json:"latest"`
+	TimeZone string    `json:"timeZone"`
+}
+
+// zone keeps the optional IANA name delivery-promise sent (ADR 0009). An
+// absent or malformed name is unknown (empty): the window is still shown, in
+// UTC, rather than failing a checkout over a display hint.
+func zone(name string) string {
+	if shared.ValidTimeZone(name) {
+		return name
+	}
+	return ""
 }
 
 type offerDTO struct {
@@ -83,6 +95,7 @@ type promiseDTO struct {
 		ShipBy            time.Time `json:"shipBy"`
 		DeliverByEarliest time.Time `json:"deliverByEarliest"`
 		DeliverByLatest   time.Time `json:"deliverByLatest"`
+		TimeZone          string    `json:"timeZone"`
 	} `json:"terms"`
 	WitnessPath struct {
 		NodeID string `json:"nodeId"`
@@ -108,7 +121,10 @@ func (g *Gateway) QuoteOffers(ctx context.Context, destinationPostalPrefix strin
 		if o.State != "" && o.State != "QUOTED" {
 			continue
 		}
-		out = append(out, promising.Offer{OfferID: o.OfferID, Tier: o.Tier, DeliverByEarliest: o.Window.Earliest.UTC(), DeliverByLatest: o.Window.Latest.UTC(), ExpiresAt: o.ExpiresAt.UTC()})
+		out = append(out, promising.Offer{
+			OfferID: o.OfferID, Tier: o.Tier, DeliverByEarliest: o.Window.Earliest.UTC(), DeliverByLatest: o.Window.Latest.UTC(),
+			TimeZone: zone(o.Window.TimeZone), ExpiresAt: o.ExpiresAt.UTC(),
+		})
 	}
 	return out, nil
 }
@@ -126,7 +142,7 @@ func (g *Gateway) MakePromise(ctx context.Context, req promising.MakeRequest) (p
 	}
 	return promising.Terms{
 		PromiseID: p.PromiseID, Tier: p.Terms.Tier, WitnessNodeID: p.WitnessPath.NodeID, ShipBy: p.Terms.ShipBy.UTC(),
-		DeliverByEarliest: p.Terms.DeliverByEarliest.UTC(), DeliverByLatest: p.Terms.DeliverByLatest.UTC(),
+		DeliverByEarliest: p.Terms.DeliverByEarliest.UTC(), DeliverByLatest: p.Terms.DeliverByLatest.UTC(), TimeZone: zone(p.Terms.TimeZone),
 		DestinationPostalPrefix: p.DestinationPostalPrefix,
 	}, nil
 }

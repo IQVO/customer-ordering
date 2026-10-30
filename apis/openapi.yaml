@@ -516,9 +516,20 @@ components:
         deliverByLatest:
           type: string
           format: date-time
+        timeZone:
+          $ref: '#/components/schemas/TimeZone'
         expiresAt:
           type: string
           format: date-time
+    TimeZone:
+      type: string
+      maxLength: 64
+      example: America/Chicago
+      description: 'IANA time zone of the delivery station serving the destination: the local calendar deliverByEarliest
+        and deliverByLatest belong to. Convert both instants into it before taking a date or an hour (e.g.
+        2026-10-31T14:00:00Z..2026-11-01T02:00:00Z in America/Chicago is the single day 2026-10-31, 9 AM to 9 PM).
+        Copied from delivery-promise (its ADR 0011). Optional and additive (ADR 0009): omitted when unknown, i.e. for a
+        group or offer delivery-promise stored before it carried the zone; read the window in UTC then.'
     Tier:
       type: string
       enum: [SAME_DAY, NEXT_DAY, TWO_DAY, STANDARD]
@@ -651,6 +662,8 @@ components:
         deliverByLatest:
           type: string
           format: date-time
+        timeZone:
+          $ref: '#/components/schemas/TimeZone'
         lineNos:
           type: array
           items:
@@ -743,6 +756,8 @@ components:
         deliverByLatest:
           type: string
           format: date-time
+        timeZone:
+          $ref: '#/components/schemas/TimeZone'
         atRiskReason:
           type: string
           description: From PromiseAtRisk.
