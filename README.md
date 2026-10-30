@@ -65,6 +65,30 @@ go run ./cmd/mcp                           # listens on :8090 (MCP_ADDR), /healt
 On Kubernetes the optional `mcp` chart component (default off) renders the Deployment and Service; `mcp.route.enabled` exposes
 `/api/mcp/customer-ordering` through the gateway, rewritten to `/mcp`.
 
+## A2A agent
+
+`cmd/a2a` is a third, read-only deployable: an Agent2Agent (A2A) agent (`github.com/a2aproject/a2a-go/v2`, JSON-RPC 2.0 over HTTP at `/` and `/a2a`,
+the Agent Card at `/.well-known/agent-card.json`, port 8093) that another agent can **delegate** a goal to. Two goal-shaped skills, both reads over the same
+use cases as REST and MCP; the ship-to address is deliberately not offered. No auth of any kind (fleet decision), no Kafka, no relay, no consumers, no
+outbound A2A client. A2A carries delegation only: facts between contexts still travel as CloudEvents on Kafka, published by `cmd/api`
+([ADR 0008](docs/adr/0008-a2a-inbound-adapter.md)).
+
+| Skill | Read |
+| --- | --- |
+| `get_order(orderId)` | status, lines, the promise of every shipment group |
+| `get_order_tracking(orderId)` | verdicts, signals, packages, outcomes |
+
+Domain rejections are answered in-band as RFC 7807-style `problem`s inside the reply message (404 `not-found`, 400 `invalid-argument`, 500), never as JSON-RPC errors.
+
+```sh
+export DATABASE_URL=postgres://user:***@localhost:5432/customer_ordering?sslmode=disable
+export A2A_AGENT_URL=http://localhost:8093/   # mandatory: advertised on the Agent Card
+go run ./cmd/a2a                              # listens on :8093 (A2A_ADDR), /healthz + /.well-known/agent-card.json
+```
+
+On Kubernetes the optional `a2a` chart component (default off) renders the Deployment and Service; `a2a.route.enabled` exposes
+`/api/a2a/customer-ordering` through the gateway, rewritten to `/`; `a2a.agentUrl` overrides the advertised URL.
+
 ## Events
 
 Contract: [`apis/asyncapi.yaml`](apis/asyncapi.yaml), catalogue in [ADR 0004](docs/adr/0004-cloudevents-envelope-and-type-catalogue.md).
@@ -133,7 +157,7 @@ The web remote's gates (run inside `web/`, never at the repo root): `npm run lin
 against a sibling `warehouse-ui-kit` checkout).
 
 Layout: `internal/domain/{shared,shipto,shopper,customerorder}` (pure Go), `internal/application/{ports,views,usecases,readmodel,promising,outbox,idempotency}`,
-`internal/adapters/inbound/{http,kafka,mcp}`, `internal/adapters/outbound/{postgres,kafka,outbox,deliverypromise,clock,ids,memory,repocontract}`, `cmd/{api,mcp}`,
+`internal/adapters/inbound/{http,kafka,mcp,a2a}`, `internal/adapters/outbound/{postgres,kafka,outbox,deliverypromise,clock,ids,memory,repocontract}`, `cmd/{api,mcp,a2a}`,
 `web/` (the console remote), `features/` (godog feature files, run from `internal/bdd`). The `memory` and `repocontract` packages are test doubles; `cmd/**` never
 imports them.
 

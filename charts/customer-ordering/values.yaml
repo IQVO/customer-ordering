@@ -237,6 +237,55 @@ mcp:
       cpu: 100m
       memory: 128Mi
 
+# The optional A2A (Agent2Agent) agent (ADR 0008): cmd/a2a, a read-only third
+# deployable over the SAME read use cases as the REST and MCP surfaces.
+# Skills (both reads): get_order and get_order_tracking; the restricted
+# ship-to read is deliberately not offered. Never dials Kafka, runs no
+# consumer and no relay (so no KAFKA_BROKERS and no EVENT_PUBLISHER), calls no
+# sibling context, and has NO auth (fleet-wide decision): access control is
+# the in-cluster ClusterIP boundary. Needs database.* like the api (the same
+# Secret), nothing else. A2A carries delegation only; facts between contexts
+# still travel as CloudEvents on Kafka, published by cmd/api.
+a2a:
+  enabled: false
+  replicaCount: 1
+  # A2A_ADDR the binary listens on; keep in sync with service.targetPort.
+  # (8080 is the api, 8090 the MCP server, so 8093.)
+  httpAddr: ":8093"
+  # Absolute URL advertised on the Agent Card (A2A_AGENT_URL, mandatory for the
+  # binary). Empty defaults to this release's in-cluster Service DNS
+  # (http://<release>-a2a.<ns>.svc.cluster.local:8093/); warehouse-infra can
+  # override it with the Kong path when the agent must be reachable off-cluster.
+  agentUrl: ""
+  # SERVICE_VERSION / ENVIRONMENT: the labels cmd/a2a reports at boot and puts on
+  # its telemetry (SERVICE_VERSION is also the Agent Card version). serviceVersion
+  # empty = the image tag (appVersion when empty), like the api.
+  serviceVersion: ""
+  environment: "production"
+  service:
+    type: ClusterIP
+    port: 8093
+    targetPort: 8093
+  # Gateway exposure: /api/a2a/customer-ordering -> Service :8093, prefix
+  # rewritten to / (the JSON-RPC root; the well-known agent card stays
+  # reachable under the same prefix). Needs the Gateway parentRef from
+  # warehouse-infra; NO auth of any kind on the route.
+  route:
+    enabled: false
+    path: "/api/a2a/customer-ordering"
+    parentRefs:
+      - name: ""
+        namespace: ""
+        sectionName: "http"
+  extraEnv: []
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
 # web/ (customer_ordering_mfe, ADR 0006): the Module Federation remote served
 # by its own nginx pod, reached through warehouse-infra's Nginx web gateway at
 # /mfes/customer-ordering/. Never routed by this chart; ClusterIP only. No

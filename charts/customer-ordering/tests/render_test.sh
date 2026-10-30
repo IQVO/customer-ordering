@@ -149,8 +149,8 @@ if grep -qiE 'in-memory|silently runs|permissive' <<<"$render_all"$'\n'"$(cat "$
   fail "the render or NOTES.txt mentions an in-memory / permissive mode"
 fi
 
-# Only the api component exists: one Deployment, one Service, no MCP, frontend, projector or reports.
-for stray in mcp frontend projector reports analytics; do
+# Only the api component exists: one Deployment, one Service, no MCP, A2A, frontend, projector or reports.
+for stray in mcp a2a frontend projector reports analytics; do
   if grep -qE "app.kubernetes.io/component: .*$stray" <<<"$render_all"; then fail "the chart must not render a $stray component"; fi
 done
 [[ "$(grep -c '^kind: Deployment' <<<"$render_all")" == 1 ]] || fail "exactly one Deployment (the api) must render"
@@ -178,7 +178,7 @@ tagged="$(helm template "$release" "$chart_dir" "${base[@]}" --set image.tag=v9.
 [[ "$(env_value "$tagged" OTEL_EXPORTER_OTLP_ENDPOINT)" == "http://collector:4317" ]] || fail "OTEL_EXPORTER_OTLP_ENDPOINT must follow otel.endpoint"
 [[ "$(env_value "$tagged" ENVIRONMENT)" == "staging" ]] || fail "ENVIRONMENT must follow environment"
 # otel.enabled=false renders no OTEL_* env (SERVICE_VERSION stays: it also labels the logs' build).
-otel_off="$(helm template "$release" "$chart_dir" "${base[@]}" --set otel.enabled=false --set mcp.enabled=true)"
+otel_off="$(helm template "$release" "$chart_dir" "${base[@]}" --set otel.enabled=false --set mcp.enabled=true --set a2a.enabled=true)"
 if grep -q 'name: OTEL_' <<<"$otel_off"; then fail "otel.enabled=false must render no OTEL_* env in any component"; fi
 grep -q 'name: SERVICE_VERSION$' <<<"$otel_off" || fail "SERVICE_VERSION must still render with otel.enabled=false"
 # The values are chart-owned: extraEnv may not set them a second time.
@@ -233,8 +233,8 @@ helm template "$release" "$chart_dir" "${base[@]}" --set config.shutdownDrainDel
 expect_refusal "a drain delay the chart cannot size" "config.shutdownDrainDelay" "${base[@]}" --set config.shutdownDrainDelay=soon
 expect_refusal "an http address off the container port" "config.httpAddr" "${base[@]}" --set config.httpAddr=:9090
 
-# --- optional components (ADR 0005 mcp, ADR 0006 web remote) -------------------
-# Both are OFF by default: the default render stays exactly one Deployment and
+# --- optional components (ADR 0005 mcp, ADR 0008 a2a, ADR 0006 web remote) -----
+# All are OFF by default: the default render stays exactly one Deployment and
 # one Service (asserted above). Here they render alone and together.
 
 # binary_env_of <main.go...>: the env literals one binary reads.
@@ -286,6 +286,55 @@ grep -q 'value: /api/mcp/customer-ordering' <<<"$mcp_route" || fail "the mcp rou
 grep -q 'replacePrefixMatch: /mcp' <<<"$mcp_route" || fail "the mcp route must rewrite the prefix to /mcp (the SDK's canonical endpoint)"
 grep -q "name: $release-mcp" <<<"$mcp_route" || fail "the mcp route must target the mcp Service"
 
+# a2a: its own env, never the api ConfigMap, never Kafka or an event publisher
+# (read-only, ADR 0008).
+a2a_dep="$(helm template "$release" "$chart_dir" "${base[@]}" --set a2a.enabled=true --show-only templates/a2a-deployment.yaml)"
+grep -q 'app.kubernetes.io/component: a2a' <<<"$a2a_dep" || fail "the a2a Deployment was not rendered with a2a.enabled=true"
+grep -q 'command: \[\"/app/a2a\"\]' <<<"$a2a_dep" || fail "the a2a Deployment must run /app/a2a"
+if grep -q 'configMapRef:' <<<"$a2a_dep"; then fail "a2a-deployment.yaml must not mount the api ConfigMap"; fi
+if grep -Eq 'name: (KAFKA_BROKERS|EVENT_PUBLISHER|DELIVERY_PROMISE_[A-Z_]+|ORDER_SOURCING_[A-Z_]+|SHIPPING_[A-Z_]+|OUTBOX_[A-Z_]+|[A-Z]+_CONSUMER_GROUP)$' <<<"$a2a_dep"; then
+  fail "the a2a Deployment must not get Kafka/EVENT_PUBLISHER/relay/consumer/delivery-promise env (read-only, never dials Kafka)"
+fi
+# Mandatory variables: every "<VAR> is required" boot error of cmd/a2a (the regex
+# must allow digits, or A2A_AGENT_URL is read as A_AGENT_URL) and every env
+# literal the binary reads must be rendered.
+# shellcheck disable=SC2207
+a2a_required=($(grep -ohE '[A-Z][A-Z0-9_]+ is required' "$repo_dir"/cmd/a2a/*.go --exclude='*_test.go' | sed -E 's/ is required//' | sort -u || true))
+(( ${#a2a_required[@]} >= 2 )) || fail "found only ${#a2a_required[@]} mandatory variables in cmd/a2a; the scan is looking in the wrong place"
+[[ " ${a2a_required[*]} " == *" A2A_AGENT_URL "* ]] || fail "cmd/a2a no longer refuses to boot without A2A_AGENT_URL (scan found: ${a2a_required[*]})"
+# shellcheck disable=SC2207
+a2a_vars=($(binary_env_of "$repo_dir"/cmd/a2a/main.go "$repo_dir"/cmd/a2a/telemetry.go))
+(( ${#a2a_vars[@]} >= 6 )) || fail "found only ${#a2a_vars[@]} env literals in cmd/a2a; the scan is looking in the wrong place"
+assert_env_rendered "$a2a_dep" "the a2a Deployment" "${a2a_required[@]}" "${a2a_vars[@]}" A2A_ADDR A2A_AGENT_URL DATABASE_URL MIGRATIONS_DATABASE_URL \
+  LOG_LEVEL SERVICE_VERSION ENVIRONMENT OTEL_SERVICE_NAME OTEL_EXPORTER_OTLP_ENDPOINT
+[[ "$(env_value "$a2a_dep" A2A_ADDR)" == ":8093" ]] || fail "A2A_ADDR must default to :8093"
+# A2A_AGENT_URL defaults to the in-cluster Service DNS of the release namespace
+# and is overridable through a2a.agentUrl.
+a2a_ns="$(helm template "$release" "$chart_dir" "${base[@]}" --namespace shop --set a2a.enabled=true --show-only templates/a2a-deployment.yaml)"
+[[ "$(env_value "$a2a_ns" A2A_AGENT_URL)" == "http://$release-a2a.shop.svc.cluster.local:8093/" ]] \
+  || fail "A2A_AGENT_URL must default to http://<fullname>-a2a.<namespace>.svc.cluster.local:8093/, got '$(env_value "$a2a_ns" A2A_AGENT_URL)'"
+a2a_url="$(helm template "$release" "$chart_dir" "${base[@]}" --set a2a.enabled=true --set a2a.agentUrl=https://gw.example/api/a2a/customer-ordering/ --show-only templates/a2a-deployment.yaml)"
+[[ "$(env_value "$a2a_url" A2A_AGENT_URL)" == "https://gw.example/api/a2a/customer-ordering/" ]] || fail "A2A_AGENT_URL must follow a2a.agentUrl"
+a2a_versioned="$(helm template "$release" "$chart_dir" "${base[@]}" --set a2a.enabled=true --set a2a.serviceVersion=dev --show-only templates/a2a-deployment.yaml)"
+[[ "$(env_value "$a2a_versioned" SERVICE_VERSION)" == "dev" ]] || fail "SERVICE_VERSION must come from a2a.serviceVersion"
+[[ "$(env_value "$a2a_dep" SERVICE_VERSION)" == "0.1.0" ]] || fail "the a2a SERVICE_VERSION must default to the image tag / appVersion, like the api"
+[[ "$(env_value "$a2a_dep" OTEL_SERVICE_NAME)" == "customer-ordering-a2a" ]] || fail "the a2a component must export as <otel.serviceName>-a2a"
+[[ "$(env_value "$a2a_dep" OTEL_EXPORTER_OTLP_ENDPOINT)" == "$otel_endpoint" ]] || fail "the a2a component must export to otel.endpoint"
+[[ "$(env_value "$a2a_dep" ENVIRONMENT)" == "production" ]] || fail "ENVIRONMENT must come from a2a.environment"
+a2a_svc="$(helm template "$release" "$chart_dir" "${base[@]}" --set a2a.enabled=true --show-only templates/a2a-service.yaml)"
+grep -q 'kind: Service' <<<"$a2a_svc" || fail "the a2a Service was not rendered with a2a.enabled=true"
+grep -q 'app.kubernetes.io/component: a2a' <<<"$a2a_svc" || fail "the a2a Service must select component=a2a"
+grep -q 'port: 8093' <<<"$a2a_svc" || fail "the a2a Service must listen on 8093"
+
+# The a2a route is a SEPARATE switch: a2a on alone exposes nothing.
+a2a_noroute="$(helm template "$release" "$chart_dir" "${base[@]}" --set a2a.enabled=true)"
+if grep -q 'kind: HTTPRoute' <<<"$a2a_noroute"; then fail "the a2a HTTPRoute must not render while a2a.route.enabled is false"; fi
+a2a_route="$(helm template "$release" "$chart_dir" "${base[@]}" --set a2a.enabled=true --set a2a.route.enabled=true --show-only templates/a2a-route.yaml)"
+grep -q 'value: /api/a2a/customer-ordering' <<<"$a2a_route" || fail "the a2a route must carry its configured host path"
+grep -qE 'replacePrefixMatch: /$' <<<"$a2a_route" || fail "the a2a route must rewrite the prefix to / (the JSON-RPC root; the agent card stays reachable)"
+grep -q "name: $release-a2a" <<<"$a2a_route" || fail "the a2a route must target the a2a Service"
+if grep -qiE 'plugin|auth' <<<"$(grep -v '^\s*#' <<<"$a2a_route" | sed -e '/{{-/,/-}}/d')"; then fail "the a2a route must carry no auth plugin"; fi
+
 # The web remote: its own nginx Deployment + ClusterIP Service, no DB/Kafka
 # env, and no route in this chart (the Nginx web gateway owns
 # /mfes/customer-ordering/).
@@ -300,10 +349,10 @@ fi
 
 # ALL optional components render TOGETHER (ct lint's values file).
 together="$(helm template "$release" "$chart_dir" -f "$chart_dir/ci/all-components-values.yaml")"
-for component in api mcp frontend; do
+for component in api mcp a2a frontend; do
   grep -q "app.kubernetes.io/component: $component\$" <<<"$together" || fail "the full render lacks the $component component"
 done
-[[ "$(grep -c '^kind: Deployment' <<<"$together")" == 3 ]] || fail "the full render must carry the api, mcp and frontend Deployments"
-[[ "$(grep -c '^kind: Service$' <<<"$together")" == 3 ]] || fail "the full render must carry the api, mcp and frontend Services"
+[[ "$(grep -c '^kind: Deployment' <<<"$together")" == 4 ]] || fail "the full render must carry the api, mcp, a2a and frontend Deployments"
+[[ "$(grep -c '^kind: Service$' <<<"$together")" == 4 ]] || fail "the full render must carry the api, mcp, a2a and frontend Services"
 
 echo "PASS: customer-ordering chart render assertions"
