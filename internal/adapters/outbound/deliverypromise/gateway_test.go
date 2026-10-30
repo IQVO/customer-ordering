@@ -182,3 +182,32 @@ func TestCancelPromiseRefusalsAreTyped(t *testing.T) {
 		t.Fatalf("a dead connection is unavailable: %v", err)
 	}
 }
+
+// The optional timeZone of the window (delivery-promise ADR 0011) is carried on
+// the made terms and on every quoted offer; an absent or malformed name is an
+// unknown zone (empty), never a failed checkout (ADR 0009).
+func TestTheWindowTimeZoneIsCarriedAndAMalformedOneIsUnknown(t *testing.T) {
+	zoned := `{"promiseId":"pr-1","destinationPostalPrefix":"787",
+ "terms":{"tier":"NEXT_DAY","shipBy":"2026-10-30T23:00:00Z","deliverByEarliest":"2026-10-31T14:00:00Z","deliverByLatest":"2026-11-01T02:00:00Z","timeZone":"America/Chicago"},
+ "witnessPath":{"nodeId":"fc-aus-1"}}`
+	g, _ := serve(t, 201, "application/json", zoned)
+	terms, err := g.MakePromise(context.Background(), promising.MakeRequest{OrderID: "o-1", GroupNo: 1, OfferID: "of-1"})
+	if err != nil || terms.TimeZone != "America/Chicago" {
+		t.Fatalf("terms = %+v, %v; want timeZone America/Chicago", terms, err)
+	}
+	g, _ = serve(t, 201, "application/json", promiseBody)
+	if terms, err = g.MakePromise(context.Background(), promising.MakeRequest{OrderID: "o-1", GroupNo: 1, OfferID: "of-1"}); err != nil || terms.TimeZone != "" {
+		t.Fatalf("a promise without timeZone: %+v, %v; want an empty (unknown) zone", terms, err)
+	}
+	g, _ = serve(t, 200, "application/json", `{"offers":[
+	 {"offerId":"a","state":"QUOTED","tier":"NEXT_DAY","window":{"earliest":"2026-10-31T14:00:00Z","latest":"2026-11-01T02:00:00Z","timeZone":"America/Chicago"},"expiresAt":"2026-10-30T11:00:00Z"},
+	 {"offerId":"b","state":"QUOTED","tier":"STANDARD","window":{"earliest":"2026-11-02T14:00:00Z","latest":"2026-11-03T02:00:00Z"},"expiresAt":"2026-10-30T11:00:00Z"},
+	 {"offerId":"c","state":"QUOTED","tier":"TWO_DAY","window":{"earliest":"2026-11-01T14:00:00Z","latest":"2026-11-02T02:00:00Z","timeZone":"not a zone"},"expiresAt":"2026-10-30T11:00:00Z"}]}`)
+	offers, err := g.QuoteOffers(context.Background(), "787", []promising.Line{{CatalogItemID: "sku-1", Quantity: 1}})
+	if err != nil || len(offers) != 3 {
+		t.Fatalf("offers = %+v, %v", offers, err)
+	}
+	if offers[0].TimeZone != "America/Chicago" || offers[1].TimeZone != "" || offers[2].TimeZone != "" {
+		t.Fatalf("zones = %q %q %q, want America/Chicago, empty, empty", offers[0].TimeZone, offers[1].TimeZone, offers[2].TimeZone)
+	}
+}

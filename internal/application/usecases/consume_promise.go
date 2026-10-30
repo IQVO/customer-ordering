@@ -57,6 +57,7 @@ type PromiseRevised struct {
 	RevisionNo        int
 	DeliverByEarliest time.Time
 	DeliverByLatest   time.Time
+	TimeZone          string // optional; empty keeps the group's own (ADR 0009)
 	ShipBy            time.Time
 	NodeID            string
 }
@@ -71,7 +72,7 @@ func (c Consumer) ApplyPromiseRevised(ctx context.Context, m Meta, in PromiseRev
 					shipBy = groupShipBy(o, n)
 				}
 			}
-			return o.UpdateGroupPromise(in.PromiseID, in.RevisionNo, in.DeliverByEarliest, in.DeliverByLatest, shipBy, in.NodeID)
+			return o.UpdateGroupPromise(in.PromiseID, in.RevisionNo, in.DeliverByEarliest, in.DeliverByLatest, shipBy, in.NodeID, in.TimeZone)
 		}))
 	})
 }

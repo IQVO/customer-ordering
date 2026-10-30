@@ -33,9 +33,12 @@ func TestMigrationsGoUpDownUp(t *testing.T) {
 		t.Fatalf("up: %v", err)
 	}
 	up := tableCount(t, url)
-	// 0001 creates 9, 0002 adds none, 0003 adds shopper_addresses (NG1).
+	// 0001 creates 9, 0002 adds none, 0003 adds shopper_addresses (NG1), 0004 a column (ADR 0009).
 	if up != 11 {
 		t.Fatalf("after up: %d tables, want 11", up)
+	}
+	if !hasTimeZoneColumn(t, url) {
+		t.Fatal("after up: order_groups has no time_zone column")
 	}
 	if err := postgres.RunMigrations(url); err != nil {
 		t.Fatalf("a second up must be a no-op: %v", err)

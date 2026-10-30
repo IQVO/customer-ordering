@@ -9,7 +9,18 @@ import (
 	ce "github.com/cloudevents/sdk-go/v2/event"
 
 	"github.com/claudioed/customer-ordering/internal/application/usecases"
+	"github.com/claudioed/customer-ordering/internal/domain/shared"
 )
+
+// revisedZone keeps the optional IANA zone of a PromiseRevised window (ADR
+// 0009). Decoding is tolerant: an absent or malformed name is unknown (empty),
+// so the group keeps its own zone and the revision is still applied.
+func revisedZone(name string) string {
+	if shared.ValidTimeZone(name) {
+		return name
+	}
+	return ""
+}
 
 // Consumed topics: the producers' integration topics (their contracts are
 // restated in apis/asyncapi.yaml, never imported).
@@ -61,6 +72,7 @@ type (
 		RevisionNo        int       `json:"revisionNo"`
 		DeliverByEarliest time.Time `json:"deliverByEarliest"`
 		DeliverByLatest   time.Time `json:"deliverByLatest"`
+		TimeZone          string    `json:"timeZone"`
 		ShipBy            time.Time `json:"shipBy"`
 		NodeID            string    `json:"nodeId"`
 	}
@@ -200,7 +212,7 @@ func DeliveryPromiseHandlers(c usecases.Consumer) map[string]HandlerFunc {
 		}, func(ctx context.Context, m usecases.Meta, d promiseRevisedData) error {
 			return c.ApplyPromiseRevised(ctx, m, usecases.PromiseRevised{
 				PromiseID: d.PromiseID, OrderID: d.OrderID, RevisionNo: d.RevisionNo, DeliverByEarliest: d.DeliverByEarliest,
-				DeliverByLatest: d.DeliverByLatest, ShipBy: d.ShipBy, NodeID: d.NodeID,
+				DeliverByLatest: d.DeliverByLatest, TimeZone: revisedZone(d.TimeZone), ShipBy: d.ShipBy, NodeID: d.NodeID,
 			})
 		}),
 		TypePromiseKept: handler("PromiseKept", func(d promiseKeptData) error {

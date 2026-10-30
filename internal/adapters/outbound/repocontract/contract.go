@@ -70,13 +70,16 @@ func groupInput(no int, promise string, lineNos ...int) customerorder.GroupInput
 	}
 }
 
-// newOrder builds a PLACED order of three lines in two groups.
+// newOrder builds a PLACED order of three lines in two groups. Group 1 carries
+// the window's time zone, group 2 none (a group stored before it, ADR 0009).
 func newOrder(t *testing.T, id string) *customerorder.CustomerOrder {
 	t.Helper()
+	first := groupInput(1, "p-"+id+"-1", 1, 2)
+	first.TimeZone = "America/Chicago"
 	o, _, err := customerorder.Place(customerorder.NewOrder{
 		ID: customerorder.ID(id), ShopperID: "shopper-1", ShipTo: address(),
 		Lines:  []customerorder.OrderLine{{LineNo: 1, CatalogItemID: "sku-100", Quantity: 2}, {LineNo: 2, CatalogItemID: "sku-200", Quantity: 1}, {LineNo: 3, CatalogItemID: "sku-300", Quantity: 5}},
-		Groups: []customerorder.GroupInput{groupInput(1, "p-"+id+"-1", 1, 2), groupInput(2, "p-"+id+"-2", 3)},
+		Groups: []customerorder.GroupInput{first, groupInput(2, "p-"+id+"-2", 3)},
 	}, t0)
 	if err != nil {
 		t.Fatalf("Place: %v", err)
