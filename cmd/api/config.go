@@ -11,6 +11,7 @@ import (
 
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/deliverypromise"
 	outboxrelay "github.com/claudioed/customer-ordering/internal/adapters/outbound/outbox"
+	"github.com/claudioed/customer-ordering/internal/adapters/outbound/telemetry"
 )
 
 // Boot errors for the variables the context cannot run without. Each message
@@ -129,7 +130,9 @@ func shutdownDrainDelay(logger *slog.Logger) time.Duration {
 }
 
 // newLogger builds the JSON logger; LOG_LEVEL debug|info|warn|warning|error
-// (case-insensitive; "warning" is accepted like "warn" fleet-wide).
+// (case-insensitive; "warning" is accepted like "warn" fleet-wide). The handler
+// is wrapped so a record written with a span-carrying context (the *Context
+// slog variants) also carries trace_id and span_id.
 func newLogger(level string) *slog.Logger {
 	var lvl slog.Level
 	switch strings.ToLower(level) {
@@ -142,7 +145,7 @@ func newLogger(level string) *slog.Logger {
 	default:
 		lvl = slog.LevelInfo
 	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
+	return slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl})))
 }
 
 func getenv(key, fallback string) string {

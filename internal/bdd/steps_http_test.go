@@ -32,7 +32,7 @@ func (w *world) api() *httptest.Server {
 			FindShopperByEmail: usecases.FindShopperByEmail{Deps: w.deps}, ListOrdersByShopper: usecases.ListOrdersByShopper{Deps: w.deps},
 			IdempotencyStore: w.store.Idempotency(), Clock: w.deps.Clock, IDs: w.deps.IDs,
 		}
-		w.apiSrv = httptest.NewServer(httpadapter.NewRouter(s))
+		w.apiSrv = httptest.NewServer(httpadapter.NewRouter(s, nil, ""))
 	}
 	return w.apiSrv
 }

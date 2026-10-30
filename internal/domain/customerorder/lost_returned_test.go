@@ -112,7 +112,7 @@ func TestALostGroupIsTerminal(t *testing.T) {
 	v := o.Version()
 	assertErr(t, o.MarkGroupDelivered(1, "TRK-B", at(60)), sharedIllegal)
 	assertErr(t, o.MarkGroupReturned(1, "TRK-B", at(61)), sharedIllegal)
-	assertErr(t, o.UpdateGroupPromise("p-1", 1, at(2000), at(2300), at(1900), ""), sharedIllegal)
+	assertErr(t, o.UpdateGroupPromise("p-1", 1, at(2000), at(2300), at(1900), "", ""), sharedIllegal)
 	assertErr(t, o.MarkGroupShipped(1, []string{"TRK-A", "TRK-B"}, at(62)), ErrStatusRegression)
 	assertErr(t, o.MarkInFulfillment(1, "as-1", "fc-1", at(63)), ErrStatusRegression)
 	assertErr(t, o.ConfirmGroupCancelled(1, at(64)), ErrStatusRegression)

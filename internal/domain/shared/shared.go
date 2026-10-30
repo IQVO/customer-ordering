@@ -88,6 +88,31 @@ func ValidID(s string) bool {
 	return true
 }
 
+// MaxTimeZone is the longest accepted IANA time-zone name (ADR 0009).
+const MaxTimeZone = 64
+
+// ValidTimeZone reports whether s has the shape of an IANA time-zone name
+// (e.g. America/Chicago, Etc/GMT+5): 1 to MaxTimeZone characters from
+// A-Z a-z 0-9 / _ + -, starting with a letter. It checks the shape only; the
+// domain never resolves the zone (ADR 0009).
+func ValidTimeZone(s string) bool {
+	if s == "" || len(s) > MaxTimeZone || !isLetter(s[0]) {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if isAlnum(c) || c == '/' || c == '_' || c == '+' || c == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isLetter(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
 func isAlnum(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }

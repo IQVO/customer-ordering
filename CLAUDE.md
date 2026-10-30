@@ -39,3 +39,5 @@ Aggregates, invariants and assumptions A1-A23 are in docs/adr/0002; consumed con
 ## Workflow
 GitFlow: feature/* -> PR into develop, CI green before merge, never push develop or main. lefthook: pre-commit fmt/vet/lint, pre-push `make check`. Commit and push after each step.
 Deploy: Helm chart `charts/customer-ordering` (one `api` component; mandatory values `database.*`, `kafka.brokers`, `config.deliveryPromiseUrl`, `config.{deliveryPromise,orderSourcing,shipping}ConsumerGroup`, refused empty at render; `terminationGracePeriodSeconds` 60, must exceed drain delay + 50 s). `bash charts/customer-ordering/tests/render_test.sh` and `python3 charts/customer-ordering/tests/test_service_selectors.py` guard it; a new env var in cmd/api needs a chart value. CI `helm-lint` (PRs) and `chart-tests`. Registry secrets (row 11) are for the repo admin.
+
+A2A: `cmd/a2a` (port 8093) is this context's read-only Agent2Agent agent, skills `get_order` (read), `get_order_tracking` (read), decided in `docs/adr/0008-a2a-inbound-adapter.md`; delegation only (facts stay CloudEvents on Kafka), unauthenticated like REST and MCP; rules in `.claude/rules/fleet/a2a.md`.

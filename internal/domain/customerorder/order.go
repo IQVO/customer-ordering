@@ -140,9 +140,12 @@ type GroupPromise struct {
 	ShipBy            time.Time
 	DeliverByEarliest time.Time
 	DeliverByLatest   time.Time
-	LineNos           []int
-	Status            GroupStatus
-	RevisionNo        int
+	// TimeZone is the IANA zone of the destination the delivery window is read
+	// in (ADR 0009). Empty = unknown: a group stored before it was carried.
+	TimeZone   string
+	LineNos    []int
+	Status     GroupStatus
+	RevisionNo int
 
 	AssignmentID string
 	NodeID       string

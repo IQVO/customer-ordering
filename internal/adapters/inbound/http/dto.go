@@ -77,6 +77,7 @@ type groupDTO struct {
 	ShipBy              string `json:"shipBy"`
 	DeliverByEarliest   string `json:"deliverByEarliest"`
 	DeliverByLatest     string `json:"deliverByLatest"`
+	TimeZone            string `json:"timeZone,omitempty"`
 	LineNos             []int  `json:"lineNos"`
 	Status              string `json:"status"`
 	RevisionNo          int    `json:"revisionNo,omitempty"`
@@ -109,7 +110,7 @@ func orderView(o views.Order) orderDTO {
 		}
 		groups[i] = groupDTO{
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: g.Tier, ShipBy: ts(g.ShipBy), DeliverByEarliest: ts(g.DeliverByEarliest),
-			DeliverByLatest: ts(g.DeliverByLatest), LineNos: nos, Status: g.Status, RevisionNo: g.RevisionNo, CancelReason: g.CancelReason,
+			DeliverByLatest: ts(g.DeliverByLatest), TimeZone: g.TimeZone, LineNos: nos, Status: g.Status, RevisionNo: g.RevisionNo, CancelReason: g.CancelReason,
 			CancelRequestedAt: ts(g.CancelRequestedAt), CancelRefusedReason: g.CancelRefusedReason,
 		}
 	}
@@ -135,6 +136,7 @@ type trackingGroupDTO struct {
 	Status              string               `json:"status"`
 	DeliverByEarliest   string               `json:"deliverByEarliest"`
 	DeliverByLatest     string               `json:"deliverByLatest"`
+	TimeZone            string               `json:"timeZone,omitempty"`
 	AtRiskReason        string               `json:"atRiskReason,omitempty"`
 	UnsourceableReason  string               `json:"unsourceableReason,omitempty"`
 	PromiseVerdict      string               `json:"promiseVerdict,omitempty"`
@@ -165,7 +167,7 @@ func trackingView(t views.Tracking) trackingDTO {
 			}
 		}
 		groups[i] = trackingGroupDTO{
-			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Status: g.Status, DeliverByEarliest: ts(g.DeliverByEarliest), DeliverByLatest: ts(g.DeliverByLatest),
+			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Status: g.Status, DeliverByEarliest: ts(g.DeliverByEarliest), DeliverByLatest: ts(g.DeliverByLatest), TimeZone: g.TimeZone,
 			AtRiskReason: g.AtRiskReason, UnsourceableReason: g.UnsourceableReason, PromiseVerdict: g.PromiseVerdict, LateByMinutes: g.LateByMinutes,
 			LockedAt: ts(g.LockedAt), ShippedAt: ts(g.ShippedAt), CancelRefusedReason: g.CancelRefusedReason,
 			LostAt: ts(g.LostAt), ReturnedAt: ts(g.ReturnedAt), OutcomePackage: g.OutcomePackage, Packages: pkgs,
@@ -232,6 +234,7 @@ type requotedOfferDTO struct {
 	Tier              string `json:"tier"`
 	DeliverByEarliest string `json:"deliverByEarliest"`
 	DeliverByLatest   string `json:"deliverByLatest"`
+	TimeZone          string `json:"timeZone,omitempty"`
 	ExpiresAt         string `json:"expiresAt"`
 }
 
@@ -240,7 +243,7 @@ func requotedOffersDTO(in []views.RequotedOffer) []requotedOfferDTO {
 	for i, o := range in {
 		out[i] = requotedOfferDTO{
 			GroupNo: o.GroupNo, OfferID: o.OfferID, Tier: o.Tier, DeliverByEarliest: ts(o.DeliverByEarliest),
-			DeliverByLatest: ts(o.DeliverByLatest), ExpiresAt: ts(o.ExpiresAt),
+			DeliverByLatest: ts(o.DeliverByLatest), TimeZone: o.TimeZone, ExpiresAt: ts(o.ExpiresAt),
 		}
 	}
 	return out

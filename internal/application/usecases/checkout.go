@@ -55,29 +55,39 @@ type PlaceOrder struct{ Deps }
 // order. See RequoteRequired and the ports.ErrPromise... sentinels for the
 // delivery-promise failures.
 func (u PlaceOrder) Execute(ctx context.Context, in PlaceOrderInput) (views.Order, error) {
+	v, replayed, err := u.execute(ctx, in)
+	if !replayed {
+		u.recordOutcome(ctx, err)
+	}
+	return v, err
+}
+
+// execute is the checkout proper; replayed reports that the stored order of an
+// earlier identical checkout was returned, which is not a new attempt.
+func (u PlaceOrder) execute(ctx context.Context, in PlaceOrderInput) (_ views.Order, replayed bool, _ error) {
 	if err := checkAddressChoice(in); err != nil {
-		return views.Order{}, err
+		return views.Order{}, false, err
 	}
 	if v, found, err := u.replay(ctx, in); found || err != nil {
-		return v, err
+		return v, found, err
 	}
 	if err := u.resolveAddress(ctx, &in); err != nil {
-		return views.Order{}, err
+		return views.Order{}, false, err
 	}
 	if err := u.preflight(in); err != nil {
-		return views.Order{}, err
+		return views.Order{}, false, err
 	}
 	if err := u.requireShopper(ctx, in.ShopperID); err != nil {
-		return views.Order{}, err
+		return views.Order{}, false, err
 	}
 	groups, err := u.promiseGroups(ctx, in)
 	if errors.Is(err, ports.ErrPromiseOfferNotQuotable) {
-		return views.Order{}, u.requote(ctx, in)
+		return views.Order{}, false, u.requote(ctx, in)
 	}
 	if err != nil {
-		return views.Order{}, err
+		return views.Order{}, false, err
 	}
-	return transact(ctx, u.UoW, commandAttempts, func(ctx context.Context) (views.Order, error) {
+	placed, err := transact(ctx, u.UoW, commandAttempts, func(ctx context.Context) (views.Order, error) {
 		o, events, err := customerorder.Place(newOrder(in, groups), u.now())
 		if err != nil {
 			return views.Order{}, err
@@ -90,6 +100,7 @@ func (u PlaceOrder) Execute(ctx context.Context, in PlaceOrderInput) (views.Orde
 		}
 		return views.OrderFrom(o), nil
 	})
+	return placed, false, err
 }
 
 func newOrder(in PlaceOrderInput, groups []customerorder.GroupInput) customerorder.NewOrder {
@@ -250,7 +261,7 @@ func (u PlaceOrder) compensate(ctx context.Context, orderID customerorder.ID, co
 func groupInput(g CheckoutGroup, t promising.Terms) customerorder.GroupInput {
 	return customerorder.GroupInput{
 		GroupNo: g.GroupNo, PromiseID: t.PromiseID, Tier: customerorder.Tier(t.Tier), WitnessNodeID: t.WitnessNodeID,
-		ShipBy: t.ShipBy, DeliverByEarliest: t.DeliverByEarliest, DeliverByLatest: t.DeliverByLatest, LineNos: g.LineNos,
+		ShipBy: t.ShipBy, DeliverByEarliest: t.DeliverByEarliest, DeliverByLatest: t.DeliverByLatest, TimeZone: t.TimeZone, LineNos: g.LineNos,
 		DestinationPostalPrefix: t.DestinationPostalPrefix,
 	}
 }

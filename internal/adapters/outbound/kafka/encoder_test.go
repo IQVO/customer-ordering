@@ -29,11 +29,14 @@ func placedOrder(t *testing.T) (*customerorder.CustomerOrder, []shared.Event) {
 			DeliverByEarliest: t0.Add(24 * time.Hour), DeliverByLatest: t0.Add(36 * time.Hour), LineNos: lines, DestinationPostalPrefix: "787",
 		}
 	}
+	// Group 1 names its window's zone, group 2 does not (omitted, ADR 0009).
+	first := group(1, "p-1001", customerorder.TierNextDay, 1, 2)
+	first.TimeZone = "America/Chicago"
 	o, evs, err := customerorder.Place(customerorder.NewOrder{
 		ID: "7a1e6c52-0d2b-4f0e-9d6a-5c6f1b8e2a10", ShopperID: "3b0c1f0e-6f0a-4a39-8a55-2b7f0d8c9e11",
 		ShipTo: shipto.ShipTo{Name: "Ana Example", Line1: "1 Sample Street", City: "Austin", Region: "TX", PostalCode: "78701", CountryCode: "US", Phone: "+1 555 0100"},
 		Lines:  []customerorder.OrderLine{{LineNo: 1, CatalogItemID: "sku-100", Quantity: 2}, {LineNo: 2, CatalogItemID: "sku-200", Quantity: 1}, {LineNo: 3, CatalogItemID: "sku-300", Quantity: 5}},
-		Groups: []customerorder.GroupInput{group(1, "p-1001", customerorder.TierNextDay, 1, 2), group(2, "p-1002", customerorder.TierStandard, 3)},
+		Groups: []customerorder.GroupInput{first, group(2, "p-1002", customerorder.TierStandard, 3)},
 	}, t0)
 	if err != nil {
 		t.Fatal(err)

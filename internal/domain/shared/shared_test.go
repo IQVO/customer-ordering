@@ -85,3 +85,20 @@ func TestUTCTruncatesToTheMicrosecond(t *testing.T) {
 		t.Fatalf("UTC() = %v, want microsecond precision", got)
 	}
 }
+
+func TestValidTimeZone(t *testing.T) {
+	good := []string{"UTC", "America/Chicago", "America/Argentina/Buenos_Aires", "America/Port-au-Prince", "Etc/GMT+5", "Etc/GMT-14",
+		"a", "Z", "z0", "A9", "a/b_c+d-e", "n" + strings.Repeat("x", MaxTimeZone-1)}
+	for _, s := range good {
+		if !ValidTimeZone(s) {
+			t.Errorf("ValidTimeZone(%q) = false, want true", s)
+		}
+	}
+	bad := []string{"", "0", "9", "/a", "_a", "+a", "-a", " a", "a b", "a\x00", "America/Chicago ", "é", "a.b", "a:b", "a@", "a[", "a`", "a{",
+		"@", "[", "`", "{", "n" + strings.Repeat("x", MaxTimeZone)}
+	for _, s := range bad {
+		if ValidTimeZone(s) {
+			t.Errorf("ValidTimeZone(%q) = true, want false", s)
+		}
+	}
+}

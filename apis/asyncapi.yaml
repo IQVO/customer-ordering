@@ -190,6 +190,7 @@ components:
               shipBy: '2026-10-23T22:00:00Z'
               deliverByEarliest: '2026-10-24T13:00:00Z'
               deliverByLatest: '2026-10-24T22:00:00Z'
+              timeZone: America/Chicago
               lines:
               - lineNo: 1
                 catalogItemId: sku-100
@@ -277,6 +278,7 @@ components:
             revisionNo: 1
             deliverByEarliest: '2026-10-25T13:00:00Z'
             deliverByLatest: '2026-10-25T22:00:00Z'
+            timeZone: America/Chicago
             shipBy: '2026-10-24T22:00:00Z'
             nodeId: fc-aus-2
             reason: NODE_EXCLUDED
@@ -753,6 +755,13 @@ components:
               shipBy: *id001
               deliverByEarliest: *id001
               deliverByLatest: *id001
+              timeZone:
+                type: string
+                maxLength: 64
+                description: IANA time zone of the destination (e.g. America/Chicago), the local calendar
+                  deliverByEarliest/deliverByLatest belong to, copied from the promise. Optional and additive on v1
+                  (ADR 0009); omitted when unknown (a promise delivery-promise stored before it carried the zone), in
+                  which case read the window in UTC.
               lines:
                 type: array
                 items:
@@ -928,6 +937,11 @@ components:
         previousDeliverByLatest: *id001
         deliverByEarliest: *id001
         deliverByLatest: *id001
+        timeZone:
+          type: string
+          maxLength: 64
+          description: IANA time zone of the window (delivery-promise ADR 0011). Optional; when absent or malformed the
+            group keeps its own zone (ADR 0009).
         shipBy: *id001
         nodeId:
           type: string
