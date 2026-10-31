@@ -1,0 +1,70 @@
+---
+id: list-orders-by-shopper
+title: "List a shopper's order history, newest first"
+description: "ListOrdersByShopper. Keyset pagination like GET /catalog: the page is ordered placedAt descending with the orderId as the ascending tiebreak, `limit` defaults to 20 and is at most 100, and `after` is the nextCursor of the previous page (opaque; anything else is 422 validation-failed). An unknown shopper is 404 not-found; a shopper without orders is an empty page. The items never carry the ship-to address."
+sidebar_label: "List a shopper's order history, newest first"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/customer-ordering-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"List a shopper's order history, newest first"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/orders"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+ListOrdersByShopper. Keyset pagination like GET /catalog: the page is ordered placedAt descending with the orderId as the ascending tiebreak, `limit` defaults to 20 and is at most 100, and `after` is the nextCursor of the previous page (opaque; anything else is 422 validation-failed). An unknown shopper is 404 not-found; a shopper without orders is an empty page. The items never carry the ship-to address.
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./list-orders-by-shopper.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./list-orders-by-shopper.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./list-orders-by-shopper.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

@@ -1,0 +1,70 @@
+---
+id: get-order-tracking
+title: "Get the order's tracking view per shipment group and package"
+description: "Served from the event-fed read model OrderTrackingView (delivery-promise, order-sourcing and shipping-and-tracking events) joined with the order's groups. A package scanned before its label or shipment event arrived is listed once the order is known."
+sidebar_label: "Get the order's tracking view per shipment group and package"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/customer-ordering-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Get the order's tracking view per shipment group and package"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/orders/{orderId}/tracking"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Served from the event-fed read model OrderTrackingView (delivery-promise, order-sourcing and shipping-and-tracking events) joined with the order's groups. A package scanned before its label or shipment event arrived is listed once the order is known.
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./get-order-tracking.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./get-order-tracking.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./get-order-tracking.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

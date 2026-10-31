@@ -1,0 +1,70 @@
+---
+id: add-saved-address
+title: "Save an address on a shopper"
+description: "AddSavedAddress. The addressId derives from the Idempotency-Key, so a replay (even after the idempotency record expired) returns the same address. A shopper holds at most 20 saved addresses; the twenty-first is 422 too-many-addresses (ErrTooManyAddresses). A checkout can then name the address by its id (CheckoutRequest.shipToAddressId) and the address is copied into the order at placement."
+sidebar_label: "Save an address on a shopper"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "post api-method"
+info_path: docs/api-reference/rest/customer-ordering-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Save an address on a shopper"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"post"}
+  path={"/shoppers/{shopperId}/addresses"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+AddSavedAddress. The addressId derives from the Idempotency-Key, so a replay (even after the idempotency record expired) returns the same address. A shopper holds at most 20 saved addresses; the twenty-first is 422 too-many-addresses (ErrTooManyAddresses). A checkout can then name the address by its id (CheckoutRequest.shipToAddressId) and the address is copied into the order at placement.
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./add-saved-address.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./add-saved-address.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./add-saved-address.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      
