@@ -1,0 +1,1 @@
+{"parameters":[{"name":"orderId","in":"path","required":true,"description":"The customer order id (aggregate root id, CloudEvents subject).","schema":{"type":"string"}}]}

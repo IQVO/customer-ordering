@@ -1,0 +1,1 @@
+{"parameters":[{"name":"email","in":"query","required":true,"description":"The e-mail to find; the match is trimmed and lower-cased.","schema":{"type":"string","format":"email","maxLength":254}}]}
