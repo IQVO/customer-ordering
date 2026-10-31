@@ -1,0 +1,70 @@
+---
+id: place-order
+title: "Place a customer order, promising and confirming every shipment group"
+description: "PlaceOrder. For each shipment group the service calls delivery-promise MakePromise (POST /promises) with the offer the shopper saw and then ConfirmPromise (POST /promises/{promiseId}:confirm) before anything is stored. If an offer expired or was consumed, or a confirm fails, it re-quotes (QuoteDeliveryOffers, POST /delivery-offers:quote) and answers 409 offer-not-quotable with the new offers; no order is placed. On success the order is PLACED and CustomerOrderPlaced is published through the outbox in the same transaction. The order id is derived from the Idempotency-Key, so a retry after a timeout reuses the same promises."
+sidebar_label: "Place a customer order, promising and confirming every shipment group"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "post api-method"
+info_path: docs/api-reference/rest/customer-ordering-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Place a customer order, promising and confirming every shipment group"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"post"}
+  path={"/checkout"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+PlaceOrder. For each shipment group the service calls delivery-promise MakePromise (POST /promises) with the offer the shopper saw and then ConfirmPromise (POST /promises/\{promiseId\}:confirm) before anything is stored. If an offer expired or was consumed, or a confirm fails, it re-quotes (QuoteDeliveryOffers, POST /delivery-offers:quote) and answers 409 offer-not-quotable with the new offers; no order is placed. On success the order is PLACED and CustomerOrderPlaced is published through the outbox in the same transaction. The order id is derived from the Idempotency-Key, so a retry after a timeout reuses the same promises.
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./place-order.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./place-order.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./place-order.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

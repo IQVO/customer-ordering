@@ -1,0 +1,70 @@
+---
+id: get-order
+title: "Get a customer order with its status and the promise per group"
+description: "Returns the order without the ship-to address; the address is only on the restricted ship-to route."
+sidebar_label: "Get a customer order with its status and the promise per group"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/customer-ordering-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Get a customer order with its status and the promise per group"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/orders/{orderId}"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Returns the order without the ship-to address; the address is only on the restricted ship-to route.
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./get-order.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./get-order.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./get-order.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      
