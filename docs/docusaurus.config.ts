@@ -6,7 +6,7 @@ import type * as OpenApiPlugin from 'docusaurus-plugin-openapi-docs';
 const config: Config = {
   title: 'Customer Ordering',
   tagline:
-    'Customer Ordering: a Generic bounded context of the storefront domain (warehouse-systems).',
+    'From cart to customer order: a promise per shipment group, the order record, status, tracking and cancellation.',
   favicon: 'img/favicon.svg',
 
   future: {

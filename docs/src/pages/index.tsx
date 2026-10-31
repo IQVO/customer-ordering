@@ -35,7 +35,14 @@ function HomepageHeader() {
           {siteConfig.title}
         </Heading>
         <p className={styles.heroSubtitle}>{siteConfig.tagline}</p>
-        <p className={styles.heroLead}>TODO-LEAD</p>
+        <p className={styles.heroLead}>
+          Customer Ordering turns a shopper's cart into a customer order: it makes and confirms a
+          delivery promise for every shipment group at checkout, records the order with the
+          shopper and the ship-to address, and derives the order's status and tracking from the
+          events of delivery-promise, order-sourcing and shipping-and-tracking. These pages
+          cover how to run, configure, operate, debug and test the REST, MCP and A2A services,
+          and the design behind them.
+        </p>
         <div className={styles.buttons}>
           <Link className="button button--primary button--lg" to="/docs/overview/introduction">
             Read the docs
