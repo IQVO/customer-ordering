@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/promising"
@@ -245,16 +246,16 @@ func (u PlaceOrder) compensate(ctx context.Context, orderID customerorder.ID, co
 			// PROVISIONAL one (the confirm never applied) lapses by itself, and a
 			// KEPT, BROKEN or RELEASED one is closed. Nothing is left to release.
 			u.logger().WarnContext(ctx, "compensating cancel refused by delivery-promise; nothing to release",
-				"orderId", string(orderID), "groupNo", g.GroupNo, "promiseId", g.PromiseID, "error", err.Error())
+				"orderId", sanitizeLog(string(orderID)), "groupNo", sanitizeLog(strconv.Itoa(g.GroupNo)), "promiseId", g.PromiseID, "error", err.Error())
 			continue
 		}
 		if err != nil {
 			u.logger().ErrorContext(ctx, "compensating cancel of a confirmed promise failed; the hold stays at delivery-promise",
-				"orderId", string(orderID), "groupNo", g.GroupNo, "promiseId", g.PromiseID, "error", err.Error())
+				"orderId", sanitizeLog(string(orderID)), "groupNo", sanitizeLog(strconv.Itoa(g.GroupNo)), "promiseId", g.PromiseID, "error", err.Error())
 			continue
 		}
 		u.logger().InfoContext(ctx, "cancelled a confirmed promise of a failed checkout",
-			"orderId", string(orderID), "groupNo", g.GroupNo, "promiseId", g.PromiseID)
+			"orderId", sanitizeLog(string(orderID)), "groupNo", sanitizeLog(strconv.Itoa(g.GroupNo)), "promiseId", g.PromiseID)
 	}
 }
 
