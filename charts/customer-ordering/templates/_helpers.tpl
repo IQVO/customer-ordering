@@ -62,6 +62,13 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Fully qualified name of the A2A agent Deployment/Service/route (<release>-a2a, ADR 0008).
+*/}}
+{{- define "customer-ordering.a2aFullname" -}}
+{{- include "customer-ordering.fullname" . }}-a2a
+{{- end }}
+
+{{/*
 Name of the Secret holding DATABASE_URL: the operator's own
 (database.existingSecret) or the one this chart creates from database.url.
 */}}

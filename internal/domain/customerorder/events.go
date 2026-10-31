@@ -17,6 +17,7 @@ type PlacedGroup struct {
 	ShipBy            time.Time
 	DeliverByEarliest time.Time
 	DeliverByLatest   time.Time
+	TimeZone          string // optional IANA zone of the window (ADR 0009)
 	Lines             []OrderLine
 }
 

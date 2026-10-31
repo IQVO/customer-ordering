@@ -9,6 +9,15 @@ import (
 	"github.com/claudioed/customer-ordering/internal/domain/shopper"
 )
 
+// assertZones checks newOrder's zoned group 1 and unzoned group 2 read back
+// as stored (ADR 0009: absent = unknown).
+func assertZones(t *testing.T, got *customerorder.CustomerOrder) {
+	t.Helper()
+	if zones := [2]string{got.Groups()[0].TimeZone, got.Groups()[1].TimeZone}; zones != [2]string{"America/Chicago", ""} {
+		t.Fatalf("time zones read back as %q, want [America/Chicago, \"\"] (absent = unknown)", zones)
+	}
+}
+
 func testOrders(t *testing.T, e Env) {
 	t.Run("a miss is ErrNotFound", func(t *testing.T) {
 		_, err := e.Orders.Get(bg(), "order-nope")
@@ -22,6 +31,7 @@ func testOrders(t *testing.T, e Env) {
 		if !reflect.DeepEqual(got.Snapshot(), o.Snapshot()) {
 			t.Fatalf("round trip changed the order:\n got %+v\nwant %+v", got.Snapshot(), o.Snapshot())
 		}
+		assertZones(t, got)
 	})
 	t.Run("every group state and fact round-trips", func(t *testing.T) {
 		o := newOrder(t, "order-facts")
@@ -29,7 +39,7 @@ func testOrders(t *testing.T, e Env) {
 		must(t, o.MarkInFulfillment(1, "as-1", "fc-aus-1", at(10)))
 		must(t, o.MarkGroupShipped(1, []string{"TRK-1", "TRK-2"}, at(20)))
 		must(t, o.MarkGroupDelivered(1, "TRK-1", at(30)))
-		must(t, o.UpdateGroupPromise("p-order-facts-2", 2, at(2000), at(2300), at(1900), "fc-aus-2"))
+		must(t, o.UpdateGroupPromise("p-order-facts-2", 2, at(2000), at(2300), at(1900), "fc-aus-2", "America/Denver"))
 		_, err := o.CancelOrder("changed my mind", at(40))
 		must(t, err)
 		must(t, e.Orders.Save(bg(), o))

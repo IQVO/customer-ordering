@@ -21,7 +21,7 @@ func TestSnapshotRestoreRoundTripsEveryReachableState(t *testing.T) {
 	flow := mustPlace(t, twoGroups())
 	mustNil(t, flow.MarkInFulfillment(1, "as-1", "fc-1", at(10)))
 	mustNil(t, flow.MarkGroupShipped(1, []string{"TRK-1"}, at(20)))
-	mustNil(t, flow.UpdateGroupPromise("p-2", 1, at(2000), at(2300), at(1900), "fc-2"))
+	mustNil(t, flow.UpdateGroupPromise("p-2", 1, at(2000), at(2300), at(1900), "fc-2", ""))
 	mustNil(t, flow.MarkGroupDelivered(2, "TRK-early", at(30)))
 	_, err := flow.CancelOrder("changed my mind", at(40))
 	mustNil(t, err)

@@ -29,6 +29,7 @@ type Terms struct {
 	ShipBy                  time.Time
 	DeliverByEarliest       time.Time
 	DeliverByLatest         time.Time
+	TimeZone                string // optional IANA zone of the window; empty = unknown (ADR 0009)
 	DestinationPostalPrefix string
 }
 
@@ -38,5 +39,6 @@ type Offer struct {
 	Tier              string
 	DeliverByEarliest time.Time
 	DeliverByLatest   time.Time
+	TimeZone          string // optional IANA zone of the window; empty = unknown (ADR 0009)
 	ExpiresAt         time.Time
 }
