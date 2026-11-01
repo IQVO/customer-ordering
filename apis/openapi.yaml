@@ -47,9 +47,9 @@ paths:
       description: >-
         PlaceOrder. For each shipment group the service calls delivery-promise
         MakePromise (POST /promises) with the offer the shopper saw and then
-        ConfirmPromise (POST /promises/{promiseId}:confirm) before anything is
+        ConfirmPromise (POST /promises/{promiseId}/confirmations) before anything is
         stored. If an offer expired or was consumed, or a confirm fails, it
-        re-quotes (QuoteDeliveryOffers, POST /delivery-offers:quote) and answers
+        re-quotes (QuoteDeliveryOffers, POST /delivery-quotes) and answers
         409 offer-not-quotable with the new offers; no order is placed. On
         success the order is PLACED and CustomerOrderPlaced is published through
         the outbox in the same transaction. The order id is derived from the
@@ -65,6 +65,9 @@ paths:
       responses:
         '201':
           description: Order placed.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
           content:
             application/json:
               schema:
@@ -76,7 +79,9 @@ paths:
             An offer expired or was consumed or a promise could not be confirmed
             (offer-not-quotable, the body carries re-quoted offers), promise
             capacity exhausted (promise-capacity-exhausted), book closed
-            (book-closed) or a concurrent update (concurrent-update).
+            (book-closed), a concurrent update (concurrent-update), or the
+            Idempotency-Key was already used with a different request
+            (idempotency-key-reused).
           content:
             application/problem+json:
               schema:
@@ -104,16 +109,17 @@ paths:
       operationId: listOrdersByShopper
       summary: List a shopper's order history, newest first
       description: >-
-        ListOrdersByShopper. Keyset pagination like GET /catalog: the page is
-        ordered placedAt descending with the orderId as the ascending
-        tiebreak, `limit` defaults to 20 and is at most 100, and `after` is
-        the nextCursor of the previous page (opaque; anything else is 422
-        validation-failed). An unknown shopper is 404 not-found; a shopper
-        without orders is an empty page. The items never carry the ship-to
-        address.
+        ListOrdersByShopper. Keyset pagination: the page is ordered placedAt
+        descending with the orderId as the ascending tiebreak, `limit`
+        defaults to 100 and is at most 500, and `cursor` is the nextCursor of
+        the previous page (opaque). A bad limit is 400 invalid-limit, an
+        undecodable cursor is 400 invalid-cursor and any other query
+        parameter is 400 unknown-query-parameter. An unknown shopper is 404
+        not-found; a shopper without orders is an empty page. The items never
+        carry the ship-to address.
       parameters:
         - $ref: '#/components/parameters/ShopperIdQuery'
-        - $ref: '#/components/parameters/After'
+        - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
@@ -122,10 +128,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerOrderList'
+        '400':
+          description: >-
+            invalid-limit, invalid-cursor, unknown-query-parameter or a missing
+            or malformed shopperId (validation-failed).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           $ref: '#/components/responses/NotFound'
-        '422':
-          $ref: '#/components/responses/Unprocessable'
   /orders/{orderId}:
     get:
       tags: [Orders]
@@ -152,7 +164,9 @@ paths:
         Served from the event-fed read model OrderTrackingView (delivery-promise,
         order-sourcing and shipping-and-tracking events) joined with the order's
         groups. A package scanned before its label or shipment event arrived is
-        listed once the order is known.
+        listed once the order is known. One composite view of a single order,
+        bounded by the order's shipment groups, so it is not paginated.
+      x-pagination-exempt: view
       parameters:
         - $ref: '#/components/parameters/OrderId'
       responses:
@@ -164,11 +178,11 @@ paths:
                 $ref: '#/components/schemas/OrderTracking'
         '404':
           $ref: '#/components/responses/NotFound'
-  /orders/{orderId}:cancel:
+  /orders/{orderId}/cancellations:
     post:
       tags: [Orders]
       operationId: cancelOrder
-      summary: Request the cancellation of every group that is not yet locked
+      summary: Request the cancellation of every group that is not yet locked (creates a cancellation request)
       description: >-
         CancelOrder is a request (G12, G25). Every group still PROMISED (no
         node locked yet) moves to CANCELLATION_REQUESTED and
@@ -192,6 +206,9 @@ paths:
       responses:
         '200':
           description: The order after the request.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
           content:
             application/json:
               schema:
@@ -201,7 +218,10 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: cancel-after-lock (ErrCancelAfterLock), status-regression (ErrStatusRegression), or concurrent-update.
+          description: >-
+            cancel-after-lock (ErrCancelAfterLock), status-regression
+            (ErrStatusRegression), concurrent-update, or the Idempotency-Key
+            was already used with a different request (idempotency-key-reused).
           content:
             application/problem+json:
               schema:
@@ -237,7 +257,10 @@ paths:
         FindShopperByEmail. The match is trimmed and lower-cased, like the
         uniqueness of the registration (case-insensitive). No shopper with
         that e-mail is 404 not-found; an absent or empty e-mail matches
-        nothing and is 404 too.
+        nothing and is 404 too. The e-mail is unique, so this is a lookup of
+        one shopper (a single resource that merely contains its saved
+        addresses), not a collection.
+      x-pagination-exempt: view
       parameters:
         - $ref: '#/components/parameters/ShopperEmail'
       responses:
@@ -267,6 +290,9 @@ paths:
       responses:
         '201':
           description: Shopper registered.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
           content:
             application/json:
               schema:
@@ -274,7 +300,9 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
-          description: shopper-exists (ErrShopperExists).
+          description: >-
+            shopper-exists (ErrShopperExists), or the Idempotency-Key was
+            already used with a different request (idempotency-key-reused).
           content:
             application/problem+json:
               schema:
@@ -325,6 +353,9 @@ paths:
       responses:
         '201':
           description: Address saved.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
           content:
             application/json:
               schema:
@@ -337,12 +368,16 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '409':
+          description: The Idempotency-Key was already used with a different request (idempotency-key-reused).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '422':
           description: >-
-            The body breaks a value-object rule (validation-failed), the
-            twentieth address is already saved (too-many-addresses), or the
-            Idempotency-Key was reused with another request
-            (idempotency-key-reused).
+            The body breaks a value-object rule (validation-failed) or the
+            twentieth address is already saved (too-many-addresses).
           content:
             application/problem+json:
               schema:
@@ -416,11 +451,11 @@ components:
         type: string
         format: email
         maxLength: 254
-    After:
-      name: after
+    Cursor:
+      name: cursor
       in: query
       required: false
-      description: The nextCursor of the previous page (opaque; anything else is 422 validation-failed).
+      description: The nextCursor of the previous page (opaque; anything that does not decode is 400 invalid-cursor).
       schema:
         type: string
         maxLength: 512
@@ -428,22 +463,37 @@ components:
       name: limit
       in: query
       required: false
-      description: Page size, default 20, at most 100.
+      description: Page size, default 100, at most 500 (anything else is 400 invalid-limit).
       schema:
         type: integer
         minimum: 1
-        maximum: 100
+        maximum: 500
+        default: 100
     IdempotencyKey:
       name: Idempotency-Key
       in: header
       required: true
-      description: Client-chosen key (route, key; 24 hour TTL); a replay with the same body returns the stored response.
+      description: >-
+        Client-generated UUID per logical submit, 1 to 128 printable ASCII
+        characters (missing is 400 idempotency-key-required, malformed is 400
+        idempotency-key-invalid). A key is global and kept for 24 hours; the
+        same key with the same method, path and body replays the stored answer
+        with Idempotency-Replayed: true; the same key with anything else is 409
+        idempotency-key-reused.
       schema:
         type: string
-        maxLength: 200
+        minLength: 1
+        maxLength: 128
+        pattern: '^[\x20-\x7E]+$'
+  headers:
+    IdempotencyReplayed:
+      description: '"true" when the answer is the stored one of an earlier request with the same Idempotency-Key; absent on the first execution.'
+      schema:
+        type: string
+        enum: ['true']
   responses:
     BadRequest:
-      description: The request is not valid JSON, has an unknown field or contains a NUL character (malformed-request), or the Idempotency-Key header is missing (idempotency-key-required).
+      description: The request is not valid JSON, has an unknown field or contains a NUL character (malformed-request), or the Idempotency-Key header is missing (idempotency-key-required) or is not 1 to 128 printable ASCII characters (idempotency-key-invalid).
       content:
         application/problem+json:
           schema:
@@ -455,7 +505,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Unprocessable:
-      description: The body is well-formed JSON but breaks a value-object rule (validation-failed), or the Idempotency-Key was reused with another request (idempotency-key-reused).
+      description: The body is well-formed JSON but breaks a value-object rule (validation-failed).
       content:
         application/problem+json:
           schema:
@@ -886,4 +936,4 @@ components:
             $ref: '#/components/schemas/CustomerOrder'
         nextCursor:
           type: string
-          description: Present when a next page exists; pass it as after.
+          description: Present when a next page exists; pass it as cursor.
