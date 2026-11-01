@@ -195,8 +195,7 @@ classDiagram
   }
   class IdempotencyStore {
     <<interface>>
-    +Get(route, key)
-    +Put(route, key, record)
+    +Do(key, requestHash, at, fn)
   }
   class OrderMetrics {
     <<interface>>

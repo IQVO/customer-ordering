@@ -46,7 +46,7 @@ downstream for the order events.
 
 | Neighbour | Direction | Pattern | Channel | Messages | Why this pattern |
 | --- | --- | --- | --- | --- | --- |
-| Shopper callers (`checkout`, `storefront-bff`, console remote) | CO upstream | **Open Host Service** | REST `POST /checkout`, `GET /orders...`, `POST /orders/{orderId}:cancel`, `/shoppers...` | `PlaceOrder`, `GetOrder`, `GetOrderTracking`, `CancelOrder`, shopper commands and queries | Many clients use one published, versioned API (`apis/openapi.yaml`); none negotiates it. |
+| Shopper callers (`checkout`, `storefront-bff`, console remote) | CO upstream | **Open Host Service** | REST `POST /checkout`, `GET /orders...`, `POST /orders/{orderId}/cancellations`, `/shoppers...` | `PlaceOrder`, `GetOrder`, `GetOrderTracking`, `CancelOrder`, shopper commands and queries | Many clients use one published, versioned API (`apis/openapi.yaml`); none negotiates it. |
 | `delivery-promise` | DP upstream, CO downstream | **Customer/Supplier** (CO is the Customer) | REST, `DELIVERY_PROMISE_URL` | quote, make, confirm, cancel promise | Checkout needs an answer inside the shopper's request; DP serves this caller deliberately. |
 | `delivery-promise` | CO upstream, DP downstream | **Customer/Supplier** | Kafka `retailnetwork.customer-ordering.events` | `CustomerOrderPlaced`, `CustomerOrderCancelled` | DP reconciles the confirmation on placement and releases the hold on cancellation. |
 | `delivery-promise` | DP upstream, CO downstream | **Customer/Supplier** | Kafka `retailnetwork.delivery-promise.events` | `PromiseAtRisk`, `PromiseRevised`, `PromiseKept`, `PromiseBroken`, `PromiseUnkeepable` | CO keeps each group's window current and acts on `PromiseUnkeepable`. |

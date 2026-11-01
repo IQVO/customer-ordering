@@ -40,11 +40,11 @@ The routes of `apis/openapi.yaml` (wired in `cmd/api` `buildServer`; errors are 
 | Route | Use case | Notes |
 | --- | --- | --- |
 | `POST /checkout` | `PlaceOrder` | `Idempotency-Key` required; exactly one of `shipTo` / `shipToAddressId` (ADR 0002 A25). |
-| `GET /orders?shopperId=&after=&limit=` | `ListOrdersByShopper` | Order history, newest first, keyset cursor `after`; limit default 20 max 100; unknown shopper 404 (A26). |
+| `GET /orders?shopperId=&limit=&cursor=` | `ListOrdersByShopper` | Order history, newest first, `{items, nextCursor}` keyset-paged; limit default 100 max 500; unknown shopper 404 (A26). |
 | `GET /orders/{orderId}` | `GetOrder` | Never carries the address. |
-| `GET /orders/{orderId}/tracking` | `GetOrderTracking` | Event-fed read model. |
+| `GET /orders/{orderId}/tracking` | `GetOrderTracking` | Event-fed read model; one view of one order, not paginated. |
 | `GET /orders/{orderId}/ship-to` | `GetShipTo` | Restricted, in-organization (label printing); the only order route returning the address; `Cache-Control: no-store`. |
-| `POST /orders/{orderId}:cancel` | `CancelOrder` | `Idempotency-Key` required. |
+| `POST /orders/{orderId}/cancellations` | `CancelOrder` | `Idempotency-Key` required. |
 | `POST /shoppers` | `RegisterShopper` | `Idempotency-Key` required; unique lower-cased e-mail. |
 | `GET /shoppers/{shopperId}` | `GetShopper` | Profile with `savedAddresses[]` (synthetic PII, A27). |
 | `GET /shoppers?email=` | `FindShopperByEmail` | Trimmed, lower-cased match; no match 404. |
