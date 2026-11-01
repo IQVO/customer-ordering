@@ -20,7 +20,7 @@ Guides: `python3 scripts/harness/repo_lint.py`, `python3 scripts/harness/guide_l
 Real PostgreSQL and Kafka only. Mandatory: `DATABASE_URL`, `KAFKA_BROKERS`, `DELIVERY_PROMISE_URL`, `DELIVERY_PROMISE_CONSUMER_GROUP`, `ORDER_SOURCING_CONSUMER_GROUP`, `SHIPPING_CONSUMER_GROUP` (boot error naming the variable, raised before the listener binds; `MIGRATIONS_DATABASE_URL` is an optional direct DSN).
 The outbox relay and the three consumers are always on and the process exits non-zero when one ends on its own (`OUTBOX_MAX_ATTEMPTS` default 20, 0 = unlimited; `OUTBOX_RELAY_INTERVAL` 1s).
 `/healthz` = liveness; `/readyz` = drain gate + Postgres ping + Kafka metadata request with an EMPTY non-nil topic list (503 `dependency-unavailable` when Kafka is down, writes still accepted via the outbox).
-Shutdown: /readyz 503, `SHUTDOWN_DRAIN_DELAY` (5s), drain HTTP, stop consumers, stop relay, close pool. cmd/** never imports internal/adapters/outbound/memory or repocontract. No authentication on REST. See docs/runtime.md.
+Shutdown: /readyz 503, `SHUTDOWN_DRAIN_DELAY` (5s), drain HTTP, stop consumers, stop relay, close pool. cmd/** never imports internal/adapters/outbound/memory or repocontract. No authentication on REST. See docs/docs/overview/runtime.md.
 
 ## REST
 chi router, 6 operations of apis/openapi.yaml (POST /checkout, GET /orders/{id}, GET /orders/{id}/tracking, POST /orders/{id}:cancel, GET /orders/{id}/ship-to, POST /shoppers) plus /healthz, /readyz. Every state-changing route takes `Idempotency-Key` (table `idempotency_keys`, key = (route, key), 24h, replays the first response, same key + other request = 422 `idempotency-key-reused`).
