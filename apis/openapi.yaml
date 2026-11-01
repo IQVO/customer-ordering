@@ -129,15 +129,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/CustomerOrderList'
         '400':
-          description: >-
-            invalid-limit, invalid-cursor, unknown-query-parameter or a missing
-            or malformed shopperId (validation-failed).
+          description: invalid-limit, invalid-cursor, or unknown-query-parameter (any query parameter other than shopperId, limit and cursor, such as the retired after).
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          description: shopperId is missing or empty (validation-failed).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /orders/{orderId}:
     get:
       tags: [Orders]

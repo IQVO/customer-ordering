@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/claudioed/customer-ordering/internal/adapters/inbound/http/page"
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
@@ -16,6 +17,10 @@ const problemBase = "/problems/"
 // errMalformedRequest marks a body or parameter the adapter itself rejects
 // (bad JSON, unknown field, wrong type).
 var errMalformedRequest = errors.New("request is not valid for this operation")
+
+// errUnknownQueryParameter marks a query parameter a collection does not declare
+// (REST guideline 4.2).
+var errUnknownQueryParameter = errors.New("unknown query parameter")
 
 // problem is the fixed (status, slug, title) of one error category; the detail
 // comes from the error at write time.
@@ -32,6 +37,9 @@ var (
 	idempotencyKeyRequired = problem{http.StatusBadRequest, "idempotency-key-required", "Idempotency-Key header is required"}
 	idempotencyKeyInvalid  = problem{http.StatusBadRequest, "idempotency-key-invalid", "Idempotency-Key header is not valid"}
 	idempotencyKeyReused   = problem{http.StatusConflict, "idempotency-key-reused", "Idempotency-Key was already used with a different request"}
+	invalidLimit           = problem{http.StatusBadRequest, "invalid-limit", "limit must be an integer between 1 and 500"}
+	invalidCursor          = problem{http.StatusBadRequest, "invalid-cursor", "cursor is not a valid page token"}
+	unknownQueryParameter  = problem{http.StatusBadRequest, "unknown-query-parameter", "The query string carries a parameter this collection does not declare"}
 )
 
 // problemCatalogue maps every typed error to its problem, in match order. The
@@ -41,6 +49,9 @@ var problemCatalogue = []struct {
 	p   problem
 }{
 	{errMalformedRequest, problem{http.StatusBadRequest, "malformed-request", "Malformed request"}},
+	{page.ErrInvalidLimit, invalidLimit},
+	{page.ErrInvalidCursor, invalidCursor},
+	{errUnknownQueryParameter, unknownQueryParameter},
 	{ports.ErrNotFound, problem{http.StatusNotFound, "not-found", "Not found"}},
 	{ports.ErrPromiseOfferNotQuotable, problem{http.StatusConflict, "offer-not-quotable", "The offer can no longer be used; choose a new one"}},
 	{ports.ErrPromiseCapacityExhausted, problem{http.StatusConflict, "promise-capacity-exhausted", "No promise capacity is left"}},
