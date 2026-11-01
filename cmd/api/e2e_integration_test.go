@@ -203,7 +203,7 @@ func TestTheShippedBinaryIsWiredEndToEnd(t *testing.T) {
 		t.Fatalf("checkout = %d %s", placed.status, placed.body)
 	}
 	orderID := placed.field(t, "orderId").(string)
-	if again := svc.call(t, "POST", "/checkout", "checkout-1", body); again.body != placed.body || again.header.Get("Idempotent-Replayed") != "true" {
+	if again := svc.call(t, "POST", "/checkout", "checkout-1", body); again.body != placed.body || again.header.Get("Idempotency-Replayed") != "true" {
 		t.Fatalf("replay = %d %s", again.status, again.body)
 	}
 
@@ -240,14 +240,14 @@ func TestTheShippedBinaryIsWiredEndToEnd(t *testing.T) {
 	})
 
 	// Every group is locked or beyond: cancellation is refused.
-	if refused := svc.call(t, "POST", "/orders/"+orderID+":cancel", "cancel-1", `{"reason":"too late"}`); refused.status != 409 || refused.field(t, "type") != "/problems/cancel-after-lock" {
+	if refused := svc.call(t, "POST", "/orders/"+orderID+"/cancellations", "cancel-1", `{"reason":"too late"}`); refused.status != 409 || refused.field(t, "type") != "/problems/cancel-after-lock" {
 		t.Fatalf("cancel = %d %s", refused.status, refused.body)
 	}
 
 	// A second order is cancelled while unlocked; the request reaches Kafka.
 	second := svc.call(t, "POST", "/checkout", "checkout-2", body)
 	secondID := second.field(t, "orderId").(string)
-	if cancelled := svc.call(t, "POST", "/orders/"+secondID+":cancel", "cancel-2", `{"reason":"changed my mind"}`); cancelled.status != 200 {
+	if cancelled := svc.call(t, "POST", "/orders/"+secondID+"/cancellations", "cancel-2", `{"reason":"changed my mind"}`); cancelled.status != 200 {
 		t.Fatalf("cancel = %d %s", cancelled.status, cancelled.body)
 	}
 	msgs = kafkatest.ReadKeyed(t, topicEvents, secondID, 2, 60*time.Second)

@@ -19,8 +19,8 @@ func TestAddSavedAddressRoute(t *testing.T) {
 	}
 	// The same key with the same body replays the first answer.
 	if replay := e.do("POST", "/shoppers/shopper-1/addresses", "home", addressBody); replay.Body != r.Body ||
-		replay.Header.Get("Idempotent-Replayed") != "true" {
-		t.Fatalf("replay = %s (replayed %q)", replay.Body, replay.Header.Get("Idempotent-Replayed"))
+		replay.Header.Get("Idempotency-Replayed") != "true" {
+		t.Fatalf("replay = %s (replayed %q)", replay.Body, replay.Header.Get("Idempotency-Replayed"))
 	}
 	// The profile lists it.
 	p := e.do("GET", "/shoppers/shopper-1", "", "").json(t)
