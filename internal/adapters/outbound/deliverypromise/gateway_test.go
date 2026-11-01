@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/deliverypromise"
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/promising"
@@ -63,12 +65,12 @@ func TestMakePromiseSendsTheOfferAndMapsTheTerms(t *testing.T) {
 	}
 }
 
-func TestConfirmPromiseUsesTheConfirmRoute(t *testing.T) {
+func TestConfirmPromiseUsesTheConfirmationsRoute(t *testing.T) {
 	g, got := serve(t, 200, "application/json", promiseBody)
 	if err := g.ConfirmPromise(context.Background(), "pr 1", "o-1", 2); err != nil {
 		t.Fatal(err)
 	}
-	if got.path != "/promises/pr%201:confirm" || got.key != "o-1:2:confirm" || got.body["orderId"] != "o-1" || got.body["groupNo"] != float64(2) {
+	if got.path != "/promises/pr%201/confirmations" || got.key != "o-1:2:confirm" || got.body["orderId"] != "o-1" || got.body["groupNo"] != float64(2) {
 		t.Fatalf("request = %+v", got)
 	}
 }
@@ -81,8 +83,32 @@ func TestQuoteOffersKeepsQuotedOffersOnly(t *testing.T) {
 	if err != nil || len(offers) != 1 || offers[0].OfferID != "a" || offers[0].Tier != "NEXT_DAY" || !offers[0].ExpiresAt.Equal(time.Date(2026, 10, 23, 11, 0, 0, 0, time.UTC)) {
 		t.Fatalf("offers = %+v err %v", offers, err)
 	}
-	if got.path != "/delivery-offers:quote" || got.body["destinationPostalPrefix"] != "787" || got.key != "" {
+	if got.path != "/delivery-quotes" || got.body["destinationPostalPrefix"] != "787" || !validQuoteKey(got.key) {
 		t.Fatalf("request = %+v", got)
+	}
+}
+
+// validQuoteKey reports whether key is a client-generated UUID (REST guideline 2.2).
+func validQuoteKey(key string) bool {
+	_, err := uuid.Parse(key)
+	return err == nil
+}
+
+// TestEveryQuoteIsItsOwnLogicalSubmit: a quote has no natural key, so each call
+// mints a fresh Idempotency-Key; reusing one would make delivery-promise refuse
+// the second quote with 409 idempotency-key-reused.
+func TestEveryQuoteIsItsOwnLogicalSubmit(t *testing.T) {
+	g, got := serve(t, 200, "application/json", `{"offers":[]}`)
+	lines := []promising.Line{{CatalogItemID: "sku-1", Quantity: 1}}
+	keys := map[string]bool{}
+	for range 3 {
+		if _, err := g.QuoteOffers(context.Background(), "787", lines); err != nil {
+			t.Fatal(err)
+		}
+		keys[got.key] = true
+	}
+	if len(keys) != 3 {
+		t.Fatalf("3 quotes used %d distinct keys: %v", len(keys), keys)
 	}
 }
 
@@ -150,12 +176,12 @@ func TestATimeoutOrADeadConnectionIsUnavailable(t *testing.T) {
 	}
 }
 
-func TestCancelPromiseUsesTheCancelRouteWithoutABody(t *testing.T) {
+func TestCancelPromiseUsesTheCancellationsRouteWithoutABody(t *testing.T) {
 	g, got := serve(t, 200, "application/json", `{"promiseId":"pr 1","state":"CANCELLED"}`)
 	if err := g.CancelPromise(context.Background(), "pr 1", "o-1", 2); err != nil {
 		t.Fatal(err)
 	}
-	if got.method != "POST" || got.path != "/promises/pr%201:cancel" || got.key != "o-1:2:cancel" || got.body != nil || got.contentType != "" {
+	if got.method != "POST" || got.path != "/promises/pr%201/cancellations" || got.key != "o-1:2:cancel" || got.body != nil || got.contentType != "" {
 		t.Fatalf("request = %+v", got)
 	}
 }

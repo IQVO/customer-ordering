@@ -53,7 +53,7 @@ func newFlakyPromise(t *testing.T) *flakyPromise {
 			fmt.Fprintf(w, `{"promiseId":"pr-%s","offerId":%q,"state":"PROVISIONAL","destinationPostalPrefix":"787",
 			 "terms":{"tier":"NEXT_DAY","shipBy":"2026-10-24T10:00:00Z","deliverByEarliest":"2026-10-25T10:00:00Z","deliverByLatest":"2026-10-25T20:00:00Z"},
 			 "witnessPath":{"nodeId":"fc-aus-1"}}`, offer, offer)
-		case strings.HasSuffix(r.URL.Path, ":confirm"), strings.HasSuffix(r.URL.Path, "/confirmations"):
+		case strings.HasSuffix(r.URL.Path, "/confirmations"):
 			_, _ = w.Write([]byte(`{"promiseId":"x","state":"CONFIRMED"}`))
 		default:
 			http.NotFound(w, r)

@@ -57,7 +57,7 @@ func fakeDeliveryPromise(t *testing.T) *httptest.Server {
 			fmt.Fprintf(w, `{"promiseId":"pr-%s","offerId":%q,"state":"PROVISIONAL","destinationPostalPrefix":"787",
 			 "terms":{"tier":"NEXT_DAY","shipBy":"2026-10-24T10:00:00Z","deliverByEarliest":"2026-10-25T10:00:00Z","deliverByLatest":"2026-10-25T20:00:00Z"},
 			 "witnessPath":{"nodeId":"fc-aus-1"}}`, in.OfferID, in.OfferID)
-		case strings.HasSuffix(r.URL.Path, ":confirm"):
+		case strings.HasSuffix(r.URL.Path, "/confirmations"):
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"promiseId":"x","state":"CONFIRMED"}`))
 		default:
