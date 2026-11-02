@@ -99,11 +99,13 @@ func TestTimeZoneMigrationGoesDownAndUpKeepingTheGroups(t *testing.T) {
 		t.Fatalf("stored zone read back as %q", z)
 	}
 
-	stepMigrations(t, url, -1)
+	// 0005 (compensation_cancels) is the top migration now: step past it AND 0004
+	// to drop the time_zone column while the order rows survive.
+	stepMigrations(t, url, -2)
 	if hasTimeZoneColumn(t, url) {
-		t.Fatal("after down of 0004: time_zone is still there")
+		t.Fatal("after down past 0004: time_zone is still there")
 	}
-	stepMigrations(t, url, 1)
+	stepMigrations(t, url, 2)
 	if !hasTimeZoneColumn(t, url) {
 		t.Fatal("after up again: order_groups has no time_zone column")
 	}
