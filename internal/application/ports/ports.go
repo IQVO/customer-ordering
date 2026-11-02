@@ -17,6 +17,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/claudioed/customer-ordering/internal/application/compensation"
 	"github.com/claudioed/customer-ordering/internal/application/idempotency"
 	"github.com/claudioed/customer-ordering/internal/application/promising"
 	"github.com/claudioed/customer-ordering/internal/application/readmodel"
@@ -107,6 +108,14 @@ type Inbox interface {
 // Save calls. Appending no events is a no-op.
 type EventOutbox interface {
 	Append(ctx context.Context, events ...shared.Event) error
+}
+
+// CompensationQueue is the durable retry queue of promise cancels a failed
+// checkout could not perform (A14): Enqueue records them for the background
+// worker that retries the CancelPromise calls until the holds are released.
+// Enqueueing nothing is a no-op; an already-queued cancel is not duplicated.
+type CompensationQueue interface {
+	Enqueue(ctx context.Context, cancels ...compensation.Cancel) error
 }
 
 // UnitOfWork runs fn as ONE atomic unit: every repository, inbox and outbox

@@ -65,7 +65,7 @@ func (w *world) call(method, path, key, body string) error {
 func (w *world) apiJSON() (map[string]any, error) {
 	var m map[string]any
 	if err := json.Unmarshal([]byte(w.apiBody), &m); err != nil {
-		return nil, fmt.Errorf("answer is not a JSON object: %q (%v)", w.apiBody, err)
+		return nil, fmt.Errorf("answer is not a JSON object: %q (%w)", w.apiBody, err)
 	}
 	return m, nil
 }

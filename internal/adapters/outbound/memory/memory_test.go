@@ -14,7 +14,9 @@ func TestMemoryDoublesHonourTheRepositoryContract(t *testing.T) {
 		return repocontract.Env{
 			Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(),
 			UoW: s.UnitOfWork(), Idempotency: s.Idempotency(), Clock: memory.NewClock(t0),
-			OutboxCount: func(*testing.T) int { return len(s.Outbox().Events()) },
+			OutboxCount:       func(*testing.T) int { return len(s.Outbox().Events()) },
+			Compensations:     s.Compensations(),
+			CompensationCount: func(*testing.T) int { return len(s.Compensations().Enqueued()) },
 		}
 	})
 }

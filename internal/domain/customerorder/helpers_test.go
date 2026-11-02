@@ -147,4 +147,4 @@ func isValidation(err error) bool { return errors.Is(err, shared.ErrValidation) 
 
 func errorsIs(err, target error) bool { return errors.Is(err, target) }
 
-var sharedIllegal = shared.ErrIllegalTransition
+var errSharedIllegal = shared.ErrIllegalTransition

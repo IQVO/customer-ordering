@@ -9,6 +9,9 @@ import (
 	"github.com/claudioed/customer-ordering/internal/domain/shopper"
 )
 
+// trackingLost is the tracking number whose package goes lost in the outcome cases.
+const trackingLost = "TRK-2"
+
 // assertZones checks newOrder's zoned group 1 and unzoned group 2 read back
 // as stored (ADR 0009: absent = unknown).
 func assertZones(t *testing.T, got *customerorder.CustomerOrder) {
@@ -37,7 +40,7 @@ func testOrders(t *testing.T, e Env) {
 		o := newOrder(t, "order-facts")
 		must(t, e.Orders.Save(bg(), o))
 		must(t, o.MarkInFulfillment(1, "as-1", "fc-aus-1", at(10)))
-		must(t, o.MarkGroupShipped(1, []string{"TRK-1", "TRK-2"}, at(20)))
+		must(t, o.MarkGroupShipped(1, []string{"TRK-1", trackingLost}, at(20)))
 		must(t, o.MarkGroupDelivered(1, "TRK-1", at(30)))
 		must(t, o.UpdateGroupPromise("p-order-facts-2", 2, at(2000), at(2300), at(1900), "fc-aus-2", "America/Denver"))
 		_, err := o.CancelOrder("changed my mind", at(40))
@@ -166,9 +169,9 @@ func ordersLostAndReturnedRoundTrip(t *testing.T, e Env) {
 	o := newOrder(t, "order-outcomes")
 	mustSave := func() { must(t, e.Orders.Save(bg(), o)) }
 	mustSave()
-	must(t, o.MarkGroupShipped(1, []string{"TRK-1", "TRK-2"}, at(20)))
+	must(t, o.MarkGroupShipped(1, []string{"TRK-1", trackingLost}, at(20)))
 	must(t, o.MarkGroupShipped(2, []string{"TRK-3"}, at(21)))
-	must(t, o.MarkGroupLost(1, "TRK-2", at(30)))
+	must(t, o.MarkGroupLost(1, trackingLost, at(30)))
 	must(t, o.MarkGroupReturned(2, "TRK-3", at(31)))
 	mustSave()
 	got, err := e.Orders.Get(bg(), "order-outcomes")
@@ -176,7 +179,7 @@ func ordersLostAndReturnedRoundTrip(t *testing.T, e Env) {
 	if !reflect.DeepEqual(got.Snapshot(), o.Snapshot()) || got.Status() != customerorder.StatusLost {
 		t.Fatalf("round trip changed the order (status %s):\n got %+v\nwant %+v", got.Status(), got.Snapshot(), o.Snapshot())
 	}
-	if g := got.Groups(); g[0].LostAt.IsZero() || g[0].OutcomeTrackingNumber != "TRK-2" || g[1].ReturnedAt.IsZero() {
+	if g := got.Groups(); g[0].LostAt.IsZero() || g[0].OutcomeTrackingNumber != trackingLost || g[1].ReturnedAt.IsZero() {
 		t.Fatalf("outcome facts lost: %+v", g)
 	}
 }

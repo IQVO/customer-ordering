@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/claudioed/customer-ordering/internal/application/compensation"
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
 )
@@ -24,10 +25,15 @@ type Deps struct {
 	Tracking ports.TrackingRepository
 	Inbox    ports.Inbox
 	Outbox   ports.EventOutbox
-	UoW      ports.UnitOfWork
-	Promises ports.PromiseGateway
-	Clock    ports.Clock
-	IDs      ports.IDGenerator
+	// Compensations durably records the promise cancels a failed checkout
+	// could not perform, for the background worker that retries them; nil
+	// records nothing (unit tests need no wiring), the failed cancel is only
+	// logged.
+	Compensations ports.CompensationQueue
+	UoW           ports.UnitOfWork
+	Promises      ports.PromiseGateway
+	Clock         ports.Clock
+	IDs           ports.IDGenerator
 	// Log receives the events a consumer skipped; nil discards them.
 	Log *slog.Logger
 	// Metrics records the business outcome of each checkout; nil records
@@ -61,11 +67,25 @@ func (d Deps) metrics() ports.OrderMetrics {
 	return noMetrics{}
 }
 
+// compensations returns the configured CompensationQueue or a no-op, so a
+// Deps without one keeps the old log-and-skip behaviour.
+func (d Deps) compensations() ports.CompensationQueue {
+	if d.Compensations != nil {
+		return d.Compensations
+	}
+	return noopCompensations{}
+}
+
 // noMetrics is the OrderMetrics of a Deps without one.
 type noMetrics struct{}
 
 func (noMetrics) OrderPlaced(context.Context)           {}
 func (noMetrics) OrderRejected(context.Context, string) {}
+
+// noopCompensations is the CompensationQueue of a Deps without one.
+type noopCompensations struct{}
+
+func (noopCompensations) Enqueue(context.Context, ...compensation.Cancel) error { return nil }
 
 func (d Deps) publish(ctx context.Context, events []shared.Event) error {
 	if err := d.Outbox.Append(ctx, events...); err != nil {
