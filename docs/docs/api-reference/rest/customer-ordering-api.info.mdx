@@ -1,0 +1,47 @@
+---
+id: customer-ordering-api
+title: "Customer Ordering API"
+description: "REST contract of the customer-ordering bounded context of the retail network, derived from retail-network-docs model/model.yaml (contexts[customer-ordering].rest) and adjusted by the final cross-context decisions (contracts-delta E7, E9, E11 and Gap Register G7, G10, G12, G25, and the storefront extension NG1-NG3: saved addresses, checkout by saved address, shopper by e-mail and the order history). It turns a shopper's cart into a customer order: checkout promises and confirms every shipment group at delivery-promise before the order is placed, the order carries the ship-to address (synthetic PII, held only here), the tracking view is fed by events, and a customer cancellation is a request that order-sourcing decides. One restricted in-organization route, GET /orders/{orderId}/ship-to, is called only by shipping-and-tracking to print a label and is the only route that returns the address. There is no authentication anywhere in the network; 'restricted' means the route is not exposed through the storefront edge. Errors are RFC 9457 problem details (application/problem+json) whose type is /problems/<slug>. The shared problem types are not-found (404), illegal-transition (409), concurrent-update (409) and validation-failed (422). Optional fields are omitted when absent, never null."
+sidebar_label: Introduction
+sidebar_position: 0
+hide_title: true
+custom_edit_url: null
+---
+
+import ApiLogo from "@theme/ApiLogo";
+import Heading from "@theme/Heading";
+import SchemaTabs from "@theme/SchemaTabs";
+import TabItem from "@theme/TabItem";
+import Export from "@theme/ApiExplorer/Export";
+
+<span
+  className={"theme-doc-version-badge badge badge--secondary"}
+  children={"Version: 0.1.0"}
+>
+</span>
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Customer Ordering API"}
+>
+</Heading>
+
+
+
+REST contract of the customer-ordering bounded context of the retail network, derived from retail-network-docs model/model.yaml (contexts[customer-ordering].rest) and adjusted by the final cross-context decisions (contracts-delta E7, E9, E11 and Gap Register G7, G10, G12, G25, and the storefront extension NG1-NG3: saved addresses, checkout by saved address, shopper by e-mail and the order history). It turns a shopper's cart into a customer order: checkout promises and confirms every shipment group at delivery-promise before the order is placed, the order carries the ship-to address (synthetic PII, held only here), the tracking view is fed by events, and a customer cancellation is a request that order-sourcing decides. One restricted in-organization route, GET /orders/\{orderId\}/ship-to, is called only by shipping-and-tracking to print a label and is the only route that returns the address. There is no authentication anywhere in the network; "restricted" means the route is not exposed through the storefront edge. Errors are RFC 9457 problem details (application/problem+json) whose type is /problems/&lt;slug&gt;. The shared problem types are not-found (404), illegal-transition (409), concurrent-update (409) and validation-failed (422). Optional fields are omitted when absent, never null.
+
+<div
+  style={{"display":"flex","flexDirection":"column","marginBottom":"var(--ifm-paragraph-margin-bottom)"}}
+>
+  <h3
+    style={{"marginBottom":"0.25rem"}}
+  >
+    Contact
+  </h3><span>
+    customer-ordering maintainers: 
+  </span><span>
+    URL: [https://github.com/IQVO/customer-ordering](https://github.com/IQVO/customer-ordering)
+  </span>
+</div>
+      

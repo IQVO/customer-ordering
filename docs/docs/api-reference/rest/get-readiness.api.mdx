@@ -1,0 +1,60 @@
+---
+id: get-readiness
+title: "Readiness probe"
+description: "200 when the drain gate is open, Postgres answers a ping and Kafka answers a metadata request (an empty, non-nil topic list). Otherwise 503 with the problem type dependency-unavailable."
+sidebar_label: "Readiness probe"
+hide_title: true
+hide_table_of_contents: true
+api: eJzVVlFvGzcM/iuEXmZjd7aTJmjjDgOGIsuCAU3WZXtJ80BLtE+NTrpKPLuu4f8+UHdOnLjpsMe9+HxHkR/5kSK5UYyLpKa36qqhiGyDT+quUGH3dmnUVC2IPxAa6yklVShDSUfbiFhN1fFkAquKPHBFYCJaDwtkApsgNOQLuA6JF5ESoE8rigkQGusXgN7A7zi/xz1BTYwGGSHS55YSwwA9UN3wugAffOmtAw6N1eBs4uEIrriiuLKJ4HTyClaWq+xHE8PMUQ28bggMNeQNeb0uW49LtA5njkaqUJFSE3yipKYbCUQeT6OTuNdyVAfP5FlOYNM4qzM9409Jjm1U0hXVKP8EUk1VmH0izRnjc2sjGSE5MXKbCW6iUMy2g+6/P2onjtYvVKHoC9aNywbv1XZbKLacX38jdFyp7VY+nk5eHbr+y17gkg0TVh5CzPwkikurc5JyyiQfg2/zNPxO9D3NP/47C89Y/fUdnJ2cvn7IkyFG69KoS5hNsDOdxj8l1y5+Hj1jMtvfsVG8SGznxiGt8xBrZDVVbbRlpDlF8pqe8P3ogUavyZU4Z4qlC/pePebhexl7l/VcpgqyNuy0DxJuPdOC4r7+yeRsK8QJM98HOl9SXEOqbFOTZ1jE0DZCoqCRAQ6A4IOht6D3XbIJfFiBXDZuox+JY9YnljP/gbT9qrzuOMtluS1UTVyFvoOoQjXIlTAb5VJ9lbRRXFKU/rNRbXRqqirmZjoeu6DRVSHx9M3kzURt78Szeche9VDv2sShpghX0ZB4CL9cX6pCicGuyiajo9GkL17UuXg91qKre90y7HRrtJ7RevGm2PMlTcfjheWqnY10qMeXf/x9NT7QVtuDAj//8wYEN6JmCPN86Q5RZ6H1hkw+SV8eDsacc/DEqxDvC5DTSzIwj6HuhWUvLE3QCepgyI3z72iNtYNBbzHdHoDejSIlHub2i+ZTm5gMzNYZeG49OtAxpFTufDKkrRCaOqMSUCoNOUY4f13A+VkB50dH2dwFNvCBFjZJqV+8LuDiaCI/xwVcHJ8W+UzuPhwizWPwDPSFyYt5eH9xVL6/eDWFhBIrGhMpJUoF6Ir0fWhZvHwiLCBVoWkoioTKWkjbYeRwobKCtR6O4JJBilyGTK/0QwKNkcH6fEF2RHWa00fUJobapjy/cqbmNtYJ6Ft3DoUuZ0VU9mowo3mItOeTTdA41GSKvY8aY7SUOnoq25TiUxclDNLac0VsNVxfXhZQkTMQvFtDRZGGnRlJzL3U1NLSSjDmXVppSZ5Tx/1ekM8bwePE5Qq5c6pMoY1abEoNGEojuPJSndIRtJSN9WWIC/T2a2cohpapgIvzGxhnE2m8yc9Lsx33YRUCp9E56oOYdTTKTlCiN+VDJBygidYzIDicUZdb23GUNTNc53DXwjpZz9sIboSfrs0BtlyR535yAfr1qpN2i0t/nd7CR/UY30cFNWFvtQPLxqRsm5CktVYxtIvqoKrNgkZwHmOQrSYSvDTwYPDSOB3CqgqJXh6IEh2kCiOZJ+tOB+gDl3PpLjA4mZwMC7DO0QKdsOuTzRwMTiZnw0JKWrcxkueybYysblmQ2V6isyY7V87RSsoGJ8fHsnflTocO5pac6TBDbVmqIm+DOEvkuQAvFwV861yeL01IXKPf68UPm2WOgp7vCpvH3eN/vWr2w1Ra6rhxaL2wkefMpp+Lt6qfi3eFktEnXzabGSb6K7rtVj5/bimu1fT2rlBLjFZsy9u2UBWhoZgH6T2tZfvTmhoZukt0rSAfbK0yVB8G9MX5jdpu/wGk+jvx
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/customer-ordering-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Readiness probe"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/readyz"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+200 when the drain gate is open, Postgres answers a ping and Kafka answers a metadata request (an empty, non-nil topic list). Otherwise 503 with the problem type dependency-unavailable.
+
+<ParamsDetails>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./get-readiness.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./get-readiness.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

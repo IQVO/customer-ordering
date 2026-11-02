@@ -23,22 +23,28 @@ This project is a domain-driven design study. It is not associated with, endorse
 
 ## Documentation
 
-This repo has no docs site of its own. The context's design lives on the
-warehouse-docs retail-network pages:
+Full documentation is published at
+**<https://iqvo.github.io/customer-ordering/>** (built from `docs/` by
+`.github/workflows/docs.yml`; pull requests build it, `main` deploys it).
+Build locally: `cd docs && npm ci && npm run build`.
+
+Page map (source under `docs/docs/`):
 
 | Area | Pages |
 |---|---|
-| Retail network | [Network overview](https://iqvo.github.io/warehouse-docs/network) |
-| This context | [Index / service facts](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering), [Business context](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/business-context), [Domain events](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/domain-events), [Use cases](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/use-cases) |
-| DDD artifact pack | [Ubiquitous language](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/ubiquitous-language), [Context map](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/context-map), [Core domain chart](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/core-domain-chart), [Bounded context canvas](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/bounded-context-canvas), [Aggregate design canvas](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/aggregate-design-canvas), [EventStorming](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/eventstorming), [Class diagram](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/class-diagram), [Sequence diagrams](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/sequence-diagrams), [ER diagram](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/entity-relationship), [Domain message flow](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering/domain-message-flow) |
-| Decisions | [Network ADRs](https://iqvo.github.io/warehouse-docs/network/adr) |
+| Overview | [Introduction](docs/docs/overview/introduction.md), [Architecture](docs/docs/overview/architecture.md), [Runtime](docs/docs/overview/runtime.md) (settings, probes, shutdown order), [Quickstart](docs/docs/overview/quickstart.md) |
+| Operations | [Configuration](docs/docs/operations/configuration.md), [Runbook](docs/docs/operations/runbook.md), [Observability](docs/docs/operations/observability.md), [Troubleshooting](docs/docs/operations/troubleshooting.md), [Before the first release](docs/docs/operations/before-first-release.md) (packaging checklist) |
+| Development | [Testing](docs/docs/development/testing.md) |
+| Ecosystem | [Integration](docs/docs/ecosystem/integration.md), [MCP tools](docs/docs/mcp/tools.md) |
+| DDD | [Use cases](docs/docs/ddd/use-cases.md), [Subdomain classification](docs/docs/ddd/subdomain-classification.md), [DDD artifacts](docs/docs/ddd/ddd-artifacts.md) (the 11-page ddd-crew pack: core domain chart, bounded context canvas, context map, aggregate design canvas, domain message flow, EventStorming, ubiquitous language, class diagram, entity-relationship, sequence diagrams, domain events) |
+| API reference | [API overview](docs/docs/api-reference/overview.md) (REST pages generated from `apis/openapi.yaml`), [Event catalogue](docs/docs/api-reference/events.md) |
+| Decisions | [ADR index](docs/adr/index.md) — decisions 0001 to 0009 with status |
 
-In-tree: [`docs/adr/`](docs/adr/index.md) (decisions, index),
-[`docs/runtime.md`](docs/runtime.md) (settings, probes, shutdown order,
-outbox runbook, Helm chart),
-[`docs/operations/runbook.md`](docs/operations/runbook.md),
-[`docs/before-first-release.md`](docs/before-first-release.md) (packaging
-checklist).
+The upstream design of the context also lives in the warehouse-docs
+retail-network pages
+([context index](https://iqvo.github.io/warehouse-docs/network/contexts/customer-ordering),
+[network ADRs](https://iqvo.github.io/warehouse-docs/network/adr)); where they
+differ from this site, the code and this site win.
 
 ---
 
@@ -112,7 +118,7 @@ missing variable before the listener binds); the embedded migrations run at boot
 
 ```sh
 export DATABASE_URL=postgres://user:***@localhost:5432/customer_ordering?sslmode=disable
-export KAFKA_BROKERS=localhost:29092   # whatever your broker advertises
+export KAFKA_BROKERS=localhost:9092    # the one broker (from the kind cluster); use what your broker advertises
 export DELIVERY_PROMISE_URL=http://localhost:8081
 export DELIVERY_PROMISE_CONSUMER_GROUP=customer-ordering-delivery-promise
 export ORDER_SOURCING_CONSUMER_GROUP=customer-ordering-order-sourcing
@@ -120,7 +126,7 @@ export SHIPPING_CONSUMER_GROUP=customer-ordering-shipping
 go run ./cmd/api                       # listens on :8080 (HTTP_ADDR)
 ```
 
-All settings, the probes, the shutdown order and the outbox runbook: [docs/runtime.md](docs/runtime.md).
+All settings, the probes, the shutdown order and the outbox runbook: [Configuration](docs/docs/operations/configuration.md), [Runtime](docs/docs/overview/runtime.md) and [Runbook](docs/docs/operations/runbook.md); first calls in the [Quickstart](docs/docs/overview/quickstart.md).
 
 ### Configuration
 
@@ -307,9 +313,9 @@ then tags the next version and publishes the chart.
 
 ## Architecture Decision Records
 
-The ADR index lives at [docs/adr/index.md](docs/adr/index.md) — 8 decisions,
+The ADR index lives at [docs/adr/index.md](docs/adr/index.md) — 9 decisions,
 from the bounded context and aggregates to the CloudEvents catalogue, the MCP
-server, the console remote and the A2A adapter.
+server, the console remote, the A2A adapter and the delivery-window time zone.
 
 ## License
 

@@ -1,0 +1,1 @@
+{"parameters":[{"name":"Idempotency-Key","in":"header","required":true,"description":"Client-chosen key (route, key; 24 hour TTL); a replay with the same body returns the stored response.","schema":{"type":"string","maxLength":200}}]}

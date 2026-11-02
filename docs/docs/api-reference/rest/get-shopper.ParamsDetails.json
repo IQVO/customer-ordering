@@ -1,0 +1,1 @@
+{"parameters":[{"name":"shopperId","in":"path","required":true,"description":"The shopper id (aggregate root id).","schema":{"type":"string","maxLength":64}}]}

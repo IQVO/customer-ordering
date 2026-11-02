@@ -1,0 +1,70 @@
+---
+id: cancel-order
+title: "Request the cancellation of every group that is not yet locked"
+description: "CancelOrder is a request (G12, G25). Every group still PROMISED (no node locked yet) moves to CANCELLATION_REQUESTED and CustomerOrderCancelled is published through the outbox with those groupNos; locked, shipped and delivered groups are untouched. order-sourcing decides: FulfillmentCancelled makes the group CANCELLED (the order is CANCELLED once every group is), FulfillmentCancelRefused returns the group to fulfilment (the vendor ships; the shopper path becomes a return). Refused with 409 cancel-after-lock (ErrCancelAfterLock) when no group is unlocked. Repeating the request, or cancelling a CANCELLED order, returns the order unchanged and publishes nothing."
+sidebar_label: "Request the cancellation of every group that is not yet locked"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "post api-method"
+info_path: docs/api-reference/rest/customer-ordering-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Request the cancellation of every group that is not yet locked"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"post"}
+  path={"/orders/{orderId}:cancel"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+CancelOrder is a request (G12, G25). Every group still PROMISED (no node locked yet) moves to CANCELLATION_REQUESTED and CustomerOrderCancelled is published through the outbox with those groupNos; locked, shipped and delivered groups are untouched. order-sourcing decides: FulfillmentCancelled makes the group CANCELLED (the order is CANCELLED once every group is), FulfillmentCancelRefused returns the group to fulfilment (the vendor ships; the shopper path becomes a return). Refused with 409 cancel-after-lock (ErrCancelAfterLock) when no group is unlocked. Repeating the request, or cancelling a CANCELLED order, returns the order unchanged and publishes nothing.
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./cancel-order.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./cancel-order.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./cancel-order.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      
