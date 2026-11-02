@@ -64,9 +64,11 @@ func TestCompensationQueueRetriesUntilReleased(t *testing.T) {
 	if n != 2 || err != nil {
 		t.Fatalf("released = %d err = %v, want both cancels released", n, err)
 	}
-	for _, id := range []string{"pc-1", "pc-2"} {
-		if attempts, last, released := rowState(t, pool, id); !released || attempts != 2 || last != nil {
-			t.Fatalf("%s: attempts = %d last = %v released = %v", id, attempts, last, released)
+	// pc-1 failed once before succeeding (attempts 2); pc-2 was first tried
+	// by this pass, because pass 1 stopped at pc-1's failure (attempts 1).
+	for id, want := range map[string]int{"pc-1": 2, "pc-2": 1} {
+		if attempts, last, released := rowState(t, pool, id); !released || attempts != want || last != nil {
+			t.Fatalf("%s: attempts = %d last = %v released = %v, want attempts %d released", id, attempts, last, released, want)
 		}
 	}
 
