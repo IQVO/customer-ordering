@@ -23,3 +23,4 @@ The *Status* column is copied from each ADR's own `## Status` section.
 | [0007](./0007-fleet-observability-standard.md) | Adopt the fleet observability standard (logs, metrics, traces) | Accepted (2026-10-25) |
 | [0008](./0008-a2a-inbound-adapter.md) | A2A inbound adapter: a read-only Agent2Agent agent | Accepted (2026-10-30) |
 | [0009](./0009-delivery-window-time-zone.md) | the delivery window carries its local time zone | Accepted (2026-10-30) |
+| [0010](./0010-adopt-the-fleet-rest-api-guideline.md) | Adopt the fleet REST API guideline | Accepted (2026-11-01) |

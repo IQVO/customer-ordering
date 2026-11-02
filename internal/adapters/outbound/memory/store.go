@@ -33,8 +33,6 @@ type signalKey struct {
 	groupNo int
 }
 
-type idemKey struct{ route, key string }
-
 // Store is the shared state of the in-memory doubles.
 type Store struct {
 	mu          sync.Mutex
@@ -46,7 +44,7 @@ type Store struct {
 	signals     map[signalKey]readmodel.GroupSignal
 	inbox       map[string]string
 	outbox      []shared.Event
-	idempotency map[idemKey]idempotency.Record
+	idempotency map[string]idempotency.Record
 	clock       ports.Clock
 }
 
@@ -59,7 +57,7 @@ func NewStore(clock ports.Clock) *Store {
 	return &Store{
 		orders: map[customerorder.ID]customerorder.Snapshot{}, shoppers: map[shopper.ID]shopper.Snapshot{}, emails: map[string]shopper.ID{},
 		links: map[string]readmodel.AssignmentLink{}, packages: map[string]readmodel.Package{},
-		signals: map[signalKey]readmodel.GroupSignal{}, inbox: map[string]string{}, idempotency: map[idemKey]idempotency.Record{},
+		signals: map[signalKey]readmodel.GroupSignal{}, inbox: map[string]string{}, idempotency: map[string]idempotency.Record{},
 		clock: clock,
 	}
 }

@@ -73,11 +73,56 @@ func testListByShopper(t *testing.T, e Env) {
 		t.Fatalf("history after the first tie = %v", ids(afterTie))
 	}
 
+	walkEveryPage(t, e)
+
 	// A shopper without orders gets an empty page, never an error.
 	empty, err := e.Orders.ListByShopper(bg(), "shopper-none", time.Time{}, "", 10)
 	must(t, err)
 	if len(empty) != 0 {
 		t.Fatalf("history of a shopper without orders = %v", ids(empty))
+	}
+}
+
+// walkEveryPage holds more rows than a page, some sharing the sort key, and
+// follows the keyset (limit+1 per call, like the use case): every order shows
+// up exactly once in (placedAt DESC, orderId ASC) order.
+func walkEveryPage(t *testing.T, e Env) {
+	t.Helper()
+	rows := []struct {
+		id string
+		m  int
+	}{{"order-w1", 50}, {"order-w2", 50}, {"order-w3", 50}, {"order-w4", 51}, {"order-w5", 52}, {"order-w6", 52}, {"order-w7", 53}}
+	for _, r := range rows {
+		must(t, e.Orders.Save(bg(), newOrderAt(t, r.id, "shopper-walk", at(r.m))))
+	}
+	want := []string{"order-w7", "order-w5", "order-w6", "order-w4", "order-w1", "order-w2", "order-w3"}
+	const limit = 3
+	var got []string
+	var afterAt time.Time
+	afterID := ""
+	for pages := 0; pages <= len(want); pages++ {
+		rows, err := e.Orders.ListByShopper(bg(), "shopper-walk", afterAt, afterID, limit+1)
+		must(t, err)
+		more := len(rows) > limit
+		if more {
+			rows = rows[:limit]
+		}
+		for _, o := range rows {
+			got = append(got, string(o.ID()))
+		}
+		if !more {
+			break
+		}
+		last := rows[len(rows)-1]
+		afterAt, afterID = last.PlacedAt(), string(last.ID())
+	}
+	if len(got) != len(want) {
+		t.Fatalf("walk = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("walk = %v, want %v (no duplicate, no skipped row)", got, want)
+		}
 	}
 }
 

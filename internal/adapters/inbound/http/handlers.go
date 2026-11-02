@@ -3,7 +3,6 @@ package http
 import (
 	"net/http"
 	"net/url"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -195,30 +194,24 @@ func (s *Server) handleAddSavedAddress(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, savedAddressView(view))
 }
 
-// handleListOrders serves GET /orders?shopperId=&after=&limit= (NG2): newest
-// first, the cursor of the previous page in after. The items never carry the
-// address.
+// handleListOrders serves GET /orders?shopperId=&limit=&cursor= (NG2): newest
+// first, the opaque cursor of the previous page in `cursor`. The items never
+// carry the address.
 func (s *Server) handleListOrders(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	if query.Get("shopperId") == "" {
-		writeError(w, r, shared.Invalid("shopperId is required"))
-		return
-	}
-	limit := 0
-	if raw := query.Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil {
-			writeError(w, r, shared.Invalid("limit must be an integer between 1 and %d", usecases.MaxOrderListLimit))
-			return
-		}
-		limit = n
-	}
-	view, err := s.ListOrdersByShopper.Execute(r.Context(), usecases.ListOrdersInput{
-		ShopperID: query.Get("shopperId"), After: query.Get("after"), Limit: limit,
-	})
+	limit, after, err := pageParams(r, "shopperId")
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, orderListView(view))
+	shopperID := r.URL.Query().Get("shopperId")
+	if shopperID == "" {
+		writeError(w, r, shared.Invalid("shopperId is required"))
+		return
+	}
+	view, err := s.ListOrdersByShopper.Execute(r.Context(), usecases.ListOrdersInput{ShopperID: shopperID, After: after, Limit: limit})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, orderPageOut(view))
 }

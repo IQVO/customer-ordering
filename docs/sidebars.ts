@@ -127,6 +127,11 @@ const sidebars: SidebarsConfig = {
           label: '0009 the delivery window carries its local time zone',
           href: '/docs/adr/0009-delivery-window-time-zone',
         },
+        {
+          type: 'link',
+          label: '0010 Adopt the fleet REST API guideline',
+          href: '/docs/adr/0010-adopt-the-fleet-rest-api-guideline',
+        },
       ],
     },
   ],

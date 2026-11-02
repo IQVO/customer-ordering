@@ -31,7 +31,7 @@ func (d *recordingDP) cancels() []dpCall {
 	defer d.mu.Unlock()
 	var out []dpCall
 	for _, c := range d.calls {
-		if strings.HasSuffix(c.path, ":cancel") {
+		if strings.HasSuffix(c.path, "/cancellations") {
 			out = append(out, c)
 		}
 	}
@@ -54,17 +54,17 @@ func (d *recordingDP) serve(t *testing.T) *httptest.Server {
 			fmt.Fprintf(w, `{"promiseId":"pr-%s","offerId":%q,"state":"PROVISIONAL","destinationPostalPrefix":"787",
 			 "terms":{"tier":"NEXT_DAY","shipBy":"2026-10-24T10:00:00Z","deliverByEarliest":"2026-10-25T10:00:00Z","deliverByLatest":"2026-10-25T20:00:00Z"},
 			 "witnessPath":{"nodeId":"fc-aus-1"}}`, offer, offer)
-		case r.URL.Path == "/promises/pr-offer-2:confirm":
+		case r.URL.Path == "/promises/pr-offer-2/confirmations":
 			w.Header().Set("Content-Type", "application/problem+json")
 			w.WriteHeader(http.StatusConflict)
 			_, _ = w.Write([]byte(`{"type":"/problems/offer-expired","title":"Offer expired","detail":"the hold is gone"}`))
-		case strings.HasSuffix(r.URL.Path, ":confirm"):
+		case strings.HasSuffix(r.URL.Path, "/confirmations"):
 			_, _ = w.Write([]byte(`{"promiseId":"x","state":"CONFIRMED"}`))
-		case strings.HasSuffix(r.URL.Path, ":cancel") && failCancel:
+		case strings.HasSuffix(r.URL.Path, "/cancellations") && failCancel:
 			w.WriteHeader(http.StatusInternalServerError)
-		case strings.HasSuffix(r.URL.Path, ":cancel"):
+		case strings.HasSuffix(r.URL.Path, "/cancellations"):
 			_, _ = w.Write([]byte(`{"promiseId":"x","state":"CANCELLED"}`))
-		case r.URL.Path == "/delivery-offers:quote":
+		case r.URL.Path == "/delivery-quotes":
 			_, _ = w.Write([]byte(`{"offers":[]}`))
 		default:
 			http.NotFound(w, r)
@@ -95,10 +95,17 @@ func TestAFailedLaterConfirmCancelsTheConfirmedPromiseOverHTTP(t *testing.T) {
 		t.Fatalf("checkout = %d %s", refused.status, refused.body)
 	}
 	cancels := dp.cancels()
-	if len(cancels) != 1 || cancels[0].method != "POST" || cancels[0].path != "/promises/pr-offer-1:cancel" ||
+	if len(cancels) != 1 || cancels[0].method != "POST" || cancels[0].path != "/promises/pr-offer-1/cancellations" ||
 		!strings.HasSuffix(cancels[0].key, ":1:cancel") || cancels[0].body != "" {
 		t.Fatalf("the confirmed promise of group 1 must be cancelled once, without a body: %+v", cancels)
 	}
+	dp.mu.Lock()
+	for _, c := range dp.calls {
+		if c.key == "" || len(c.key) > 128 {
+			t.Fatalf("every POST to delivery-promise carries an Idempotency-Key of 1 to 128 characters: %+v", c)
+		}
+	}
+	dp.mu.Unlock()
 
 	t.Run("a cancel that fails still ends in the same answer", func(t *testing.T) {
 		dp.mu.Lock()

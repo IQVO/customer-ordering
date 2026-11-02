@@ -213,21 +213,6 @@ func shopperView(s views.Shopper) shopperDTO {
 	return shopperDTO{ShopperID: s.ShopperID, Email: s.Email, Status: s.Status, RegisteredAt: ts(s.RegisteredAt), SavedAddresses: addresses}
 }
 
-// orderListDTO is one page of the order history (NG2): items never carry the
-// address; nextCursor is present unless the page is the last.
-type orderListDTO struct {
-	Items      []orderDTO `json:"items"`
-	NextCursor string     `json:"nextCursor,omitempty"`
-}
-
-func orderListView(l views.OrderList) orderListDTO {
-	items := make([]orderDTO, 0, len(l.Items))
-	for _, o := range l.Items {
-		items = append(items, orderView(o))
-	}
-	return orderListDTO{Items: items, NextCursor: l.NextCursor}
-}
-
 type requotedOfferDTO struct {
 	GroupNo           int    `json:"groupNo"`
 	OfferID           string `json:"offerId"`

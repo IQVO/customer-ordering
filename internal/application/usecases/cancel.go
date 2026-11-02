@@ -14,7 +14,7 @@ type CancelOrderInput struct {
 }
 
 // CancelOrder requests the cancellation of every unlocked group
-// (POST /orders/{orderId}:cancel, ADR 0002 A3).
+// (POST /orders/{orderId}/cancellations, ADR 0002 A3).
 type CancelOrder struct{ Deps }
 
 // Execute returns the order after the request. A repeat changes and publishes

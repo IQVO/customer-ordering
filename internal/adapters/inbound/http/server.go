@@ -21,14 +21,6 @@ import (
 
 type shipTo = shipto.ShipTo
 
-// Route names under which the Idempotency-Key records are stored.
-const (
-	routeCheckout = "POST /checkout"
-	routeCancel   = "POST /orders/{orderId}:cancel"
-	routeShopper  = "POST /shoppers"
-	routeAddress  = "POST /shoppers/{shopperId}/addresses"
-)
-
 // Server holds the use cases the handlers call.
 type Server struct {
 	PlaceOrder       usecases.PlaceOrder
@@ -85,19 +77,19 @@ func NewRouter(s *Server, logger *slog.Logger, serviceName string) http.Handler 
 	r.Get("/healthz", handleHealthz)
 	r.Get("/readyz", s.handleReadyz)
 
-	r.With(s.idempotent(routeCheckout)).Post("/checkout", s.handlePlaceOrder)
+	r.With(s.idempotent()).Post("/checkout", s.handlePlaceOrder)
 	r.Get("/orders", s.handleListOrders)
 	r.Get("/orders/{orderId}", s.handleGetOrder)
 	r.Get("/orders/{orderId}/tracking", s.handleGetTracking)
 	r.Get("/orders/{orderId}/ship-to", s.handleGetShipTo)
-	r.With(s.idempotent(routeCancel)).Post("/orders/{orderId}:cancel", s.handleCancelOrder)
+	r.With(s.idempotent()).Post("/orders/{orderId}/cancellations", s.handleCancelOrder)
 	r.Get("/shoppers", s.handleFindShopper)
-	r.With(s.idempotent(routeShopper)).Post("/shoppers", s.handleRegisterShopper)
+	r.With(s.idempotent()).Post("/shoppers", s.handleRegisterShopper)
 	r.Get("/shoppers/{shopperId}", s.handleGetShopper)
-	r.With(s.idempotent(routeAddress)).Post("/shoppers/{shopperId}/addresses", s.handleAddSavedAddress)
+	r.With(s.idempotent()).Post("/shoppers/{shopperId}/addresses", s.handleAddSavedAddress)
 	return r
 }
 
-func (s *Server) idempotent(route string) func(http.Handler) http.Handler {
-	return RequireIdempotencyKey(s.IdempotencyStore, s.Clock, route)
+func (s *Server) idempotent() func(http.Handler) http.Handler {
+	return RequireIdempotencyKey(s.IdempotencyStore, s.Clock)
 }

@@ -72,7 +72,7 @@ To turn a shopper's cart into a customer order. The context:
 | Role | Applies? | Evidence |
 | --- | --- | --- |
 | **Execution (checkout)** | Yes, primary | `usecases.PlaceOrder`, policy `CheckoutPromising` |
-| **Gateway (storefront)** | Yes | `POST /checkout`, `GET /orders/...`, `POST /orders/{orderId}:cancel`, shopper routes: the Open Host Service the storefront uses |
+| **Gateway (storefront)** | Yes | `POST /checkout`, `GET /orders/...`, `POST /orders/{orderId}/cancellations`, shopper routes: the Open Host Service the storefront uses |
 | Analysis | No | the tracking view is a projection for display, not a decision |
 | Specification / enforcer | No | promise rules and capacity belong to `delivery-promise` |
 
@@ -80,7 +80,7 @@ To turn a shopper's cart into a customer order. The context:
 
 | Collaborator | Message | Type | Channel | Relationship |
 | --- | --- | --- | --- | --- |
-| Shopper, storefront-bff, checkout | `PlaceOrder`, `CancelOrder`, `RegisterShopper`, `AddSavedAddress` | Command | REST `POST /checkout`, `POST /orders/{orderId}:cancel`, `POST /shoppers`, `POST /shoppers/{shopperId}/addresses` | Open Host |
+| Shopper, storefront-bff, checkout | `PlaceOrder`, `CancelOrder`, `RegisterShopper`, `AddSavedAddress` | Command | REST `POST /checkout`, `POST /orders/{orderId}/cancellations`, `POST /shoppers`, `POST /shoppers/{shopperId}/addresses` | Open Host |
 | Shopper, storefront-bff | `GetOrder`, `GetOrderTracking`, `ListOrdersByShopper`, `GetShopper`, `FindShopperByEmail` | Query | REST `GET /orders/{orderId}`, `/tracking`, `GET /orders?shopperId=`, `GET /shoppers/{shopperId}`, `GET /shoppers?email=` | Open Host |
 | `shipping-and-tracking` | `GetShipTo` | Query | REST `GET /orders/{orderId}/ship-to` (restricted) | Customer/Supplier (we are the Supplier) |
 | AI agents, `warehouse-ops-agent` | `get_order`, `get_order_tracking`, `get_ship_to` | Query | MCP `/mcp`; A2A skills `get_order`, `get_order_tracking` | read-only |
@@ -94,7 +94,7 @@ Full types: [Event catalogue](/docs/api-reference/events).
 
 | Collaborator | Message | Type | Channel | Relationship |
 | --- | --- | --- | --- | --- |
-| `delivery-promise` | quote offers, make promise, confirm promise, cancel promise (compensation) | Command / query | REST `POST /delivery-offers:quote`, `POST /promises`, `POST /promises/{id}:confirm`, `POST /promises/{id}:cancel` | Customer/Supplier (we are the Customer) |
+| `delivery-promise` | quote offers, make promise, confirm promise, cancel promise (compensation) | Command / query | REST `POST /delivery-quotes`, `POST /promises`, `POST /promises/{id}/confirmations`, `POST /promises/{id}/cancellations` | Customer/Supplier (we are the Customer) |
 | `order-sourcing`, `delivery-promise` | `CustomerOrderPlaced`, `CustomerOrderCancelled` | Event | Kafka `retailnetwork.customer-ordering.events` | Customer/Supplier (we are the Supplier) |
 
 `delivery-promise` reconciles its confirmation on `CustomerOrderPlaced` and

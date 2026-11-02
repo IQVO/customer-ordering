@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/promising"
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
@@ -108,12 +110,14 @@ type problemDTO struct {
 	Detail string `json:"detail"`
 }
 
-// QuoteOffers implements ports.PromiseGateway: POST /delivery-offers:quote. Only
-// QUOTED offers are returned.
+// QuoteOffers implements ports.PromiseGateway: POST /delivery-quotes. Only
+// QUOTED offers are returned. A quote is a pure computation with no natural
+// key, so every call is its own logical submit and mints a fresh
+// Idempotency-Key (REST guideline 5.1).
 func (g *Gateway) QuoteOffers(ctx context.Context, destinationPostalPrefix string, lines []promising.Line) ([]promising.Offer, error) {
 	var resp quoteResponse
 	body := map[string]any{"destinationPostalPrefix": destinationPostalPrefix, "lines": linesDTO(lines)}
-	if err := g.post(ctx, "/delivery-offers:quote", "", body, &resp); err != nil {
+	if err := g.post(ctx, "/delivery-quotes", uuid.NewString(), body, &resp); err != nil {
 		return nil, err
 	}
 	out := make([]promising.Offer, 0, len(resp.Offers))
@@ -147,21 +151,21 @@ func (g *Gateway) MakePromise(ctx context.Context, req promising.MakeRequest) (p
 	}, nil
 }
 
-// ConfirmPromise implements ports.PromiseGateway: POST /promises/{id}:confirm
+// ConfirmPromise implements ports.PromiseGateway: POST /promises/{id}/confirmations
 // with {orderId, groupNo} and the Idempotency-Key "<orderId>:<groupNo>:confirm".
 func (g *Gateway) ConfirmPromise(ctx context.Context, promiseID, orderID string, groupNo int) error {
 	key := fmt.Sprintf("%s:%d:confirm", orderID, groupNo)
-	return g.post(ctx, "/promises/"+url.PathEscape(promiseID)+":confirm", key, map[string]any{"orderId": orderID, "groupNo": groupNo}, nil)
+	return g.post(ctx, "/promises/"+url.PathEscape(promiseID)+"/confirmations", key, map[string]any{"orderId": orderID, "groupNo": groupNo}, nil)
 }
 
-// CancelPromise implements ports.PromiseGateway: POST /promises/{id}:cancel
+// CancelPromise implements ports.PromiseGateway: POST /promises/{id}/cancellations
 // with no body and the Idempotency-Key "<orderId>:<groupNo>:cancel". 200 (also
 // for a promise that is already CANCELLED) is success; 404 not-found and 409
 // illegal-transition (not CONFIRMED or AT_RISK: PROVISIONAL, KEPT, BROKEN,
 // RELEASED) are ports.ErrPromiseNotCancellable.
 func (g *Gateway) CancelPromise(ctx context.Context, promiseID, orderID string, groupNo int) error {
 	key := fmt.Sprintf("%s:%d:cancel", orderID, groupNo)
-	err := g.post(ctx, "/promises/"+url.PathEscape(promiseID)+":cancel", key, nil, nil)
+	err := g.post(ctx, "/promises/"+url.PathEscape(promiseID)+"/cancellations", key, nil, nil)
 	if errors.Is(err, ports.ErrPromiseOfferNotQuotable) {
 		return fmt.Errorf("%w: %v", ports.ErrPromiseNotCancellable, err)
 	}

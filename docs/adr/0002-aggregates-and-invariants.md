@@ -144,7 +144,7 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
   delivery-promise does not list it yet (it lists it on `DeliveryOffer` only); it is
   requested as an additive field (model gap). When it is absent the check fails
   closed with `ErrPromiseDestinationMismatch`.
-- **A12** `ConfirmPromise` is `POST /promises/{promiseId}:confirm` with body
+- **A12** `ConfirmPromise` is `POST /promises/{promiseId}/confirmations` with body
   `{orderId, groupNo}`, `Idempotency-Key` `<orderId>:<groupNo>:confirm`, answering
   the promise (200/201). 404, 409 and 422 from MakePromise or ConfirmPromise mean the
   offer or hold is no longer valid: checkout re-quotes (all four tiers) and answers
@@ -155,7 +155,7 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
 - **A13** The order id is a UUID v5 of the `Idempotency-Key` (namespace fixed in
   the code), so a retried checkout re-uses the same promises (MakePromise is
   idempotent per `<orderId>:<groupNo>`) and the same order.
-- **A14 (final)** Accepted. `CancelPromise` is `POST /promises/{promiseId}:cancel`
+- **A14 (final)** Accepted. `CancelPromise` is `POST /promises/{promiseId}/cancellations`
   (delivery-promise contract, final): header `Idempotency-Key` (here
   `<orderId>:<groupNo>:cancel`), no body, 200 returns the promise as CANCELLED and gives
   its confirmed hold back to the book, a repeat on a CANCELLED promise is 200, 404
@@ -255,14 +255,16 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
   order at placement — a later edit or removal of the saved address never
   changes a placed order — so the stored order and the restricted ship-to
   route keep their shape.
-- **A26** Order history (NG2): `GET /orders?shopperId=&after=&limit=` returns
+- **A26** Order history (NG2): `GET /orders?shopperId=&limit=&cursor=` returns
   the shopper's orders newest first (`placed_at DESC`, `orderId ASC` as the
   tiebreak; index `customer_orders_history_idx`, migration `0003`), keyset
-  paginated like the catalog list: `after` is the opaque `nextCursor` of the
-  previous page (base64 of RFC 3339Nano `placedAt` + `|` + `orderId`); anything
-  malformed is 422 `validation-failed`. `limit` defaults to 20 and is capped at
-  100. An unknown shopper is 404; a shopper without orders is an empty page,
-  never an error. The items never carry the address.
+  paginated as `{items, nextCursor}`: `cursor` is the opaque `nextCursor` of the
+  previous page (the fleet `page` package: base64url JSON of the RFC 3339Nano
+  `placedAt` and the `orderId`; amended by [ADR 0010](./0010-adopt-the-fleet-rest-api-guideline.md),
+  which retired `after`); an undecodable one is 400 `invalid-cursor`. `limit`
+  defaults to 100 and is capped at 500 (400 `invalid-limit`). An unknown shopper
+  is 404; a shopper without orders is an empty page, never an error. The items
+  never carry the address.
 - **A27** Shopper reads (NG1, NG3): `GET /shoppers/{shopperId}` returns the
   profile with `savedAddresses[]` (possibly empty, oldest first); the addresses
   are synthetic PII that leave the service only on the shopper routes. `GET

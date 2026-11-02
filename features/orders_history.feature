@@ -1,7 +1,7 @@
 Feature: A shopper's order history is listed newest first, without the address
   The page is ordered placedAt descending with the orderId as the ascending
-  tiebreak; a short page carries a nextCursor that walks to the older orders,
-  like the catalog list (openapi listOrdersByShopper).
+  tiebreak; a short page carries a nextCursor (query parameter `cursor`) that
+  walks to the older orders (openapi listOrdersByShopper, REST guideline 3).
 
   Background:
     Given a registered shopper
@@ -64,10 +64,14 @@ Feature: A shopper's order history is listed newest first, without the address
     And the API lists the orders of shopper "shopper-nope"
     Then the API answers 404 with problem "not-found"
 
-  Scenario: A cursor that is not one of ours is validation-failed
-    And the API requests "/orders?shopperId=shopper-1&after=not-a-cursor"
-    Then the API answers 422 with problem "validation-failed"
+  Scenario: A cursor that is not one of ours is invalid-cursor
+    And the API requests "/orders?shopperId=shopper-1&cursor=not-a-cursor"
+    Then the API answers 400 with problem "invalid-cursor"
 
-  Scenario: A limit over one hundred is validation-failed
-    And the API requests "/orders?shopperId=shopper-1&limit=101"
-    Then the API answers 422 with problem "validation-failed"
+  Scenario: A limit over five hundred is invalid-limit
+    And the API requests "/orders?shopperId=shopper-1&limit=501"
+    Then the API answers 400 with problem "invalid-limit"
+
+  Scenario: A retired paging parameter is refused instead of reading page one forever
+    And the API requests "/orders?shopperId=shopper-1&after=abc"
+    Then the API answers 400 with problem "unknown-query-parameter"
