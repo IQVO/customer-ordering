@@ -31,6 +31,9 @@ const claimAttempts = 3
 // httpServerError is the first status that is never stored (a 5xx).
 const httpServerError = 500
 
+// httpBadRequest is the first status of an error answer.
+const httpBadRequest = 400
+
 // claimSQL inserts the key as a placeholder inside the request's transaction. A
 // concurrent claimant of the same key blocks on the unique index until this
 // transaction ends: it then finds the committed answer (no row is affected) or,
@@ -51,6 +54,16 @@ const readSQL = `
 // Do implements ports.IdempotencyStore: the claim, fn's writes (through the
 // transaction carried by the ctx it is handed, so every unit of work joins it)
 // and the stored answer commit together.
+//
+// fn runs behind SAVEPOINT handler_run. A mapped conflict (a lost race on a
+// unique index, 23505 -> 409) fails a statement on the server and leaves the
+// shared transaction ABORTED even though the handler answers a truthful 4xx;
+// recording that answer would then hit 25P02 and the client would see a 500.
+// Releasing the savepoint exposes the abort: the release fails, ROLLBACK TO
+// SAVEPOINT discards only the handler's partial writes (the claim row, made
+// before the savepoint, survives) and heals the transaction, and the 4xx is
+// stored and committed like any other. A success answer behind a failed
+// release is a lie (its writes are gone): it is neither returned nor cached.
 func (s *IdempotencyStore) Do(ctx context.Context, key, requestHash string, at time.Time,
 	fn func(ctx context.Context) (idempotency.Record, error),
 ) (idempotency.Record, bool, error) {
@@ -80,11 +93,29 @@ func (s *IdempotencyStore) attempt(ctx context.Context, key, requestHash string,
 		_ = tx.Rollback(context.WithoutCancel(ctx))
 		return s.replay(ctx, key)
 	}
+	if _, err := tx.Exec(ctx, "SAVEPOINT handler_run"); err != nil {
+		return idempotency.Record{}, false, false, fmt.Errorf("savepoint idempotent request: %w", err)
+	}
 	if rec, err = fn(pgtx.With(ctx, tx)); err != nil {
 		return idempotency.Record{}, false, false, err
 	}
 	if rec.Status >= httpServerError {
 		return rec, false, false, nil // rolled back by the defer: a 5xx is never stored
+	}
+	if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT handler_run"); err != nil {
+		// A statement inside the handler failed on the server: the transaction
+		// is aborted. Rolling back to the savepoint discards the handler's
+		// partial writes (the right all-or-nothing semantics for an error
+		// answer) and returns the transaction to health.
+		if _, rerr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT handler_run"); rerr != nil {
+			return idempotency.Record{}, false, false, fmt.Errorf("heal idempotent request: %w", err)
+		}
+		if rec.Status < httpBadRequest {
+			// A success whose writes cannot be committed must neither be
+			// returned nor cached: fail so the key retries the real work
+			// (the deferred rollback drops the claim too).
+			return idempotency.Record{}, false, false, fmt.Errorf("release handler savepoint after a success answer: %w", err)
+		}
 	}
 	body := rec.Body
 	if body == nil {
