@@ -7,8 +7,8 @@ info:
     url: https://github.com/IQVO/customer-ordering
   description: >-
     REST contract of the customer-ordering bounded context of the retail
-    network, derived from retail-network-docs model/model.yaml
-    (contexts[customer-ordering].rest) and adjusted by the final cross-context
+    network, derived from the retail-network model (warehouse-docs
+    network/model/model.yaml, contexts[customer-ordering].rest) and adjusted by the final cross-context
     decisions (contracts-delta E7, E9, E11 and Gap Register G7, G10, G12, G25,
     and the storefront extension NG1-NG3: saved addresses, checkout by
     saved address, shopper by e-mail and the order history).
