@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/claudioed/customer-ordering/internal/application/compensation"
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/promising"
 	"github.com/claudioed/customer-ordering/internal/application/views"
@@ -35,17 +36,17 @@ type PlaceOrderInput struct {
 	Groups          []CheckoutGroup
 }
 
-// RequoteRequired is returned when an offer expired, was consumed or could not
+// RequoteRequiredError is returned when an offer expired, was consumed or could not
 // be confirmed: nothing was placed and Offers are the fresh offers to show
 // (policy CheckoutPromising). It unwraps to ports.ErrPromiseOfferNotQuotable.
-type RequoteRequired struct{ Offers []views.RequotedOffer }
+type RequoteRequiredError struct{ Offers []views.RequotedOffer }
 
-func (e *RequoteRequired) Error() string {
+func (e *RequoteRequiredError) Error() string {
 	return fmt.Sprintf("%v: %d fresh offers quoted", ports.ErrPromiseOfferNotQuotable, len(e.Offers))
 }
 
 // Unwrap returns ports.ErrPromiseOfferNotQuotable.
-func (e *RequoteRequired) Unwrap() error { return ports.ErrPromiseOfferNotQuotable }
+func (e *RequoteRequiredError) Unwrap() error { return ports.ErrPromiseOfferNotQuotable }
 
 // PlaceOrder turns a cart into an order (POST /checkout): it makes and
 // confirms a promise for every group at delivery-promise (G7, E7) and only then
@@ -53,7 +54,7 @@ func (e *RequoteRequired) Unwrap() error { return ports.ErrPromiseOfferNotQuotab
 type PlaceOrder struct{ Deps }
 
 // Execute places the order. A replay of the same OrderID returns the stored
-// order. See RequoteRequired and the ports.ErrPromise... sentinels for the
+// order. See RequoteRequiredError and the ports.ErrPromise... sentinels for the
 // delivery-promise failures.
 func (u PlaceOrder) Execute(ctx context.Context, in PlaceOrderInput) (views.Order, error) {
 	v, replayed, err := u.execute(ctx, in)
@@ -234,11 +235,13 @@ func confirmedBefore(i int, err error) int {
 
 // compensate cancels the promises a failed checkout already confirmed, so
 // their capacity holds are released (ADR 0002, A14). A cancel that fails is
-// logged and skipped: the checkout still fails with the confirm error. It runs
-// detached from the request's cancellation so a client that gave up does not
-// leave the holds behind.
+// enqueued on the compensation queue for the background worker to retry -- a
+// queue failure is logged -- and the checkout still fails with the confirm
+// error. It runs detached from the request's cancellation so a client that
+// gave up does not leave the holds behind.
 func (u PlaceOrder) compensate(ctx context.Context, orderID customerorder.ID, confirmed []customerorder.GroupInput) {
 	ctx = context.WithoutCancel(ctx)
+	var failed []compensation.Cancel
 	for _, g := range confirmed {
 		err := u.Promises.CancelPromise(ctx, g.PromiseID, string(orderID), g.GroupNo)
 		if errors.Is(err, ports.ErrPromiseNotCancellable) {
@@ -250,6 +253,7 @@ func (u PlaceOrder) compensate(ctx context.Context, orderID customerorder.ID, co
 			continue
 		}
 		if err != nil {
+			failed = append(failed, compensation.Cancel{OrderID: string(orderID), GroupNo: g.GroupNo, PromiseID: g.PromiseID})
 			u.logger().ErrorContext(ctx, "compensating cancel of a confirmed promise failed; the hold stays at delivery-promise",
 				"orderId", sanitizeLog(string(orderID)), "groupNo", sanitizeLog(strconv.Itoa(g.GroupNo)), "promiseId", g.PromiseID, "error", err.Error())
 			continue
@@ -257,6 +261,23 @@ func (u PlaceOrder) compensate(ctx context.Context, orderID customerorder.ID, co
 		u.logger().InfoContext(ctx, "cancelled a confirmed promise of a failed checkout",
 			"orderId", sanitizeLog(string(orderID)), "groupNo", sanitizeLog(strconv.Itoa(g.GroupNo)), "promiseId", g.PromiseID)
 	}
+	u.enqueueFailedCancels(ctx, failed)
+}
+
+// enqueueFailedCancels records the cancels that errored on the compensation
+// queue, so the worker retries them until the holds are released (A14); when
+// even that fails the failed cancel is only logged, as before.
+func (u PlaceOrder) enqueueFailedCancels(ctx context.Context, failed []compensation.Cancel) {
+	if len(failed) == 0 {
+		return
+	}
+	if err := u.compensations().Enqueue(ctx, failed...); err != nil {
+		u.logger().ErrorContext(ctx, "enqueueing failed compensating cancels for retry failed; the holds stay at delivery-promise",
+			"cancels", len(failed), "error", err.Error())
+		return
+	}
+	u.logger().InfoContext(ctx, "enqueued failed compensating cancels for retry",
+		"cancels", len(failed))
 }
 
 func groupInput(g CheckoutGroup, t promising.Terms) customerorder.GroupInput {
@@ -277,5 +298,5 @@ func (u PlaceOrder) requote(ctx context.Context, in PlaceOrderInput) error {
 		}
 		all = append(all, views.RequotedFrom(g.GroupNo, offers)...)
 	}
-	return &RequoteRequired{Offers: all}
+	return &RequoteRequiredError{Offers: all}
 }

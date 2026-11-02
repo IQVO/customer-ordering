@@ -33,18 +33,23 @@ type Env struct {
 	Clock ports.Clock
 	// OutboxCount returns how many events the outbox holds.
 	OutboxCount func(t *testing.T) int
+	// Compensations is the write side of the durable compensation queue;
+	// CompensationCount returns how many cancels it holds.
+	Compensations     ports.CompensationQueue
+	CompensationCount func(t *testing.T) int
 }
 
 // Run executes the whole suite; newEnv must return an empty Env each time.
 func Run(t *testing.T, newEnv func(t *testing.T) Env) {
 	t.Helper()
 	suites := map[string]func(*testing.T, Env){
-		"orders":      testOrders,
-		"shoppers":    testShoppers,
-		"tracking":    testTracking,
-		"inbox":       testInbox,
-		"unitofwork":  testUnitOfWork,
-		"idempotency": testIdempotency,
+		"orders":        testOrders,
+		"shoppers":      testShoppers,
+		"tracking":      testTracking,
+		"inbox":         testInbox,
+		"unitofwork":    testUnitOfWork,
+		"idempotency":   testIdempotency,
+		"compensations": testCompensationQueue,
 	}
 	for name, fn := range suites {
 		t.Run(name, func(t *testing.T) { fn(t, newEnv(t)) })

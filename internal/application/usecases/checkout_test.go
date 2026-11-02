@@ -127,9 +127,9 @@ func TestPlaceOrderRequotesWhenAnOfferIsNotQuotable(t *testing.T) {
 	f := newFx(t)
 	delete(f.gw.Terms, "offer-2") // offer-2 expired
 	_, err := usecases.PlaceOrder{Deps: f.deps}.Execute(bg(), checkout("order-1"))
-	var rq *usecases.RequoteRequired
+	var rq *usecases.RequoteRequiredError
 	if !errors.As(err, &rq) || !errors.Is(err, ports.ErrPromiseOfferNotQuotable) {
-		t.Fatalf("want RequoteRequired, got %v", err)
+		t.Fatalf("want RequoteRequiredError, got %v", err)
 	}
 	assertRequoted(t, rq)
 	quoted := f.gw.Quoted()
@@ -144,13 +144,13 @@ func TestPlaceOrderRequotesWhenAnOfferIsNotQuotable(t *testing.T) {
 	}
 }
 
-func assertRequoted(t *testing.T, rq *usecases.RequoteRequired) {
+func assertRequoted(t *testing.T, rq *usecases.RequoteRequiredError) {
 	t.Helper()
 	if len(rq.Offers) != 2 || rq.Offers[0].GroupNo != 1 || rq.Offers[1].GroupNo != 2 || rq.Offers[0].OfferID != "new-1" || rq.Offers[0].Tier != "NEXT_DAY" {
 		t.Fatalf("offers = %+v", rq.Offers)
 	}
 	if rq.Error() == "" {
-		t.Fatal("RequoteRequired needs a message")
+		t.Fatal("RequoteRequiredError needs a message")
 	}
 }
 
@@ -158,9 +158,9 @@ func TestPlaceOrderRequotesWhenAConfirmFails(t *testing.T) {
 	f := newFx(t)
 	f.gw.ConfirmErr["p-2"] = ports.ErrPromiseOfferNotQuotable
 	_, err := usecases.PlaceOrder{Deps: f.deps}.Execute(bg(), checkout("order-1"))
-	var rq *usecases.RequoteRequired
+	var rq *usecases.RequoteRequiredError
 	if !errors.As(err, &rq) {
-		t.Fatalf("want RequoteRequired, got %v", err)
+		t.Fatalf("want RequoteRequiredError, got %v", err)
 	}
 	if f.store.Counts().Orders != 0 {
 		t.Fatal("no order may be placed after a failed confirm")

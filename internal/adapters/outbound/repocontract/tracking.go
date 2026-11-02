@@ -7,6 +7,21 @@ import (
 	"github.com/claudioed/customer-ordering/internal/application/readmodel"
 )
 
+// Fixture ids of the tracking cases: one const per reused literal.
+const (
+	assignFirst        = "as-1"
+	assignLabelA       = "as-a"
+	tnScans            = "TRK-D"
+	scanOutForDelivery = "OUT_FOR_DELIVERY"
+	scanAtStation      = "AT_STATION"
+	tnDelivered        = "TRK-E"
+	orderSignals       = "o-i"
+	tnLost             = "TRK-L"
+	tnMultiGroup       = "TRK-M"
+	orderFirst         = "o-1"
+	orderLost          = "o-l"
+)
+
 func packageByTN(t *testing.T, e Env, orderID, tn string) readmodel.Package {
 	t.Helper()
 	list, err := e.Tracking.Packages(bg(), orderID)
@@ -43,31 +58,31 @@ func testTracking(t *testing.T, e Env) {
 }
 
 func trackingAssignmentLinksResolveAndAreReplaced(t *testing.T, e Env) {
-	_, err := e.Tracking.ResolveAssignment(bg(), "as-1")
+	_, err := e.Tracking.ResolveAssignment(bg(), assignFirst)
 	wantErr(t, err, ports.ErrNotFound)
-	must(t, e.Tracking.LinkAssignment(bg(), readmodel.AssignmentLink{AssignmentID: "as-1", OrderID: "o-1", GroupNo: 1, PromiseID: "p-1"}))
-	l, err := e.Tracking.ResolveAssignment(bg(), "as-1")
+	must(t, e.Tracking.LinkAssignment(bg(), readmodel.AssignmentLink{AssignmentID: assignFirst, OrderID: orderFirst, GroupNo: 1, PromiseID: "p-1"}))
+	l, err := e.Tracking.ResolveAssignment(bg(), assignFirst)
 	must(t, err)
-	if l != (readmodel.AssignmentLink{AssignmentID: "as-1", OrderID: "o-1", GroupNo: 1, PromiseID: "p-1"}) {
+	if l != (readmodel.AssignmentLink{AssignmentID: assignFirst, OrderID: orderFirst, GroupNo: 1, PromiseID: "p-1"}) {
 		t.Fatalf("link = %+v", l)
 	}
-	must(t, e.Tracking.LinkAssignment(bg(), readmodel.AssignmentLink{AssignmentID: "as-1", OrderID: "o-1", GroupNo: 2}))
-	l, _ = e.Tracking.ResolveAssignment(bg(), "as-1")
+	must(t, e.Tracking.LinkAssignment(bg(), readmodel.AssignmentLink{AssignmentID: assignFirst, OrderID: orderFirst, GroupNo: 2}))
+	l, _ = e.Tracking.ResolveAssignment(bg(), assignFirst)
 	if l.GroupNo != 2 || l.PromiseID != "" {
 		t.Fatalf("link not replaced: %+v", l)
 	}
 }
 
 func trackingALabelBeforeTheLinkIsLinkedWhenTheLockAr(t *testing.T, e Env) {
-	must(t, e.Tracking.ApplyLabel(bg(), readmodel.Label{TrackingNumber: "TRK-A", AssignmentID: "as-a", Carrier: "NETWORK", At: at(1)}))
+	must(t, e.Tracking.ApplyLabel(bg(), readmodel.Label{TrackingNumber: "TRK-A", AssignmentID: assignLabelA, Carrier: "NETWORK", At: at(1)}))
 	list, err := e.Tracking.Packages(bg(), "o-a")
 	must(t, err)
 	if len(list) != 0 {
 		t.Fatalf("an unlinked package must not be listed: %+v", list)
 	}
-	must(t, e.Tracking.LinkAssignment(bg(), readmodel.AssignmentLink{AssignmentID: "as-a", OrderID: "o-a", GroupNo: 3}))
+	must(t, e.Tracking.LinkAssignment(bg(), readmodel.AssignmentLink{AssignmentID: assignLabelA, OrderID: "o-a", GroupNo: 3}))
 	p := packageByTN(t, e, "o-a", "TRK-A")
-	if p.GroupNo != 3 || p.Carrier != "NETWORK" || p.State != "LABELLED" || p.AssignmentID != "as-a" {
+	if p.GroupNo != 3 || p.Carrier != "NETWORK" || p.State != "LABELLED" || p.AssignmentID != assignLabelA {
 		t.Fatalf("package = %+v", p)
 	}
 }
@@ -90,34 +105,34 @@ func trackingAttachedTrackingNumbersCreateLinkedRows(t *testing.T, e Env) {
 }
 
 func trackingScansTheNewestWinsAScanMayPrecedeTheLabe(t *testing.T, e Env) {
-	must(t, e.Tracking.AttachTrackingNumbers(bg(), "o-d", 1, []string{"TRK-D"}))
-	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: "TRK-D", NodeID: "ds-2", State: "OUT_FOR_DELIVERY", At: at(50)}))
-	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: "TRK-D", NodeID: "ds-1", State: "AT_STATION", At: at(40)}))
-	p := packageByTN(t, e, "o-d", "TRK-D")
-	if p.State != "OUT_FOR_DELIVERY" || p.LastScanNodeID != "ds-2" || !p.LastScanAt.Equal(at(50)) {
+	must(t, e.Tracking.AttachTrackingNumbers(bg(), "o-d", 1, []string{tnScans}))
+	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: tnScans, NodeID: "ds-2", State: scanOutForDelivery, At: at(50)}))
+	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: tnScans, NodeID: "ds-1", State: scanAtStation, At: at(40)}))
+	p := packageByTN(t, e, "o-d", tnScans)
+	if p.State != scanOutForDelivery || p.LastScanNodeID != "ds-2" || !p.LastScanAt.Equal(at(50)) {
 		t.Fatalf("an older scan must not win: %+v", p)
 	}
-	must(t, e.Tracking.ApplyLabel(bg(), readmodel.Label{TrackingNumber: "TRK-D", AssignmentID: "as-d", At: at(60)}))
-	if p := packageByTN(t, e, "o-d", "TRK-D"); p.State != "OUT_FOR_DELIVERY" {
+	must(t, e.Tracking.ApplyLabel(bg(), readmodel.Label{TrackingNumber: tnScans, AssignmentID: "as-d", At: at(60)}))
+	if p := packageByTN(t, e, "o-d", tnScans); p.State != scanOutForDelivery {
 		t.Fatalf("a late label must not reset the state: %+v", p)
 	}
 }
 
 func trackingDeliveriesAreRememberedListedPerGroupAnd(t *testing.T, e Env) {
-	must(t, e.Tracking.ApplyDelivery(bg(), readmodel.Delivery{TrackingNumber: "TRK-E", AssignmentID: "as-e", OrderID: "o-e", At: at(80)}))
+	must(t, e.Tracking.ApplyDelivery(bg(), readmodel.Delivery{TrackingNumber: tnDelivered, AssignmentID: "as-e", OrderID: "o-e", At: at(80)}))
 	list, err := e.Tracking.DeliveredPackages(bg(), "o-e", 1)
 	must(t, err)
 	if len(list) != 0 {
 		t.Fatalf("the group is not known yet: %+v", list)
 	}
-	must(t, e.Tracking.AttachTrackingNumbers(bg(), "o-e", 1, []string{"TRK-E"}))
+	must(t, e.Tracking.AttachTrackingNumbers(bg(), "o-e", 1, []string{tnDelivered}))
 	list, err = e.Tracking.DeliveredPackages(bg(), "o-e", 1)
 	must(t, err)
-	if len(list) != 1 || list[0].TrackingNumber != "TRK-E" || !list[0].At.Equal(at(80)) || list[0].OrderID != "o-e" {
+	if len(list) != 1 || list[0].TrackingNumber != tnDelivered || !list[0].At.Equal(at(80)) || list[0].OrderID != "o-e" {
 		t.Fatalf("delivered = %+v", list)
 	}
-	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: "TRK-E", NodeID: "ds-1", State: "AT_STATION", At: at(70)}))
-	p := packageByTN(t, e, "o-e", "TRK-E")
+	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: tnDelivered, NodeID: "ds-1", State: scanAtStation, At: at(70)}))
+	p := packageByTN(t, e, "o-e", tnDelivered)
 	if p.State != "DELIVERED" || !p.DeliveredAt.Equal(at(80)) {
 		t.Fatalf("an older scan must not undo the delivery: %+v", p)
 	}
@@ -141,23 +156,23 @@ func trackingExceptionsAreRecordedAndLinked(t *testing.T, e Env) {
 func trackingAVoidClosesALabelledPackageOnly(t *testing.T, e Env) {
 	must(t, e.Tracking.AttachTrackingNumbers(bg(), "o-h", 1, []string{"TRK-H1", "TRK-H2"}))
 	must(t, e.Tracking.ApplyLabel(bg(), readmodel.Label{TrackingNumber: "TRK-H1", At: at(1)}))
-	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: "TRK-H2", State: "AT_STATION", At: at(2)}))
+	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: "TRK-H2", State: scanAtStation, At: at(2)}))
 	must(t, e.Tracking.ApplyVoid(bg(), "TRK-H1"))
 	must(t, e.Tracking.ApplyVoid(bg(), "TRK-H2"))
 	if p := packageByTN(t, e, "o-h", "TRK-H1"); p.State != "VOIDED" {
 		t.Fatalf("H1 = %+v", p)
 	}
-	if p := packageByTN(t, e, "o-h", "TRK-H2"); p.State != "AT_STATION" {
+	if p := packageByTN(t, e, "o-h", "TRK-H2"); p.State != scanAtStation {
 		t.Fatalf("H2 = %+v", p)
 	}
 }
 
 func trackingGroupSignalsAccumulatePerFieldAndSortByG(t *testing.T, e Env) {
 	risk, verdict, late, unsrc := "NODE_DELAYED", "BROKEN", 660, "NO_STOCK"
-	must(t, e.Tracking.PatchGroupSignal(bg(), readmodel.GroupSignalPatch{OrderID: "o-i", GroupNo: 2, AtRiskReason: &risk}))
-	must(t, e.Tracking.PatchGroupSignal(bg(), readmodel.GroupSignalPatch{OrderID: "o-i", GroupNo: 1, UnsourceableReason: &unsrc}))
-	must(t, e.Tracking.PatchGroupSignal(bg(), readmodel.GroupSignalPatch{OrderID: "o-i", GroupNo: 2, PromiseVerdict: &verdict, LateByMinutes: &late}))
-	got, err := e.Tracking.GroupSignals(bg(), "o-i")
+	must(t, e.Tracking.PatchGroupSignal(bg(), readmodel.GroupSignalPatch{OrderID: orderSignals, GroupNo: 2, AtRiskReason: &risk}))
+	must(t, e.Tracking.PatchGroupSignal(bg(), readmodel.GroupSignalPatch{OrderID: orderSignals, GroupNo: 1, UnsourceableReason: &unsrc}))
+	must(t, e.Tracking.PatchGroupSignal(bg(), readmodel.GroupSignalPatch{OrderID: orderSignals, GroupNo: 2, PromiseVerdict: &verdict, LateByMinutes: &late}))
+	got, err := e.Tracking.GroupSignals(bg(), orderSignals)
 	must(t, err)
 	if len(got) != 2 || got[0].GroupNo != 1 || got[0].UnsourceableReason != "NO_STOCK" || got[0].LateByMinutes != nil {
 		t.Fatalf("signals = %+v", got)
@@ -174,21 +189,21 @@ func trackingGroupSignalsAccumulatePerFieldAndSortByG(t *testing.T, e Env) {
 }
 
 func trackingOutcomesAreRememberedListedPerGroupAndFinal(t *testing.T, e Env) {
-	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: "TRK-L", OrderID: "o-l", Kind: readmodel.OutcomeLost, At: at(90)}))
-	list, err := e.Tracking.OutcomePackages(bg(), "o-l", 1)
+	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: tnLost, OrderID: orderLost, Kind: readmodel.OutcomeLost, At: at(90)}))
+	list, err := e.Tracking.OutcomePackages(bg(), orderLost, 1)
 	must(t, err)
 	if len(list) != 0 {
 		t.Fatalf("the group is not known yet: %+v", list)
 	}
-	must(t, e.Tracking.AttachTrackingNumbers(bg(), "o-l", 1, []string{"TRK-L", "TRK-M"}))
-	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: "TRK-M", OrderID: "o-l", Kind: readmodel.OutcomeReturned, At: at(85)}))
-	list, err = e.Tracking.OutcomePackages(bg(), "o-l", 1)
+	must(t, e.Tracking.AttachTrackingNumbers(bg(), orderLost, 1, []string{tnLost, tnMultiGroup}))
+	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: tnMultiGroup, OrderID: orderLost, Kind: readmodel.OutcomeReturned, At: at(85)}))
+	list, err = e.Tracking.OutcomePackages(bg(), orderLost, 1)
 	must(t, err)
-	if len(list) != 2 || list[0].TrackingNumber != "TRK-M" || list[0].Kind != readmodel.OutcomeReturned || !list[0].At.Equal(at(85)) ||
-		list[1].TrackingNumber != "TRK-L" || list[1].Kind != readmodel.OutcomeLost || !list[1].At.Equal(at(90)) || list[1].OrderID != "o-l" {
+	if len(list) != 2 || list[0].TrackingNumber != tnMultiGroup || list[0].Kind != readmodel.OutcomeReturned || !list[0].At.Equal(at(85)) ||
+		list[1].TrackingNumber != tnLost || list[1].Kind != readmodel.OutcomeLost || !list[1].At.Equal(at(90)) || list[1].OrderID != orderLost {
 		t.Fatalf("outcomes (oldest first) = %+v", list)
 	}
-	if other, err := e.Tracking.OutcomePackages(bg(), "o-l", 2); err != nil || len(other) != 0 {
+	if other, err := e.Tracking.OutcomePackages(bg(), orderLost, 2); err != nil || len(other) != 0 {
 		t.Fatalf("another group has no outcome: %+v %v", other, err)
 	}
 	trackingOutcomesAreFinal(t, e)
@@ -197,16 +212,16 @@ func trackingOutcomesAreRememberedListedPerGroupAndFinal(t *testing.T, e Env) {
 func trackingOutcomesAreFinal(t *testing.T, e Env) {
 	t.Helper()
 	// The first outcome wins, a later scan or outcome does not change the state.
-	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: "TRK-L", OrderID: "o-l", Kind: readmodel.OutcomeReturned, At: at(95)}))
-	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: "TRK-L", NodeID: "hub-1", State: "IN_TRANSIT", At: at(100)}))
-	p := packageByTN(t, e, "o-l", "TRK-L")
+	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: tnLost, OrderID: orderLost, Kind: readmodel.OutcomeReturned, At: at(95)}))
+	must(t, e.Tracking.ApplyScan(bg(), readmodel.Scan{TrackingNumber: tnLost, NodeID: "hub-1", State: "IN_TRANSIT", At: at(100)}))
+	p := packageByTN(t, e, orderLost, tnLost)
 	if p.State != readmodel.OutcomeLost || p.Outcome != readmodel.OutcomeLost || !p.OutcomeAt.Equal(at(90)) {
 		t.Fatalf("package = %+v", p)
 	}
 	// A package already reported delivered keeps the DELIVERED state, but the outcome is recorded.
-	must(t, e.Tracking.ApplyDelivery(bg(), readmodel.Delivery{TrackingNumber: "TRK-N", OrderID: "o-l", At: at(50)}))
-	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: "TRK-N", OrderID: "o-l", Kind: readmodel.OutcomeLost, At: at(60)}))
-	if p := packageByTN(t, e, "o-l", "TRK-N"); p.State != "DELIVERED" || p.Outcome != readmodel.OutcomeLost {
+	must(t, e.Tracking.ApplyDelivery(bg(), readmodel.Delivery{TrackingNumber: "TRK-N", OrderID: orderLost, At: at(50)}))
+	must(t, e.Tracking.ApplyOutcome(bg(), readmodel.Outcome{TrackingNumber: "TRK-N", OrderID: orderLost, Kind: readmodel.OutcomeLost, At: at(60)}))
+	if p := packageByTN(t, e, orderLost, "TRK-N"); p.State != "DELIVERED" || p.Outcome != readmodel.OutcomeLost {
 		t.Fatalf("package = %+v", p)
 	}
 }

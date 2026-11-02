@@ -17,6 +17,8 @@
 //	SHIPPING_CONSUMER_GROUP
 //	OUTBOX_RELAY_INTERVAL            relay poll interval (Go duration or seconds, default 1s)
 //	OUTBOX_MAX_ATTEMPTS              failures before the relay excludes a row (default 20, 0 = unlimited)
+//	COMPENSATION_RETRY_INTERVAL      compensation-cancels worker poll interval (Go duration or seconds, default 5s)
+//	COMPENSATION_MAX_ATTEMPTS        failures before the worker excludes a cancel (default 20, 0 = unlimited)
 //	SHUTDOWN_DRAIN_DELAY             wait after flipping /readyz before closing (default 5s)
 //	LOG_LEVEL                        debug | info | warn | error (default info)
 //	OTEL_SERVICE_NAME                service.name of spans and metrics (default customer-ordering)
@@ -46,12 +48,14 @@ import (
 	inboundhttp "github.com/claudioed/customer-ordering/internal/adapters/inbound/http"
 	inboundkafka "github.com/claudioed/customer-ordering/internal/adapters/inbound/kafka"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/clock"
+	compensationworker "github.com/claudioed/customer-ordering/internal/adapters/outbound/compensation"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/deliverypromise"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/ids"
 	outboundkafka "github.com/claudioed/customer-ordering/internal/adapters/outbound/kafka"
 	outboxrelay "github.com/claudioed/customer-ordering/internal/adapters/outbound/outbox"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/postgres"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/telemetry"
+	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/usecases"
 	"github.com/claudioed/customer-ordering/internal/bootretry"
 )
@@ -120,7 +124,8 @@ func run(ctx context.Context) error {
 
 	consumers, closeConsumers := startConsumers(ad, rt, logger)
 	relay, closeRelay := startOutboxRelay(ad.outbox, rt.brokers, logger)
-	return serveUntilSignal(ctx, logger, httpServer, readiness, consumers, closeConsumers, relay, closeRelay)
+	retryWorker, closeRetryWorker := startCompensationWorker(ad.compensations, ad.deps.Promises, logger)
+	return serveUntilSignal(ctx, logger, httpServer, readiness, consumers, closeConsumers, retryWorker, closeRetryWorker, relay, closeRelay)
 }
 
 // newReadiness builds the /readyz gate: the drain gate plus a Postgres ping and
@@ -135,12 +140,13 @@ func newReadiness(ping func(context.Context) error, brokers []string) *inboundht
 
 // adapters is the set of outbound adapters the composition root wires.
 type adapters struct {
-	deps        usecases.Deps
-	idempotency *postgres.IdempotencyStore
-	outbox      *postgres.OutboxRepo
-	pool        *pgxpool.Pool
-	clock       clock.System
-	ids         ids.Generator
+	deps          usecases.Deps
+	compensations *postgres.CompensationRepo
+	idempotency   *postgres.IdempotencyStore
+	outbox        *postgres.OutboxRepo
+	pool          *pgxpool.Pool
+	clock         clock.System
+	ids           ids.Generator
 }
 
 // buildAdapters wires the Postgres adapters, running the embedded migrations
@@ -165,10 +171,10 @@ func buildAdapters(ctx context.Context, rt runtimeEnv, logger *slog.Logger) (ada
 	logger.Info("postgres adapters configured")
 
 	outbox := postgres.NewOutboxRepo(pool, outboundkafka.NewEncoder())
-	ad := adapters{pool: pool, outbox: outbox, idempotency: postgres.NewIdempotencyStore(pool)}
+	ad := adapters{pool: pool, outbox: outbox, compensations: postgres.NewCompensationRepo(pool), idempotency: postgres.NewIdempotencyStore(pool)}
 	ad.deps = usecases.Deps{
 		Orders: postgres.NewOrderRepository(pool), Shoppers: postgres.NewShopperRepository(pool), Tracking: postgres.NewTrackingRepository(pool),
-		Inbox: postgres.NewInbox(pool), Outbox: outbox, UoW: postgres.NewUnitOfWork(pool),
+		Inbox: postgres.NewInbox(pool), Outbox: outbox, UoW: postgres.NewUnitOfWork(pool), Compensations: ad.compensations,
 		Promises: deliverypromise.New(rt.deliveryPromiseURL, &http.Client{Timeout: rt.deliveryPromiseTimeout}),
 		Clock:    ad.clock, IDs: ad.ids, Log: logger,
 	}
@@ -268,13 +274,34 @@ func startOutboxRelay(store outboxrelay.Store, brokers []string, logger *slog.Lo
 	return w, stop
 }
 
+// startCompensationWorker starts the always-on retry loop of the durable
+// compensation queue: the promise cancels a failed checkout could not perform
+// are retried against delivery-promise until the holds are released (A14).
+func startCompensationWorker(store compensationworker.Store, promises ports.PromiseGateway, logger *slog.Logger) (*worker, func()) {
+	interval := compensationInterval(os.Getenv("COMPENSATION_RETRY_INTERVAL"), logger)
+	maxAttempts := compensationMaxAttempts(os.Getenv("COMPENSATION_MAX_ATTEMPTS"), logger)
+	w := compensationworker.NewWorker(store, compensationworker.Retry(promises), logger,
+		compensationworker.WithInterval(interval), compensationworker.WithMaxAttempts(maxAttempts))
+
+	ctx, stop := context.WithCancel(context.Background())
+	wk := &worker{name: "compensation-worker", done: make(chan struct{})}
+	go func() {
+		defer close(wk.done)
+		logger.Info("compensation worker running", "interval", interval, "max_attempts", maxAttempts)
+		if err := w.Run(ctx); !errors.Is(err, context.Canceled) {
+			logger.Error("compensation worker stopped", "error", err)
+		}
+	}()
+	return wk, stop
+}
+
 // serveUntilSignal runs httpServer until SIGINT/SIGTERM (or a listen error),
 // then shuts down in the fleet order: (1) /readyz flips to 503, (2) wait the
 // drain delay, (3) drain HTTP, (4) stop and await the consumers, (5) stop and
 // await the relay LAST so nothing committed above is stranded; the caller's
 // deferred pool.Close runs after all of it.
 func serveUntilSignal(ctx context.Context, logger *slog.Logger, httpServer *http.Server, readiness *inboundhttp.Readiness,
-	consumers []*worker, closeConsumers func(), relay *worker, closeRelay func(),
+	consumers []*worker, closeConsumers func(), retryWorker *worker, closeRetryWorker func(), relay *worker, closeRelay func(),
 ) error {
 	errCh := make(chan error, 1)
 	go func() {
@@ -286,10 +313,11 @@ func serveUntilSignal(ctx context.Context, logger *slog.Logger, httpServer *http
 
 	sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	died := watchWorkers(append([]*worker{relay}, consumers...)...)
+	died := watchWorkers(append([]*worker{relay, retryWorker}, consumers...)...)
 	select {
 	case err := <-errCh:
 		closeConsumers()
+		closeRetryWorker()
 		closeRelay()
 		return err
 	case name := <-died:
@@ -297,6 +325,7 @@ func serveUntilSignal(ctx context.Context, logger *slog.Logger, httpServer *http
 		// reader): the service cannot run without it and must not sit "alive"
 		// with a dead worker, so exit non-zero and let the orchestrator restart it.
 		closeConsumers()
+		closeRetryWorker()
 		closeRelay()
 		return fmt.Errorf("%s stopped unexpectedly: exiting so the orchestrator restarts the service", name)
 	case <-sigCtx.Done():
@@ -315,6 +344,8 @@ func serveUntilSignal(ctx context.Context, logger *slog.Logger, httpServer *http
 	for _, w := range consumers {
 		await(logger, w)
 	}
+	closeRetryWorker()
+	await(logger, retryWorker)
 	closeRelay()
 	await(logger, relay)
 	return err

@@ -167,7 +167,7 @@ func (g *Gateway) CancelPromise(ctx context.Context, promiseID, orderID string, 
 	key := fmt.Sprintf("%s:%d:cancel", orderID, groupNo)
 	err := g.post(ctx, "/promises/"+url.PathEscape(promiseID)+"/cancellations", key, nil, nil)
 	if errors.Is(err, ports.ErrPromiseOfferNotQuotable) {
-		return fmt.Errorf("%w: %v", ports.ErrPromiseNotCancellable, err)
+		return fmt.Errorf("%w: %w", ports.ErrPromiseNotCancellable, err)
 	}
 	return err
 }
@@ -198,19 +198,19 @@ func (g *Gateway) post(ctx context.Context, path, idempotencyKey string, body, o
 	}
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ports.ErrPromiseUnavailable, err)
+		return fmt.Errorf("%w: %w", ports.ErrPromiseUnavailable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	payload, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return fmt.Errorf("%w: read response: %v", ports.ErrPromiseUnavailable, err)
+		return fmt.Errorf("%w: read response: %w", ports.ErrPromiseUnavailable, err)
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if out == nil {
 			return nil
 		}
 		if err := json.Unmarshal(payload, out); err != nil {
-			return fmt.Errorf("%w: undecodable response: %v", ports.ErrPromiseUnavailable, err)
+			return fmt.Errorf("%w: undecodable response: %w", ports.ErrPromiseUnavailable, err)
 		}
 		return nil
 	}

@@ -26,17 +26,19 @@ type fx struct {
 	store *memory.Store
 	gw    *memory.PromiseGateway
 	clock *memory.Clock
+	cq    *memory.Compensations
 	deps  usecases.Deps
 	seq   int
 }
 
 func newFx(t *testing.T) *fx {
 	t.Helper()
-	f := &fx{t: t, store: memory.NewStore(memory.NewClock(t0)), gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0)}
+	f := &fx{t: t, store: memory.NewStore(memory.NewClock(t0)), gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0), cq: &memory.Compensations{}}
 	s := f.store
 	f.deps = usecases.Deps{
 		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
-		Promises: f.gw, Clock: f.clock, IDs: &memory.SequentialIDs{},
+		Compensations: f.cq,
+		Promises:      f.gw, Clock: f.clock, IDs: &memory.SequentialIDs{},
 	}
 	sh, err := shopper.Register(shopper.NewShopper{ID: "shopper-1", Email: "ana@example.com"}, t0)
 	must(t, err)
