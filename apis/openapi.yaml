@@ -66,6 +66,8 @@ paths:
         '201':
           description: Order placed.
           headers:
+            Location:
+              $ref: '#/components/headers/LocationOrder'
             Idempotency-Replayed:
               $ref: '#/components/headers/IdempotencyReplayed'
           content:
@@ -89,7 +91,8 @@ paths:
         '422':
           description: >-
             validation-failed (including the shipTo / shipToAddressId choice:
-            both, neither, an unknown id or another shopper's address),
+            both, neither, an unknown id, another shopper's address or a shopper
+            that is not registered),
             line-without-promise (ErrLineWithoutPromise),
             promise-destination-mismatch (ErrPromiseDestinationMismatch) or
             group-spans-nodes from delivery-promise.
@@ -246,6 +249,12 @@ paths:
       responses:
         '200':
           description: The ship-to address (synthetic PII).
+          headers:
+            Cache-Control:
+              description: Always no-store; the address is never cached.
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
@@ -295,6 +304,8 @@ paths:
         '201':
           description: Shopper registered.
           headers:
+            Location:
+              $ref: '#/components/headers/LocationShopper'
             Idempotency-Replayed:
               $ref: '#/components/headers/IdempotencyReplayed'
           content:
@@ -358,6 +369,8 @@ paths:
         '201':
           description: Address saved.
           headers:
+            Location:
+              $ref: '#/components/headers/LocationAddress'
             Idempotency-Replayed:
               $ref: '#/components/headers/IdempotencyReplayed'
           content:
@@ -416,11 +429,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/Health'
         '503':
-          description: A dependency is down or the service is draining (dependency-unavailable).
+          description: >-
+            Either the service is draining (application/json body
+            {"status":"not_ready"}) or Postgres or Kafka is not reachable
+            (application/problem+json, dependency-unavailable, the detail names the
+            failing dependencies).
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
 components:
   parameters:
     OrderId:
@@ -490,14 +510,26 @@ components:
         maxLength: 128
         pattern: '^[\x20-\x7E]+$'
   headers:
+    LocationOrder:
+      description: Relative URI of the placed order, /orders/{orderId}.
+      schema:
+        type: string
+    LocationShopper:
+      description: Relative URI of the registered shopper, /shoppers/{shopperId}.
+      schema:
+        type: string
+    LocationAddress:
+      description: Relative URI of the saved address, /shoppers/{shopperId}/addresses/{addressId}.
+      schema:
+        type: string
     IdempotencyReplayed:
-      description: '"true" when the answer is the stored one of an earlier request with the same Idempotency-Key; absent on the first execution.'
+      description: '"true" when the answer is the stored one of an earlier request with the same Idempotency-Key (a stored 2xx or 4xx answer, replayed with its original status and body); absent on the first execution. A 5xx is never stored.'
       schema:
         type: string
         enum: ['true']
   responses:
     BadRequest:
-      description: The request is not valid JSON, has an unknown field or contains a NUL character (malformed-request), or the Idempotency-Key header is missing (idempotency-key-required) or is not 1 to 128 printable ASCII characters (idempotency-key-invalid).
+      description: The request is not valid JSON, has an unknown field contains a NUL character or is larger than 64 KiB (malformed-request; there is no 413), or the Idempotency-Key header is missing (idempotency-key-required) or is not 1 to 128 printable ASCII characters (idempotency-key-invalid).
       content:
         application/problem+json:
           schema:
@@ -525,7 +557,7 @@ components:
     Problem:
       type: object
       description: RFC 9457 problem details. type is /problems/<slug>.
-      required: [type, title, status]
+      required: [type, title, status, detail, instance]
       properties:
         type:
           type: string
@@ -543,6 +575,7 @@ components:
         instance:
           type: string
           format: uri-reference
+          description: The escaped request path.
     CheckoutConflictProblem:
       allOf:
         - $ref: '#/components/schemas/Problem'
@@ -675,8 +708,8 @@ components:
         The cart to place. Exactly one of shipTo and shipToAddressId is
         required: an inline address, or the addressId of an address saved on
         the shopper (AddSavedAddress), which is copied into the order at
-        placement. Giving both, neither, an unknown id or the id of another
-        shopper's address is 422 validation-failed.
+        placement. Giving both, neither, an unknown id, the id of another
+        shopper's address or an unregistered shopperId is 422 validation-failed.
       required: [shopperId, lines, groups]
       properties:
         shopperId:
@@ -770,8 +803,9 @@ components:
       properties:
         reason:
           type: string
+          minLength: 1
           maxLength: 200
-          description: Free text; the model defines no code list.
+          description: Free text, trimmed, without control characters; the model defines no code list.
     TrackingPackage:
       type: object
       required: [trackingNumber]
