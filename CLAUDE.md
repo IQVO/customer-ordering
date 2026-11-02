@@ -23,7 +23,7 @@ The outbox relay and the three consumers are always on and the process exits non
 Shutdown: /readyz 503, `SHUTDOWN_DRAIN_DELAY` (5s), drain HTTP, stop consumers, stop relay, close pool. cmd/** never imports internal/adapters/outbound/memory or repocontract. No authentication on REST. See docs/docs/overview/runtime.md.
 
 ## REST
-chi router, 6 operations of apis/openapi.yaml (POST /checkout, GET /orders/{id}, GET /orders/{id}/tracking, POST /orders/{id}:cancel, GET /orders/{id}/ship-to, POST /shoppers) plus /healthz, /readyz. Every state-changing route takes `Idempotency-Key` (table `idempotency_keys`, key = (route, key), 24h, replays the first response, same key + other request = 422 `idempotency-key-reused`).
+chi router, 6 operations of apis/openapi.yaml (POST /checkout, GET /orders/{id}, GET /orders/{id}/tracking, POST /orders/{id}/cancellations, GET /orders/{id}/ship-to, POST /shoppers) plus /healthz, /readyz. Every state-changing route takes `Idempotency-Key` (table `idempotency_keys`, key is global (looked up by key alone), 24h, replays the first response, same key + other request = 409 `idempotency-key-reused`).
 NUL: 404 in the path, 400 elsewhere. Errors are RFC 9457 problem+json, `type` = `/problems/<slug>`: not-found, illegal-transition, concurrent-update, validation-failed + one kebab-case slug per model Err (cancel-after-lock, line-without-promise, ...). The ship-to address is returned ONLY by GET /orders/{id}/ship-to; never log a body, never put it in an event.
 
 ## Events: CloudEvents 1.0 is MANDATORY
@@ -34,7 +34,7 @@ Use internal/adapters/kafka/cloudevents only. Transactional outbox: aggregates +
 A new event: domain struct + apis/asyncapi.yaml + ADR 0004 `type:` line in the SAME commit + encoder payload + golden test (.claude/skills/how-to-add-an-integration-event).
 
 ## Domain
-Aggregates, invariants and assumptions A1-A23 are in docs/adr/0002; consumed contracts, read models and relationships in 0003. Order status is DERIVED from the group states (incl. terminal LOST/RETURNED, A23) and only moves forward; cancel applies to unlocked groups only. Checkout confirms every promise synchronously before the order is placed (a failed confirm = re-quote, no order; promises already confirmed by that checkout are cancelled through `POST /promises/{id}:cancel`, A14).
+Aggregates, invariants and assumptions A1-A23 are in docs/adr/0002; consumed contracts, read models and relationships in 0003. Order status is DERIVED from the group states (incl. terminal LOST/RETURNED, A23) and only moves forward; cancel applies to unlocked groups only. Checkout confirms every promise synchronously before the order is placed (a failed confirm = re-quote, no order; promises already confirmed by that checkout are cancelled through `POST /promises/{id}/cancellations`, A14).
 
 ## Workflow
 GitFlow: feature/* -> PR into develop, CI green before merge, never push develop or main. lefthook: pre-commit fmt/vet/lint, pre-push `make check`. Commit and push after each step.
