@@ -203,15 +203,18 @@ Packaging before the first release: [Before the first release](/docs/operations/
 
 ### Idempotency-Key behaviour
 
-Every POST route (`/checkout`, `/orders/{orderId}:cancel`, `/shoppers`,
+Every POST route (`/checkout`, `/orders/{orderId}/cancellations`, `/shoppers`,
 `/shoppers/{shopperId}/addresses`) requires an `Idempotency-Key` header of
-1 to 255 characters (`internal/adapters/inbound/http/idempotency.go`). The first
-response below 500 is stored per `(route, key)` for 24 h (table
-`idempotency_keys`, `internal/application/idempotency/idempotency.go`). A repeat
-with the same request replays it with header `Idempotent-Replayed: true`; the
-same key with a different request is 422 `idempotency-key-reused`. 5xx responses
-are never stored; two concurrent first requests may both run (every command is
-idempotent by itself).
+1 to 128 printable ASCII characters (`internal/adapters/inbound/http/idempotency.go`);
+absent is 400 `idempotency-key-required`, malformed 400 `idempotency-key-invalid`.
+The key is global, not per route. The first response below 500 (a 4xx too) is
+stored for 24 h in table `idempotency_keys` (`route` is always the empty string;
+`internal/application/idempotency/idempotency.go`), in the SAME transaction as
+the order change and its outbox rows. A repeat with the same method, path and body
+replays it with header `Idempotency-Replayed: true`; the same key with anything
+else is 409 `idempotency-key-reused`. 5xx responses and panics roll back and are
+never stored. Concurrent requests with one key are serialised by the unique
+index: the loser replays the winner's answer.
 
 ## Alerts and dashboards
 

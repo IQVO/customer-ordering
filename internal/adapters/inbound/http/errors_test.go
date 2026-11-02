@@ -20,22 +20,21 @@ import (
 )
 
 // failingStore makes the idempotency store the broken dependency.
-type failingStore struct{ getErr, putErr error }
+type failingStore struct{ err error }
 
-func (f failingStore) Get(context.Context, string, string) (idempotency.Record, error) {
-	if f.getErr != nil {
-		return idempotency.Record{}, f.getErr
+func (f failingStore) Do(ctx context.Context, _, _ string, _ time.Time,
+	fn func(context.Context) (idempotency.Record, error),
+) (idempotency.Record, bool, error) {
+	if f.err != nil {
+		return idempotency.Record{}, false, f.err
 	}
-	return idempotency.Record{}, ports.ErrNotFound
-}
-
-func (f failingStore) Put(context.Context, string, string, idempotency.Record) (bool, error) {
-	return f.putErr == nil, f.putErr
+	rec, err := fn(ctx)
+	return rec, false, err
 }
 
 func serve(t *testing.T, store ports.IdempotencyStore, h http.HandlerFunc) *httptest.ResponseRecorder {
 	t.Helper()
-	mw := httpadapter.RequireIdempotencyKey(store, fixedClock{}, "route")(h)
+	mw := httpadapter.RequireIdempotencyKey(store, fixedClock{})(h)
 	req := httptest.NewRequest("POST", "/x", strings.NewReader(`{}`))
 	req.Header.Set("Idempotency-Key", "k")
 	rec := httptest.NewRecorder()
@@ -45,34 +44,46 @@ func serve(t *testing.T, store ports.IdempotencyStore, h http.HandlerFunc) *http
 
 func TestAServerFailureIsNeverStored(t *testing.T) {
 	e := newEnv(t)
-	boom := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }
-	mw := httpadapter.RequireIdempotencyKey(e.store.Idempotency(), fixedClock{}, "r")(http.HandlerFunc(boom))
+	calls := 0
+	boom := func(w http.ResponseWriter, _ *http.Request) { calls++; w.WriteHeader(http.StatusInternalServerError) }
+	mw := httpadapter.RequireIdempotencyKey(e.store.Idempotency(), fixedClock{})(http.HandlerFunc(boom))
 	for range 2 {
 		req := httptest.NewRequest("POST", "/x", strings.NewReader(`{}`))
 		req.Header.Set("Idempotency-Key", "k")
 		rec := httptest.NewRecorder()
 		mw.ServeHTTP(rec, req)
-		if rec.Code != 500 || rec.Header().Get("Idempotent-Replayed") != "" {
-			t.Fatalf("code %d replayed %q", rec.Code, rec.Header().Get("Idempotent-Replayed"))
+		if rec.Code != 500 || rec.Header().Get("Idempotency-Replayed") != "" {
+			t.Fatalf("code %d replayed %q", rec.Code, rec.Header().Get("Idempotency-Replayed"))
 		}
 	}
-	if _, err := e.store.Idempotency().Get(context.Background(), "r", "k"); !errors.Is(err, ports.ErrNotFound) {
-		t.Fatalf("a 5xx must not be stored: %v", err)
+	if calls != 2 {
+		t.Fatalf("a 5xx must not be stored: the handler ran %d times, want 2", calls)
 	}
 }
 
 func TestStoreFailuresAreInternalErrorsWithoutLeaks(t *testing.T) {
 	ok := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusCreated) }
-	for name, store := range map[string]failingStore{"get": {getErr: errors.New("secret dsn")}, "put": {putErr: errors.New("secret dsn")}} {
-		rec := serve(t, store, ok)
-		if rec.Code != 500 || strings.Contains(rec.Body.String(), "secret") || !strings.Contains(rec.Body.String(), "/problems/internal-error") {
-			t.Fatalf("%s: %d %s", name, rec.Code, rec.Body)
+	rec := serve(t, failingStore{err: errors.New("secret dsn")}, ok)
+	if rec.Code != 500 || strings.Contains(rec.Body.String(), "secret") || !strings.Contains(rec.Body.String(), "/problems/internal-error") {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestControlCharactersInTheKeyAreInvalid(t *testing.T) {
+	for _, key := range []string{"k\x01k", "k\x7fk", "k\nk"} {
+		mw := httpadapter.RequireIdempotencyKey(failingStore{}, fixedClock{})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		req := httptest.NewRequest("POST", "/x", strings.NewReader(`{}`))
+		req.Header.Set("Idempotency-Key", key)
+		rec := httptest.NewRecorder()
+		mw.ServeHTTP(rec, req)
+		if rec.Code != 400 || !strings.Contains(rec.Body.String(), "/problems/idempotency-key-invalid") {
+			t.Fatalf("key %q = %d %s", key, rec.Code, rec.Body)
 		}
 	}
 }
 
 func TestAnOversizedBodyIsMalformed(t *testing.T) {
-	mw := httpadapter.RequireIdempotencyKey(failingStore{}, fixedClock{}, "r")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	mw := httpadapter.RequireIdempotencyKey(failingStore{}, fixedClock{})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	req := httptest.NewRequest("POST", "/x", strings.NewReader(strings.Repeat("a", 64<<10+1)))
 	req.Header.Set("Idempotency-Key", "k")
 	rec := httptest.NewRecorder()

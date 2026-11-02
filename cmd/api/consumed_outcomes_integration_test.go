@@ -108,7 +108,7 @@ func TestPackageLostAndReturnedFoldIntoTheOrderOverKafka(t *testing.T) {
 			t.Fatalf("tracking groups = %+v", view.Groups)
 		}
 		// The order is closed: cancellation answers status-regression.
-		if refused := svc.call(t, "POST", "/orders/"+orderID+":cancel", "cancel-lr-1", `{"reason":"too late"}`); refused.status != 409 || refused.field(t, "type") != "/problems/status-regression" {
+		if refused := svc.call(t, "POST", "/orders/"+orderID+"/cancellations", "cancel-lr-1", `{"reason":"too late"}`); refused.status != 409 || refused.field(t, "type") != "/problems/status-regression" {
 			t.Fatalf("cancel = %d %s", refused.status, refused.body)
 		}
 	})

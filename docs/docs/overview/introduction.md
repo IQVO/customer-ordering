@@ -68,8 +68,8 @@ outbound call is to `delivery-promise`
    cancels the promises of the same checkout that were already confirmed. An
    expired offer answers 409 with fresh offers.
 2. **Order history and status**: `GET /orders?shopperId=` (newest first, keyset
-   cursor), `GET /orders/{orderId}`, `GET /orders/{orderId}/tracking`.
-3. **Cancellation** (`POST /orders/{orderId}:cancel`): a request to
+   `cursor`, answered as `{items, nextCursor}`), `GET /orders/{orderId}`, `GET /orders/{orderId}/tracking`.
+3. **Cancellation** (`POST /orders/{orderId}/cancellations`): a request to
    order-sourcing for every unlocked group; order-sourcing accepts or refuses.
    An unkeepable promise cancels its group by policy.
 4. **Ship-to**: `GET /orders/{orderId}/ship-to`, the one restricted route that

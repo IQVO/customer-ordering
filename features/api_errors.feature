@@ -44,14 +44,14 @@ Feature: The REST API answers RFC 9457 problems for client mistakes
 
   Scenario: An empty cancellation reason fails validation
     Given the shopper has placed a cart of 3 lines in 2 groups
-    When the API posts to "/orders/order-1:cancel" with Idempotency-Key "empty-reason" the body:
+    When the API posts to "/orders/order-1/cancellations" with Idempotency-Key "empty-reason" the body:
       """
       {"reason": ""}
       """
     Then the API answers 422 with problem "validation-failed"
 
   Scenario: Cancelling an unknown order is not-found
-    When the API posts to "/orders/no-such-order:cancel" with Idempotency-Key "no-such" the body:
+    When the API posts to "/orders/no-such-order/cancellations" with Idempotency-Key "no-such" the body:
       """
       {"reason": "changed my mind"}
       """

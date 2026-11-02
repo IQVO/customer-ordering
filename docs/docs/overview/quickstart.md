@@ -107,7 +107,7 @@ configured`, `telemetry configured`, one `consumer running` line per consumer
 ## First calls
 
 REST is unauthenticated. Every state-changing request needs an
-`Idempotency-Key` header.
+`Idempotency-Key` header (1 to 128 printable ASCII characters).
 
 ```bash
 curl -si localhost:18080/readyz
@@ -143,13 +143,13 @@ Observed answers for the other first reads and the common mistakes:
 | `GET /shoppers?email=ANA@example.test` | `200`, the same profile (trimmed, lower-cased match) |
 | `GET /orders?shopperId=d1baa263-...` | `200 {"items":[]}`: no orders yet |
 | `GET /orders/ord-ghost` | `404` `/problems/not-found`, detail `order ord-ghost: not found` |
-| `POST /checkout` `{}` without the header | `400` `/problems/idempotency-key-required`, detail `send an Idempotency-Key header of 1 to 255 characters, unique per logical request` |
+| `POST /checkout` `{}` without the header | `400` `/problems/idempotency-key-required`, detail `send an Idempotency-Key header of 1 to 128 printable ASCII characters, unique per logical request` |
 | `POST /shoppers` with an unknown JSON field (`name`) | `400` `/problems/malformed-request`, detail `request is not valid for this operation: json: unknown field "name"` |
-| the same key again with another body | `422` `/problems/idempotency-key-reused` |
+| the same key again with another body | `409` `/problems/idempotency-key-reused` |
 
 The last two rows are one real sequence: the `400` was stored under
 `qs-shopper-1` (any response below 500 is stored for 24 h), so re-sending the
-corrected body with the same key was refused with `422`. A new key (`qs-shopper-2`
+corrected body with the same key was refused with `409`. A new key (`qs-shopper-2`
 above) succeeded. See [Troubleshooting](/docs/operations/troubleshooting).
 
 All errors are `application/problem+json`, for example:

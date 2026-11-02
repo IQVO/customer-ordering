@@ -98,8 +98,8 @@ func registerHTTPAssertions(sc *godog.ScenarioContext, w *world) {
 	sc.Step(`^the API response field "([^"]*)" is "([^"]*)"$`, w.apiFieldIs)
 	sc.Step(`^the API response contains no address$`, w.apiHasNoAddress)
 	sc.Step(`^the response is marked replayed$`, func() error {
-		if w.apiHeader.Get("Idempotent-Replayed") != "true" {
-			return fmt.Errorf("Idempotent-Replayed = %q, want true", w.apiHeader.Get("Idempotent-Replayed"))
+		if w.apiHeader.Get("Idempotency-Replayed") != "true" {
+			return fmt.Errorf("Idempotency-Replayed = %q, want true", w.apiHeader.Get("Idempotency-Replayed"))
 		}
 		return nil
 	})
