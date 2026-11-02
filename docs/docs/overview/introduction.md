@@ -101,3 +101,7 @@ outbound call is to `delivery-promise`
 | Read the decisions | [ADR index](/docs/adr) |
 
 Published at [https://iqvo.github.io/customer-ordering/](https://iqvo.github.io/customer-ordering/).
+
+:::note[Disclaimer]
+This project is a domain-driven design study. It is not associated with, endorsed by or affiliated with any company, and it uses no company's code, data, logos or trademarks. All names, figures and examples are illustrative or synthetic.
+:::
