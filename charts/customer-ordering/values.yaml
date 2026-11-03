@@ -119,6 +119,12 @@ config:
   # poison row cannot block it; re-arm with
   # `UPDATE outbox_events SET attempts = 0 WHERE id = ...`. 0 = unlimited.
   outboxMaxAttempts: 20
+  # COMPENSATION_RETRY_INTERVAL: compensation-cancels worker poll interval (Go
+  # duration or plain seconds). Empty = not rendered (the binary defaults to 5s).
+  compensationRetryInterval: ""
+  # COMPENSATION_MAX_ATTEMPTS: how many times a queued cancel may fail before
+  # the compensation worker excludes it. 0 = unlimited.
+  compensationMaxAttempts: 20
   # SHUTDOWN_DRAIN_DELAY: wait after /readyz flips before the listener closes.
   # Empty = not rendered (the binary defaults to 5s). Whole seconds ("5s"),
   # minutes ("1m") or "0"; the chart needs the number to size the grace period.
