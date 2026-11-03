@@ -41,14 +41,16 @@ const instructions = "Customer ordering of the retail network (read-only): read 
 	"order, cancelling one and registering a shopper are REST operations of customer-ordering, and the order " +
 	"lifecycle is driven by the events it consumes."
 
-// NewServer builds the MCP server for this bounded context with every tool
-// registered.
+// NewServer builds the MCP server for this bounded context with every tool,
+// resource, and workflow prompt registered.
 func NewServer(deps Deps) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: serverName, Version: serverVersion},
 		&mcp.ServerOptions{Instructions: instructions},
 	)
 	deps.registerTools(server)
+	deps.registerResources(server)
+	deps.registerPrompts(server)
 	return server
 }
 
