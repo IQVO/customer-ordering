@@ -42,7 +42,7 @@ func decodeJSON(r *http.Request, dest any) error {
 	dec := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dest); err != nil {
-		return fmt.Errorf("%w: %v", errMalformedRequest, err)
+		return fmt.Errorf("%w: %w", errMalformedRequest, err)
 	}
 	if dec.More() {
 		return fmt.Errorf("%w: trailing data after the JSON body", errMalformedRequest)
@@ -60,7 +60,7 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		detail = "an unexpected error occurred"
 	}
 	body := problemBody(r, p, detail)
-	var rq *usecases.RequoteRequired
+	var rq *usecases.RequoteRequiredError
 	if errors.As(err, &rq) {
 		body.RequotedOffers = requotedOffersDTO(rq.Offers)
 	}

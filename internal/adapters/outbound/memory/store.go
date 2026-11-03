@@ -33,21 +33,20 @@ type signalKey struct {
 	groupNo int
 }
 
-type idemKey struct{ route, key string }
-
 // Store is the shared state of the in-memory doubles.
 type Store struct {
-	mu          sync.Mutex
-	orders      map[customerorder.ID]customerorder.Snapshot
-	shoppers    map[shopper.ID]shopper.Snapshot
-	emails      map[string]shopper.ID
-	links       map[string]readmodel.AssignmentLink
-	packages    map[string]readmodel.Package
-	signals     map[signalKey]readmodel.GroupSignal
-	inbox       map[string]string
-	outbox      []shared.Event
-	idempotency map[idemKey]idempotency.Record
-	clock       ports.Clock
+	mu            sync.Mutex
+	orders        map[customerorder.ID]customerorder.Snapshot
+	shoppers      map[shopper.ID]shopper.Snapshot
+	emails        map[string]shopper.ID
+	links         map[string]readmodel.AssignmentLink
+	packages      map[string]readmodel.Package
+	signals       map[signalKey]readmodel.GroupSignal
+	inbox         map[string]string
+	outbox        []shared.Event
+	idempotency   map[string]idempotency.Record
+	compensations *Compensations
+	clock         ports.Clock
 }
 
 // NewStore returns an empty store. The clock is the authority the
@@ -59,8 +58,8 @@ func NewStore(clock ports.Clock) *Store {
 	return &Store{
 		orders: map[customerorder.ID]customerorder.Snapshot{}, shoppers: map[shopper.ID]shopper.Snapshot{}, emails: map[string]shopper.ID{},
 		links: map[string]readmodel.AssignmentLink{}, packages: map[string]readmodel.Package{},
-		signals: map[signalKey]readmodel.GroupSignal{}, inbox: map[string]string{}, idempotency: map[idemKey]idempotency.Record{},
-		clock: clock,
+		signals: map[signalKey]readmodel.GroupSignal{}, inbox: map[string]string{}, idempotency: map[string]idempotency.Record{},
+		compensations: &Compensations{}, clock: clock,
 	}
 }
 
@@ -128,6 +127,9 @@ func (s *Store) Inbox() *Inbox { return &Inbox{s} }
 
 // Outbox returns the EventOutbox double.
 func (s *Store) Outbox() *Outbox { return &Outbox{s} }
+
+// Compensations returns the CompensationQueue double.
+func (s *Store) Compensations() *Compensations { return s.compensations }
 
 // UnitOfWork returns the UnitOfWork double.
 func (s *Store) UnitOfWork() *UnitOfWork { return &UnitOfWork{s} }

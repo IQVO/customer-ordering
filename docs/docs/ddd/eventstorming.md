@@ -126,7 +126,7 @@ Source: `internal/adapters/inbound/kafka/handlers.go`,
 ```mermaid
 flowchart TB
     SH["Shopper"]:::actor
-    C1["CancelOrder<br/>POST /orders/id:cancel"]:::command
+    C1["CancelOrder<br/>POST /orders/id/cancellations"]:::command
     G["CustomerOrder"]:::aggregate
     E1["CustomerOrderCancelled<br/>groupNos of unlocked groups"]:::event
     OS["order-sourcing"]:::external

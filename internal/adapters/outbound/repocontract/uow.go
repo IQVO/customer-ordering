@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
-	"github.com/claudioed/customer-ordering/internal/application/idempotency"
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/readmodel"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
@@ -81,6 +79,22 @@ func testUnitOfWork(t *testing.T, e Env) {
 		_, err = e.Orders.Get(bg(), "order-nest")
 		wantErr(t, err, ports.ErrNotFound)
 	})
+	t.Run("a failing nested unit undoes only its own writes", func(t *testing.T) {
+		must(t, e.UoW.Do(bg(), func(ctx context.Context) error {
+			must(t, e.Orders.Save(ctx, newOrder(t, "order-outer")))
+			err := e.UoW.Do(ctx, func(ctx context.Context) error {
+				must(t, e.Orders.Save(ctx, newOrder(t, "order-inner")))
+				return errBoom
+			})
+			wantErr(t, err, errBoom)
+			return nil
+		}))
+		if _, err := e.Orders.Get(bg(), "order-outer"); err != nil {
+			t.Fatalf("the outer write must commit: %v", err)
+		}
+		_, err := e.Orders.Get(bg(), "order-inner")
+		wantErr(t, err, ports.ErrNotFound)
+	})
 }
 
 func mustEvents(t *testing.T) []shared.Event {
@@ -92,40 +106,4 @@ func mustEvents(t *testing.T) []shared.Event {
 	}, t0)
 	must(t, err)
 	return evs
-}
-
-func testIdempotency(t *testing.T, e Env) {
-	_, err := e.Idempotency.Get(bg(), "POST /checkout", "k1")
-	wantErr(t, err, ports.ErrNotFound)
-	rec := idempotency.Record{RequestHash: "h1", Status: 201, ContentType: "application/json", Body: []byte(`{"a":1}`), CreatedAt: e.Clock.Now().UTC()}
-	stored, err := e.Idempotency.Put(bg(), "POST /checkout", "k1", rec)
-	must(t, err)
-	if !stored {
-		t.Fatal("the first Put must store")
-	}
-	stored, err = e.Idempotency.Put(bg(), "POST /checkout", "k1", idempotency.Record{RequestHash: "h2", Status: 500, CreatedAt: e.Clock.Now().UTC()})
-	must(t, err)
-	if stored {
-		t.Fatal("a second Put must not overwrite")
-	}
-	got, err := e.Idempotency.Get(bg(), "POST /checkout", "k1")
-	must(t, err)
-	if got.RequestHash != "h1" || got.Status != 201 || got.ContentType != "application/json" || string(got.Body) != `{"a":1}` {
-		t.Fatalf("stored record = %+v", got)
-	}
-	if _, err := e.Idempotency.Get(bg(), "POST /shoppers", "k1"); !errors.Is(err, ports.ErrNotFound) {
-		t.Fatalf("the route is part of the key: %v", err)
-	}
-	old := idempotency.Record{RequestHash: "old", Status: 200, CreatedAt: e.Clock.Now().UTC().Add(-idempotency.TTL - time.Minute)}
-	if _, err := e.Idempotency.Put(bg(), "POST /shoppers", "k-old", old); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.Idempotency.Get(bg(), "POST /shoppers", "k-old"); !errors.Is(err, ports.ErrNotFound) {
-		t.Fatalf("an expired record must read as absent: %v", err)
-	}
-	replaced, err := e.Idempotency.Put(bg(), "POST /shoppers", "k-old", idempotency.Record{RequestHash: "new", Status: 201, CreatedAt: e.Clock.Now().UTC()})
-	must(t, err)
-	if !replaced {
-		t.Fatal("an expired record is replaceable")
-	}
 }

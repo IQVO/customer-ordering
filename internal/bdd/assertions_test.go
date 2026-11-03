@@ -145,7 +145,7 @@ func (w *world) groupRevised(n, rev int) error {
 
 func (w *world) noOrderExists() error {
 	if _, err := w.order(); !errors.Is(err, ports.ErrNotFound) {
-		return fmt.Errorf("an order exists or the lookup failed: %v", err)
+		return fmt.Errorf("an order exists or the lookup failed: %w", err)
 	}
 	return nil
 }
@@ -171,9 +171,9 @@ func registerRefusalAssertions(sc *godog.ScenarioContext, w *world) {
 	sc.Step(`^the cancellation is refused with "([^"]*)"$`, refused)
 	sc.Step(`^the registration is refused with "([^"]*)"$`, refused)
 	sc.Step(`^fresh offers are shown for groups 1 and 2$`, func() error {
-		var rq *usecases.RequoteRequired
+		var rq *usecases.RequoteRequiredError
 		if !errors.As(w.lastErr, &rq) {
-			return fmt.Errorf("want RequoteRequired, got %v", w.lastErr)
+			return fmt.Errorf("want RequoteRequiredError, got %w", w.lastErr)
 		}
 		seen := map[int]bool{}
 		for _, o := range rq.Offers {

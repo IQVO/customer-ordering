@@ -19,9 +19,9 @@ event-fed local read model; every consumer is idempotent on the CloudEvents id
 
 | Counterpart | Direction | Relationship | What |
 |---|---|---|---|
-| shopper / storefront | in (REST) | OHS | `POST /checkout`, `GET /orders/{id}`, `GET /orders/{id}/tracking`, `POST /orders/{id}:cancel`, `POST /shoppers` |
+| shopper / storefront | in (REST) | OHS | `POST /checkout`, `GET /orders/{id}`, `GET /orders/{id}/tracking`, `POST /orders/{id}/cancellations`, `POST /shoppers` |
 | shipping-and-tracking | in (REST) | Customer/Supplier | `GET /orders/{id}/ship-to` (restricted; the only PII exit) |
-| delivery-promise | out (REST) | Customer/Supplier | QuoteDeliveryOffers `POST /delivery-offers:quote`, MakePromise `POST /promises`, ConfirmPromise `POST /promises/{promiseId}:confirm` (E7), CancelPromise `POST /promises/{promiseId}:cancel` (compensation of a failed checkout, A14) |
+| delivery-promise | out (REST) | Customer/Supplier | QuoteDeliveryOffers `POST /delivery-quotes`, MakePromise `POST /promises`, ConfirmPromise `POST /promises/{promiseId}/confirmations` (E7), CancelPromise `POST /promises/{promiseId}/cancellations` (compensation of a failed checkout, A14) |
 | delivery-promise | in (events) | Customer/Supplier | PromiseAtRisk, PromiseRevised, PromiseKept, PromiseBroken, PromiseUnkeepable (E9) |
 | order-sourcing | in (events) | Conformist | FulfillmentLocked, FulfillmentShipped, FulfillmentUnsourceable, FulfillmentCancelled, FulfillmentCancelRefused (E11) |
 | shipping-and-tracking | in (events) | Conformist | LabelIssued, LabelVoided (E16), PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned (A19) |

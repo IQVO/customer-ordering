@@ -21,7 +21,7 @@ delivery-promise happen **before** the transaction. Error mapping is in
 | Use case | Trigger | Inbound adapter | Events raised |
 | --- | --- | --- | --- |
 | `PlaceOrder` | shopper (storefront, console, tests) | REST `POST /checkout` | `CustomerOrderPlaced` |
-| `CancelOrder` | shopper | REST `POST /orders/{orderId}:cancel` | `CustomerOrderCancelled` |
+| `CancelOrder` | shopper | REST `POST /orders/{orderId}/cancellations` | `CustomerOrderCancelled` |
 | `RegisterShopper` | storefront | REST `POST /shoppers` | none |
 | `AddSavedAddress` | shopper | REST `POST /shoppers/{shopperId}/addresses` | none |
 | `GetOrder`, `GetOrderTracking`, `GetShipTo` | any caller | REST, MCP, A2A (`GetShipTo`: REST and MCP only) | none |
@@ -105,7 +105,7 @@ Source: `internal/application/usecases/shopper.go`, `internal/domain/shopper`.
 | `GetOrder` | `GET /orders/{orderId}` | status, shopper, destination prefix, lines, groups with promises; never the address |
 | `GetOrderTracking` | `GET /orders/{orderId}/tracking` | per group: window, lock and ship times, at-risk and unsourceable signals, verdict and `lateByMinutes`, packages, lost and returned outcomes |
 | `GetShipTo` | `GET /orders/{orderId}/ship-to` | the only order read that returns the address; `Cache-Control: no-store`; restricted to label printing |
-| `ListOrdersByShopper` | `GET /orders?shopperId=&after=&limit=` | newest first, keyset cursor, default 20, maximum 100, unknown shopper 404, no address |
+| `ListOrdersByShopper` | `GET /orders?shopperId=&limit=&cursor=` | newest first, `{items, nextCursor}`, keyset on (placedAt, orderId), default 100, maximum 500, unknown shopper 404, no address |
 | `GetShopper` | `GET /shoppers/{shopperId}` | profile with `savedAddresses[]` |
 | `FindShopperByEmail` | `GET /shoppers?email=` | trimmed, lower-cased match; no match 404 |
 

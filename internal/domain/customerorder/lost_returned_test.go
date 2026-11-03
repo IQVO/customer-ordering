@@ -64,7 +64,7 @@ func TestMarkGroupLostAndReturnedByGroupState(t *testing.T) {
 					mustNil(t, err)
 					assertVersion(t, o, before)
 				default: // not shipped, DELIVERED, the other outcome or CANCELLED
-					assertErr(t, err, sharedIllegal)
+					assertErr(t, err, errSharedIllegal)
 					assertGroupStatus(t, o, 1, from)
 					assertVersion(t, o, before)
 				}
@@ -97,7 +97,7 @@ func TestAPackageDeliveredBeforeItIsLostCannotBeLost(t *testing.T) {
 	o := shippedPair(t)
 	mustNil(t, o.MarkGroupDelivered(1, "TRK-A", at(30)))
 	v := o.Version()
-	assertErr(t, o.MarkGroupLost(1, "TRK-A", at(40)), sharedIllegal)
+	assertErr(t, o.MarkGroupLost(1, "TRK-A", at(40)), errSharedIllegal)
 	assertVersion(t, o, v)
 	mustNil(t, o.MarkGroupLost(1, "TRK-B", at(41))) // the other package of the group may be lost
 	assertGroupStatus(t, o, 1, GroupLost)
@@ -110,9 +110,9 @@ func TestALostGroupIsTerminal(t *testing.T) {
 	o := shippedPair(t)
 	mustNil(t, o.MarkGroupLost(1, "TRK-A", at(50)))
 	v := o.Version()
-	assertErr(t, o.MarkGroupDelivered(1, "TRK-B", at(60)), sharedIllegal)
-	assertErr(t, o.MarkGroupReturned(1, "TRK-B", at(61)), sharedIllegal)
-	assertErr(t, o.UpdateGroupPromise("p-1", 1, at(2000), at(2300), at(1900), "", ""), sharedIllegal)
+	assertErr(t, o.MarkGroupDelivered(1, "TRK-B", at(60)), errSharedIllegal)
+	assertErr(t, o.MarkGroupReturned(1, "TRK-B", at(61)), errSharedIllegal)
+	assertErr(t, o.UpdateGroupPromise("p-1", 1, at(2000), at(2300), at(1900), "", ""), errSharedIllegal)
 	assertErr(t, o.MarkGroupShipped(1, []string{"TRK-A", "TRK-B"}, at(62)), ErrStatusRegression)
 	assertErr(t, o.MarkInFulfillment(1, "as-1", "fc-1", at(63)), ErrStatusRegression)
 	assertErr(t, o.ConfirmGroupCancelled(1, at(64)), ErrStatusRegression)

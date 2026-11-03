@@ -36,6 +36,13 @@ import (
 	"github.com/claudioed/customer-ordering/internal/application/usecases"
 )
 
+// agentName is this A2A agent's name in its card and skill tags; mediaTypeJSON
+// is the one input/output media mode every skill speaks.
+const (
+	agentName     = "customer-ordering"
+	mediaTypeJSON = "application/json"
+)
+
 // Config carries the deployment-specific identity of this agent: the absolute
 // URL clients use to reach its JSON-RPC endpoint (advertised on the Agent
 // Card) and the card version. It is supplied by the composition root from
@@ -77,7 +84,7 @@ func NewDeps(orders ports.OrderRepository, tracking ports.TrackingRepository) De
 // are added here, not in a redesign, if that decision is ever reversed.
 func Card(cfg Config) *a2a.AgentCard {
 	return &a2a.AgentCard{
-		Name: "customer-ordering",
+		Name: agentName,
 		Description: "Customer Ordering agent of the retail network: the read-only source of truth for placed customer orders. " +
 			"It answers where an order stands (its status, cart lines and the promise of every shipment group) and how it is " +
 			"travelling (per shipment group the promise window, verdict, at-risk signals and packages). It never places, cancels " +
@@ -90,8 +97,8 @@ func Card(cfg Config) *a2a.AgentCard {
 		SupportedInterfaces: []*a2a.AgentInterface{
 			a2a.NewAgentInterface(cfg.AgentURL, a2a.TransportProtocolJSONRPC),
 		},
-		DefaultInputModes:  []string{"application/json", "text/plain"},
-		DefaultOutputModes: []string{"application/json", "text/plain"},
+		DefaultInputModes:  []string{mediaTypeJSON, "text/plain"},
+		DefaultOutputModes: []string{mediaTypeJSON, "text/plain"},
 		Capabilities:       a2a.AgentCapabilities{Streaming: false},
 		Skills: []a2a.AgentSkill{
 			{
@@ -101,8 +108,8 @@ func Card(cfg Config) *a2a.AgentCard {
 					"PARTIALLY_DELIVERED, DELIVERED, LOST, RETURNED or CANCELLED), the shopper, the destination postal prefix, when it was placed, the cart " +
 					"lines and every shipment group with its promise (promiseId, tier, shipBy, deliverByEarliest, deliverByLatest), its status and revision " +
 					"and any cancellation request or refusal. The ship-to address is not part of it. Answers a 404 problem when no order has that id. Persists nothing.",
-				Tags:       []string{"order", "customer-ordering", "read"},
-				InputModes: []string{"application/json"},
+				Tags:       []string{"order", agentName, "read"},
+				InputModes: []string{mediaTypeJSON},
 				Examples: []string{
 					`{"skill":"get_order","arguments":{"orderId":"ord-3f9c1a2b"}}`,
 				},
@@ -113,8 +120,8 @@ func Card(cfg Config) *a2a.AgentCard {
 				Description: "Find out how one order is travelling, by its orderId: for every shipment group its promise window, status, lock and ship times, " +
 					"the at-risk and unsourceable signals, the promise verdict (and how many minutes late it ran) and its packages with carrier, state, last scan " +
 					"and exception; a lost or returned group also carries the outcome. Answers a 404 problem when no order has that id. Persists nothing.",
-				Tags:       []string{"order", "tracking", "customer-ordering", "read"},
-				InputModes: []string{"application/json"},
+				Tags:       []string{"order", "tracking", agentName, "read"},
+				InputModes: []string{mediaTypeJSON},
 				Examples: []string{
 					`{"skill":"get_order_tracking","arguments":{"orderId":"ord-3f9c1a2b"}}`,
 				},

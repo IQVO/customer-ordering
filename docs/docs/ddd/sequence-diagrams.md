@@ -32,13 +32,13 @@ sequenceDiagram
   end
   Note over UC: check lines, groups and destination prefix
   loop each group
-    UC->>DP: POST /promises/id:confirm
+    UC->>DP: POST /promises/id/confirmations
   end
   alt offer expired or unusable (404, 409, 422)
-    UC->>DP: POST /delivery-offers:quote per group
+    UC->>DP: POST /delivery-quotes per group
     UC-->>S: 409 offer-not-quotable with fresh offers
   else confirm failed after earlier confirms
-    UC->>DP: POST /promises/id:cancel for confirmed groups
+    UC->>DP: POST /promises/id/cancellations for confirmed groups
     UC-->>S: the confirm error (409, 422 or 503)
   else all confirmed
     UC->>PG: one transaction: save order and append CustomerOrderPlaced to outbox_events
@@ -69,7 +69,7 @@ sequenceDiagram
   participant K as Kafka
   participant OS as order-sourcing
   participant C as Consumer
-  S->>API: POST /orders/id:cancel (reason) with Idempotency-Key
+  S->>API: POST /orders/id/cancellations (reason) with Idempotency-Key
   API->>UC: Execute
   UC->>PG: load order
   alt no group is PROMISED and none requested before

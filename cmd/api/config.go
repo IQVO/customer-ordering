@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	compensationworker "github.com/claudioed/customer-ordering/internal/adapters/outbound/compensation"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/deliverypromise"
 	outboxrelay "github.com/claudioed/customer-ordering/internal/adapters/outbound/outbox"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/telemetry"
@@ -75,6 +76,40 @@ func splitBrokers(raw string) []string {
 		}
 	}
 	return out
+}
+
+// compensationInterval reads COMPENSATION_RETRY_INTERVAL (Go duration or
+// plain seconds), defaulting when unset, malformed or non-positive.
+func compensationInterval(raw string, logger *slog.Logger) time.Duration {
+	if raw == "" {
+		return compensationworker.DefaultInterval
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		if secs, serr := strconv.ParseFloat(raw, 64); serr == nil {
+			d, err = time.Duration(secs*float64(time.Second)), nil
+		}
+	}
+	if err != nil || d <= 0 {
+		logger.Warn("invalid COMPENSATION_RETRY_INTERVAL; using the default", "value", raw, "default", compensationworker.DefaultInterval)
+		return compensationworker.DefaultInterval
+	}
+	return d
+}
+
+// compensationMaxAttempts reads COMPENSATION_MAX_ATTEMPTS: how many times a
+// queued cancel may fail before the worker excludes it (default 20, 0 =
+// unlimited).
+func compensationMaxAttempts(raw string, logger *slog.Logger) int {
+	if raw == "" {
+		return compensationworker.DefaultMaxAttempts
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n < 0 {
+		logger.Warn("invalid COMPENSATION_MAX_ATTEMPTS; using the default", "value", raw, "default", compensationworker.DefaultMaxAttempts)
+		return compensationworker.DefaultMaxAttempts
+	}
+	return n
 }
 
 func joinBrokers(brokers []string) string { return strings.Join(brokers, ",") }

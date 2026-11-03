@@ -6,7 +6,7 @@ import "time"
 // TTL is how long a key is remembered (D3).
 const TTL = 24 * time.Hour
 
-// Record is the first response stored under (route, key).
+// Record is the first answer stored under an Idempotency-Key (the key is global).
 type Record struct {
 	RequestHash string
 	Status      int

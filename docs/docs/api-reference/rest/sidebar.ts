@@ -51,7 +51,7 @@ const sidebar: SidebarsConfig = {
         {
           type: "doc",
           id: "api-reference/rest/cancel-order",
-          label: "Request the cancellation of every group that is not yet locked",
+          label: "Request the cancellation of every group that is not yet locked (creates a cancellation request)",
           className: "api-method post",
         },
       ],

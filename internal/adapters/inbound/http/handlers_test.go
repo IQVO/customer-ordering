@@ -37,14 +37,14 @@ func TestCheckoutIsIdempotentOnTheKey(t *testing.T) {
 	if first.Status != 201 || second.Status != 201 || first.Body != second.Body {
 		t.Fatalf("replay differs:\n%d %s\n%d %s", first.Status, first.Body, second.Status, second.Body)
 	}
-	if second.Header.Get("Idempotent-Replayed") != "true" || first.Header.Get("Idempotent-Replayed") != "" {
-		t.Fatalf("replay header: first %q second %q", first.Header.Get("Idempotent-Replayed"), second.Header.Get("Idempotent-Replayed"))
+	if second.Header.Get("Idempotency-Replayed") != "true" || first.Header.Get("Idempotency-Replayed") != "" {
+		t.Fatalf("replay header: first %q second %q", first.Header.Get("Idempotency-Replayed"), second.Header.Get("Idempotency-Replayed"))
 	}
 	if n := len(e.gw.Made()); n != 2 {
 		t.Fatalf("%d promises made, want 2 (the replay must not call delivery-promise)", n)
 	}
 	other := e.do("POST", "/checkout", "same", strings.Replace(checkoutBody, "sku-100", "sku-101", 1))
-	if other.Status != 422 || other.json(t)["type"] != "/problems/idempotency-key-reused" {
+	if other.Status != 409 || other.json(t)["type"] != "/problems/idempotency-key-reused" {
 		t.Fatalf("a different body under the same key = %d %s", other.Status, other.Body)
 	}
 	if again := e.checkout("another-key"); again.json(t)["orderId"] == first.json(t)["orderId"] {
@@ -61,14 +61,29 @@ func TestDifferentKeysGiveStableDifferentOrderIDs(t *testing.T) {
 
 func TestIdempotencyKeyIsRequiredOnEveryPost(t *testing.T) {
 	e := newEnv(t)
-	long := strings.Repeat("k", 256)
-	for _, c := range []struct{ path, key, body string }{
-		{"/checkout", "", checkoutBody}, {"/orders/x:cancel", "", `{"reason":"r"}`}, {"/shoppers", "", `{"email":"a@b.co"}`}, {"/checkout", long, checkoutBody},
+	for _, c := range []struct{ path, body string }{
+		{"/checkout", checkoutBody}, {"/orders/x/cancellations", `{"reason":"r"}`}, {"/shoppers", `{"email":"a@b.co"}`},
+		{"/shoppers/s1/addresses", `{}`},
 	} {
-		r := e.do("POST", c.path, c.key, c.body)
+		r := e.do("POST", c.path, "", c.body)
 		if r.Status != 400 || r.Header.Get("Content-Type") != "application/problem+json" || r.json(t)["type"] != "/problems/idempotency-key-required" {
-			t.Fatalf("%s key %d chars = %d %s", c.path, len(c.key), r.Status, r.Body)
+			t.Fatalf("%s without a key = %d %s", c.path, r.Status, r.Body)
 		}
+	}
+}
+
+func TestAMalformedIdempotencyKeyIsInvalid(t *testing.T) {
+	e := newEnv(t)
+	for name, key := range map[string]string{
+		"129 characters": strings.Repeat("k", 129), "non-ASCII": "chave-é", "tab": "k\tk",
+	} {
+		r := e.do("POST", "/checkout", key, checkoutBody)
+		if r.Status != 400 || r.Header.Get("Content-Type") != "application/problem+json" || r.json(t)["type"] != "/problems/idempotency-key-invalid" {
+			t.Fatalf("%s = %d %s", name, r.Status, r.Body)
+		}
+	}
+	if r := e.do("POST", "/checkout", strings.Repeat("k", 128), checkoutBody); r.Status != 201 {
+		t.Fatalf("a 128 character key is valid: %d %s", r.Status, r.Body)
 	}
 }
 
@@ -152,13 +167,13 @@ func TestShipToIsOnlyServedByItsRoute(t *testing.T) {
 func TestCancelOrder(t *testing.T) {
 	e := newEnv(t)
 	id := e.placed()
-	r := e.do("POST", "/orders/"+id+":cancel", "c1", `{"reason":"changed my mind"}`)
+	r := e.do("POST", "/orders/"+id+"/cancellations", "c1", `{"reason":"changed my mind"}`)
 	o := r.json(t)
 	g := o["groups"].([]any)[0].(map[string]any)
 	if r.Status != 200 || g["status"] != "CANCELLATION_REQUESTED" || g["cancelReason"] != "changed my mind" || o["status"] != "PLACED" {
 		t.Fatalf("cancel = %d %s", r.Status, r.Body)
 	}
-	if again := e.do("POST", "/orders/"+id+":cancel", "c1", `{"reason":"changed my mind"}`); again.Body != r.Body || again.Header.Get("Idempotent-Replayed") != "true" {
+	if again := e.do("POST", "/orders/"+id+"/cancellations", "c1", `{"reason":"changed my mind"}`); again.Body != r.Body || again.Header.Get("Idempotency-Replayed") != "true" {
 		t.Fatalf("replay = %s", again.Body)
 	}
 	for _, c := range []struct {
@@ -166,9 +181,9 @@ func TestCancelOrder(t *testing.T) {
 		status     int
 		slug       string
 	}{
-		{"/orders/nope:cancel", `{"reason":"x"}`, 404, "not-found"},
-		{"/orders/" + id + ":cancel", `{"reason":""}`, 422, "validation-failed"},
-		{"/orders/" + id + ":cancel", `{"reasn":"x"}`, 400, "malformed-request"},
+		{"/orders/nope/cancellations", `{"reason":"x"}`, 404, "not-found"},
+		{"/orders/" + id + "/cancellations", `{"reason":""}`, 422, "validation-failed"},
+		{"/orders/" + id + "/cancellations", `{"reasn":"x"}`, 400, "malformed-request"},
 	} {
 		r := e.do("POST", c.path, "c-"+c.slug+c.body, c.body)
 		if r.Status != c.status || r.json(t)["type"] != "/problems/"+c.slug {

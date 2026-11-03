@@ -17,7 +17,7 @@ import (
 // /orders/{orderId}, /orders/{orderId}/tracking, /orders/{orderId}/ship-to);
 // the adapter never constructs an outbound adapter itself, and it holds no
 // write use case at all (docs/adr/0005). POST /checkout,
-// /orders/{orderId}:cancel and /shoppers stay REST-only.
+// /orders/{orderId}/cancellations and /shoppers stay REST-only.
 type Deps struct {
 	GetOrder         *usecases.GetOrder
 	GetOrderTracking *usecases.GetOrderTracking

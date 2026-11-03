@@ -33,7 +33,7 @@ flowchart LR
 
 `2` and `3` are separated on purpose: every promise is made and the order checked
 against them before any is confirmed. On a failed confirm the promises already
-confirmed are cancelled (`POST /promises/{id}:cancel`). Source:
+confirmed are cancelled (`POST /promises/{id}/cancellations`). Source:
 `internal/application/usecases/checkout.go`.
 
 ## Flow 2: the order moves through fulfilment
@@ -69,7 +69,7 @@ flowchart LR
   CO[customer-ordering]:::bc
   OS[order-sourcing]:::ctx
   DP[delivery-promise]:::ctx
-  S -->|"1 cmd CancelOrder: POST /orders/id:cancel"| CO
+  S -->|"1 cmd CancelOrder: POST /orders/id/cancellations"| CO
   CO ==>|"2 evt CustomerOrderCancelled: groupNos"| OS
   CO ==>|"2 evt CustomerOrderCancelled: groupNos"| DP
   OS ==>|"3 evt FulfillmentCancelled: group CANCELLED"| CO

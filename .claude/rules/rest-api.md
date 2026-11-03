@@ -12,11 +12,11 @@ in `internal/adapters/inbound/http/server.go` `NewRouter`, handlers in `handlers
 wired in `cmd/api/main.go` `buildServer`):
 
 - `POST /checkout` -> `PlaceOrder` (201; the order id derives from the Idempotency-Key; exactly one of `shipTo` / `shipToAddressId`, A25)
-- `GET /orders?shopperId=&after=&limit=` -> `ListOrdersByShopper` (newest first, keyset cursor, default limit 20 max 100, A26)
+- `GET /orders?shopperId=&cursor=&limit=` -> `ListOrdersByShopper` (newest first, keyset cursor, default limit 100 max 500, A26)
 - `GET /orders/{orderId}` -> `GetOrder`
 - `GET /orders/{orderId}/tracking` -> `GetOrderTracking`
 - `GET /orders/{orderId}/ship-to` -> `GetShipTo` (restricted: the only order route that returns the address)
-- `POST /orders/{orderId}:cancel` -> `CancelOrder` (body `{"reason"}`)
+- `POST /orders/{orderId}/cancellations` -> `CancelOrder` (body `{"reason"}`)
 - `POST /shoppers` -> `RegisterShopper` (201)
 - `GET /shoppers/{shopperId}` -> `GetShopper` (profile with `savedAddresses[]`, A27)
 - `GET /shoppers?email=` -> `FindShopperByEmail` (trimmed, lower-cased match, A16/A27)
@@ -38,7 +38,7 @@ wired in `cmd/api/main.go` `buildServer`):
   `errors_test.go` `TestEveryTypedErrorHasItsStatus`.
 - **Idempotency-Key** is required on the four state-changing routes
   (`idempotency.go`): same key + same request replays the first response
-  (`Idempotent-Replayed: true`), same key + other request is 422
+  (`Idempotency-Replayed: true`), same key + other request is 409
   `idempotency-key-reused`, missing key 400 `idempotency-key-required`, keys live 24 h
   in `idempotency_keys`. A new state-changing route registers through
   `s.idempotent(route)`, never a bare `r.Post`.

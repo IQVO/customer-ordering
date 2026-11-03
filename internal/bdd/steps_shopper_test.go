@@ -187,7 +187,7 @@ func (w *world) followHistoryCursor() error {
 	if cursor == "" {
 		return fmt.Errorf("no cursor to follow in %s", truncate(w.apiBody))
 	}
-	return w.call("GET", "/orders?shopperId="+url.QueryEscape(w.historyShopper)+"&after="+url.QueryEscape(cursor), "", "")
+	return w.call("GET", "/orders?shopperId="+url.QueryEscape(w.historyShopper)+"&cursor="+url.QueryEscape(cursor), "", "")
 }
 
 // listOrders requests one history page of the shopper, with an extra query

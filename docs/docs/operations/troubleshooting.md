@@ -38,10 +38,11 @@ messages are quoted exactly as `slog` writes them; see
 
 | Symptom | Cause | Check | Fix |
 | --- | --- | --- | --- |
-| 400 `idempotency-key-required` | a POST without the header, or a key outside 1 to 255 characters | the request headers | send a unique key per logical request |
-| 422 `idempotency-key-reused` right after a 400 | any response below 500 is stored under `(route, key)` for 24 h, including a rejected request; a corrected body with the same key then counts as a different request (reproduced in the [Quickstart](/docs/overview/quickstart)) | `SELECT * FROM idempotency_keys WHERE key = '...'` | use a new key; keep the body byte-stable per logical request |
+| 400 `idempotency-key-required` / `idempotency-key-invalid` | a POST without the header (required), or a key that is not 1 to 128 printable ASCII characters (invalid) | the request headers | send a client-generated UUID per logical request |
+| 409 `idempotency-key-reused` right after a 400 or on another route | any response below 500 is stored under the global key for 24 h, including a rejected request; a corrected body (or another method or path) with the same key then counts as a different request (reproduced in the [Quickstart](/docs/overview/quickstart)). A client bug: do not retry blindly | `SELECT * FROM idempotency_keys WHERE key = '...'` | use a new key; keep the body byte-stable per logical request |
 | 400 `malformed-request`, detail `json: unknown field "x"` | unknown field, trailing data, empty or invalid JSON (the decoder is strict) | the detail names the field | send only the fields of the OpenAPI schema |
-| 422 `validation-failed` | a domain or request validation failed (bad ship-to country code, empty cancel reason, bad `limit`, bad `after` cursor) | the detail | fix the input; `GET /orders` needs `shopperId` and `limit` at most 100 |
+| 422 `validation-failed` | a domain or request validation failed (bad ship-to country code, empty cancel reason, missing `shopperId`) | the detail | fix the input; `GET /orders` needs `shopperId` |
+| 400 `invalid-limit`, `invalid-cursor`, `unknown-query-parameter` | `limit` is not an integer from 1 to 500, `cursor` is not a token a previous page returned, or the query carries a parameter the list does not declare (the retired `after`, `offset`, `nextToken`) | the detail | send `limit` 1 to 500 and the `nextCursor` of the previous page as `cursor` |
 | 422 `line-without-promise`, `group-spans-nodes`, `promise-destination-mismatch` | the checkout groups do not cover each line exactly once, a group needs more than one node, or a promise was made for another destination | the detail | rebuild the checkout request from fresh offers |
 | 404 `not-found` | unknown order or shopper (also on `GET /orders?shopperId=` for an unknown shopper) | the id | check the id |
 | 409 `shopper-exists` | the lower-cased e-mail is registered | `GET /shoppers?email=` | use the existing shopper |

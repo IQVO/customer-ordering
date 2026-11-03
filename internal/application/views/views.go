@@ -6,6 +6,7 @@ package views
 import (
 	"time"
 
+	"github.com/claudioed/customer-ordering/internal/application/pagination"
 	"github.com/claudioed/customer-ordering/internal/application/promising"
 	"github.com/claudioed/customer-ordering/internal/application/readmodel"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
@@ -130,11 +131,11 @@ func ShopperFrom(s *shopper.Shopper) Shopper {
 	}
 }
 
-// OrderList is one page of a shopper's order history (NG2). NextCursor is
-// empty when the page is the last.
+// OrderList is one page of a shopper's order history (NG2). Next is the keyset
+// the next page starts after, nil when the page is the last.
 type OrderList struct {
-	Items      []Order
-	NextCursor string
+	Items []Order
+	Next  *pagination.Keyset
 }
 
 // TrackingPackage is one package of a group.

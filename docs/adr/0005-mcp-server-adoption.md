@@ -29,7 +29,7 @@ adapter is another driving adapter over them, not new domain.
   typed error of a read carries the REST problem slug (`not-found`) as the
   prefix of the tool error, and the REST adapter's id guard (1..64 characters)
   reads the same over both surfaces. `POST /checkout`,
-  `POST /orders/{orderId}:cancel` and `POST /shoppers` stay REST-only.
+  `POST /orders/{orderId}/cancellations` and `POST /shoppers` stay REST-only.
 - **Read-only is structural.** The adapter's `Deps` holds the three read use
   cases and nothing that can write; `NewDeps` hands over only the two read
   repositories, so the composition root never names the shared `usecases.Deps`

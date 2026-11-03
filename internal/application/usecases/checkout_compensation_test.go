@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/memory"
+	"github.com/claudioed/customer-ordering/internal/application/compensation"
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/usecases"
 )
@@ -36,7 +37,7 @@ func TestALaterConfirmFailureCancelsTheConfirmedPromises(t *testing.T) {
 	f := newFx(t)
 	f.gw.ConfirmErr["p-2"] = ports.ErrPromiseOfferNotQuotable
 	_, err := usecases.PlaceOrder{Deps: f.deps}.Execute(bg(), checkout("order-1"))
-	var rq *usecases.RequoteRequired
+	var rq *usecases.RequoteRequiredError
 	if !errors.As(err, &rq) {
 		t.Fatalf("the checkout fails with the failed-confirm answer (re-quote), got %v", err)
 	}
@@ -125,5 +126,57 @@ func TestARefusedCancelIsALowKeyWarningNotAnError(t *testing.T) {
 	out := logs.String()
 	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "nothing to release") || strings.Contains(out, "level=ERROR") {
 		t.Fatalf("a refused cancel is a warning, never an error: %s", out)
+	}
+}
+
+func TestACancelThatFailsIsEnqueuedForRetry(t *testing.T) {
+	f := newFx(t)
+	f.gw.ConfirmErr["p-2"] = ports.ErrPromiseCapacityExhausted
+	f.gw.CancelErr["p-1"] = ports.ErrPromiseUnavailable
+	_, err := usecases.PlaceOrder{Deps: f.deps}.Execute(bg(), checkout("order-1"))
+	if !errorsIs(err, ports.ErrPromiseCapacityExhausted) {
+		t.Fatalf("the checkout fails with the confirm error, not the cancel error: %v", err)
+	}
+	want := []compensation.Cancel{{OrderID: "order-1", GroupNo: 1, PromiseID: "p-1"}}
+	if got := f.cq.Enqueued(); len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("enqueued = %+v, want %+v", got, want)
+	}
+}
+
+func TestARefusedCancelIsNotEnqueued(t *testing.T) {
+	f := newFx(t)
+	f.gw.ConfirmErr["p-2"] = ports.ErrPromiseUnavailable
+	f.gw.CancelErr["p-2"] = ports.ErrPromiseNotCancellable
+	_, _ = usecases.PlaceOrder{Deps: f.deps}.Execute(bg(), checkout("order-1"))
+	if got := f.cq.Enqueued(); len(got) != 0 {
+		t.Fatalf("a refused cancel has nothing to release, enqueued = %+v", got)
+	}
+}
+
+func TestASucceededCancelIsNotEnqueued(t *testing.T) {
+	f := newFx(t)
+	f.gw.ConfirmErr["p-2"] = ports.ErrPromiseOfferNotQuotable
+	_, _ = usecases.PlaceOrder{Deps: f.deps}.Execute(bg(), checkout("order-1"))
+	if got := len(f.gw.Cancelled()); got != 1 {
+		t.Fatalf("the confirmed promise was cancelled, cancels = %d", got)
+	}
+	if got := f.cq.Enqueued(); len(got) != 0 {
+		t.Fatalf("only failed cancels are enqueued, enqueued = %+v", got)
+	}
+}
+
+func TestAQueueFailureDoesNotChangeTheCheckoutError(t *testing.T) {
+	f := newFx(t)
+	var logs bytes.Buffer
+	f.deps.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	f.cq.Err = errors.New("queue down")
+	f.gw.ConfirmErr["p-2"] = ports.ErrPromiseCapacityExhausted
+	f.gw.CancelErr["p-1"] = ports.ErrPromiseUnavailable
+	_, err := usecases.PlaceOrder{Deps: f.deps}.Execute(bg(), checkout("order-1"))
+	if !errorsIs(err, ports.ErrPromiseCapacityExhausted) {
+		t.Fatalf("the checkout still fails with the confirm error: %v", err)
+	}
+	if out := logs.String(); !strings.Contains(out, "enqueueing failed compensating cancels for retry failed") {
+		t.Fatalf("the queue failure is logged: %s", out)
 	}
 }

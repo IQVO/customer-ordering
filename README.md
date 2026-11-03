@@ -109,7 +109,7 @@ Contract: [`apis/asyncapi.yaml`](apis/asyncapi.yaml), catalogue in [ADR 0004](do
 - **Consumed**: delivery-promise `PromiseAtRisk`, `PromiseRevised`, `PromiseKept`, `PromiseBroken`, `PromiseUnkeepable`; order-sourcing `FulfillmentLocked`,
   `FulfillmentShipped`, `FulfillmentUnsourceable`, `FulfillmentCancelled`, `FulfillmentCancelRefused`; shipping-and-tracking `LabelIssued`, `LabelVoided`,
   `PackageScanned`, `PackageDelivered`, `PackageExceptionRaised`, `PackageLost`, `PackageReturned` (the last two close the group: LOST / RETURNED, ADR 0002 A19). Idempotent on the CloudEvents id, dispatched on the full type, bad messages go to `<topic>.dlq`.
-- **Synchronous calls**: delivery-promise `POST /delivery-offers:quote`, `POST /promises`, `POST /promises/{promiseId}:confirm`, and the compensating `POST /promises/{promiseId}:cancel` (only after a later confirm failed).
+- **Synchronous calls**: delivery-promise `POST /delivery-quotes`, `POST /promises`, `POST /promises/{promiseId}/confirmations`, and the compensating `POST /promises/{promiseId}/cancellations` (only after a later confirm failed).
 
 ## Running it
 
@@ -172,15 +172,17 @@ consumers. The chart's `otel.*` values render the env.
 
 Contract: [`apis/openapi.yaml`](apis/openapi.yaml). No authentication. Errors are RFC 9457 `application/problem+json` (`type` is `/problems/<slug>`, for
 example `not-found`, `illegal-transition`, `concurrent-update`, `validation-failed`, `cancel-after-lock`, `offer-not-quotable`).
-Every state-changing request needs an `Idempotency-Key` header: a repeat with the same request replays the first response for 24 hours; the same key
-with another request is 422 `idempotency-key-reused`.
+Every POST needs an `Idempotency-Key` header (1 to 128 printable ASCII characters, a client UUID per logical submit; missing is 400 `idempotency-key-required`,
+malformed 400 `idempotency-key-invalid`). The key is global: a repeat with the same method, path and body replays the first answer for 24 hours with
+`Idempotency-Replayed: true`; the same key with anything else is 409 `idempotency-key-reused`. The key row commits in the same transaction as the order and its
+outbox rows. Lists answer `{items, nextCursor}` (REST guideline: `docs/adr/0010`).
 
 | Method and path | Operation |
 | --- | --- |
 | `POST /checkout` | place an order (PlaceOrder; inline `shipTo` or a saved `shipToAddressId`) |
-| `GET /orders?shopperId=&after=&limit=` | a shopper's order history, newest first (ListOrdersByShopper) |
+| `GET /orders?shopperId=&limit=&cursor=` | a shopper's order history, newest first, keyset-paged `{items, nextCursor}` (ListOrdersByShopper) |
 | `GET /orders/{orderId}`, `GET /orders/{orderId}/tracking` | status, tracking |
-| `POST /orders/{orderId}:cancel` | request cancellation |
+| `POST /orders/{orderId}/cancellations` | request cancellation |
 | `GET /orders/{orderId}/ship-to` | restricted: the address, for shipping-and-tracking |
 | `POST /shoppers` | register a shopper |
 | `GET /shoppers/{shopperId}`, `GET /shoppers?email=` | shopper profile with saved addresses, shopper by e-mail |

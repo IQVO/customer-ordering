@@ -31,6 +31,14 @@ func TestPostgresHonoursTheRepositoryContract(t *testing.T) {
 				}
 				return n
 			},
+			Compensations: postgres.NewCompensationRepo(pool),
+			CompensationCount: func(t *testing.T) int {
+				var n int
+				if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM compensation_cancels`).Scan(&n); err != nil {
+					t.Fatal(err)
+				}
+				return n
+			},
 		}
 	})
 }

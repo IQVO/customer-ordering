@@ -1,8 +1,8 @@
 Feature: A replayed request with the same Idempotency-Key is answered from the record
-  The first response below 500 of a (route, key) is stored; the same key with
-  the same body replays it byte for byte (marked Idempotent-Replayed) and
-  nothing runs again — no second promise, no second event. The same key with
-  another body is refused as a reuse.
+  The first response below 500 of a key (the key is global) is stored; the same
+  key with the same method, path and body replays it byte for byte (marked
+  Idempotency-Replayed) and nothing runs again — no second promise, no second
+  event. The same key with another request is refused as a reuse (409).
 
   Background:
     Given a registered shopper
@@ -27,17 +27,30 @@ Feature: A replayed request with the same Idempotency-Key is answered from the r
       """
       {"shopperId": "shopper-1"}
       """
-    Then the API answers 422 with problem "idempotency-key-reused"
+    Then the API answers 409 with problem "idempotency-key-reused"
+
+  Scenario: The same key on another route is refused as a reuse
+    When the API checks out the cart of 3 lines in 2 groups with Idempotency-Key "key-3"
+    Then the API answers 201
+    When the API posts to "/shoppers" with Idempotency-Key "key-3" the body:
+      """
+      {"email": "reuse@example.com"}
+      """
+    Then the API answers 409 with problem "idempotency-key-reused"
+
+  Scenario: A malformed Idempotency-Key is refused
+    When the API checks out the cart of 3 lines in 2 groups with Idempotency-Key "chave-é"
+    Then the API answers 400 with problem "idempotency-key-invalid"
 
   Scenario: A replayed cancellation publishes no second event
     Given the shopper has placed a cart of 3 lines in 2 groups
-    When the API posts to "/orders/order-1:cancel" with Idempotency-Key "cancel-1" the body:
+    When the API posts to "/orders/order-1/cancellations" with Idempotency-Key "cancel-1" the body:
       """
       {"reason": "changed my mind"}
       """
     Then the API answers 200
     And 1 "CustomerOrderCancelled" events were published
-    When the API posts to "/orders/order-1:cancel" with Idempotency-Key "cancel-1" the body:
+    When the API posts to "/orders/order-1/cancellations" with Idempotency-Key "cancel-1" the body:
       """
       {"reason": "changed my mind"}
       """
