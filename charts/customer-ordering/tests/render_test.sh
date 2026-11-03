@@ -22,6 +22,7 @@ base=(--set database.url=postgres://u@example.invalid:5432/db
 for g in "${groups[@]}"; do base+=(--set "config.${g%%:*}=${g#*:}"); done
 # Every optional value set, so every env var cmd/api can read is rendered.
 everything=(--set config.deliveryPromiseTimeout=3s --set config.outboxRelayInterval=2s
+  --set config.compensationRetryInterval=9s
   --set config.shutdownDrainDelay=5s --set database.migrationsUrl=postgres://u@example.invalid:5432/direct
   --set autoscaling.api.enabled=true --set ingress.enabled=true --set gatewayApi.enabled=true)
 
@@ -44,17 +45,29 @@ grep -q 'checksum/config:' <<<"$api_deployment" || fail "the pods must roll when
 
 # A tuned config.* value reaches the ConfigMap the api mounts and the container env.
 tuned="$(helm template "$release" "$chart_dir" "${base[@]}" --set config.outboxRelayInterval=7s --set config.outboxMaxAttempts=5 \
+  --set config.compensationRetryInterval=11s --set config.compensationMaxAttempts=6 \
   --set config.deliveryPromiseTimeout=2s --show-only templates/configmap.yaml)"
 grep -q 'OUTBOX_RELAY_INTERVAL: "7s"' <<<"$tuned" || fail "config.outboxRelayInterval is not rendered into the ConfigMap"
 grep -q 'OUTBOX_MAX_ATTEMPTS: "5"' <<<"$tuned" || fail "config.outboxMaxAttempts is not rendered into the ConfigMap"
+grep -q 'COMPENSATION_RETRY_INTERVAL: "11s"' <<<"$tuned" || fail "config.compensationRetryInterval is not rendered into the ConfigMap"
+grep -q 'COMPENSATION_MAX_ATTEMPTS: "6"' <<<"$tuned" || fail "config.compensationMaxAttempts is not rendered into the ConfigMap"
 grep -q 'DELIVERY_PROMISE_TIMEOUT: "2s"' <<<"$tuned" || fail "config.deliveryPromiseTimeout is not rendered into the ConfigMap"
 
 # The relay attempt cap defaults to 20 and 0 (unlimited) is rendered as is.
 grep -q 'OUTBOX_MAX_ATTEMPTS: "20"' <<<"$configmap" || fail "OUTBOX_MAX_ATTEMPTS must default to 20"
 grep -A1 'name: OUTBOX_MAX_ATTEMPTS' <<<"$api_deployment" | grep -q 'value: "20"' \
   || fail "api Deployment does not set OUTBOX_MAX_ATTEMPTS"
-unlimited="$(helm template "$release" "$chart_dir" "${base[@]}" --set config.outboxMaxAttempts=0 --show-only templates/configmap.yaml)"
+# The compensation worker's attempt cap defaults to 20 and renders in both places;
+# an unset COMPENSATION_RETRY_INTERVAL renders nothing (binary default 5s).
+grep -q 'COMPENSATION_MAX_ATTEMPTS: "20"' <<<"$configmap" || fail "COMPENSATION_MAX_ATTEMPTS must default to 20"
+grep -A1 'name: COMPENSATION_MAX_ATTEMPTS' <<<"$api_deployment" | grep -q 'value: "20"' \
+  || fail "api Deployment does not set COMPENSATION_MAX_ATTEMPTS"
+if grep -q 'COMPENSATION_RETRY_INTERVAL' <<<"$configmap"; then
+  fail "COMPENSATION_RETRY_INTERVAL must not render when config.compensationRetryInterval is empty"
+fi
+unlimited="$(helm template "$release" "$chart_dir" "${base[@]}" --set config.outboxMaxAttempts=0 --set config.compensationMaxAttempts=0 --show-only templates/configmap.yaml)"
 grep -q 'OUTBOX_MAX_ATTEMPTS: "0"' <<<"$unlimited" || fail "config.outboxMaxAttempts=0 is not rendered"
+grep -q 'COMPENSATION_MAX_ATTEMPTS: "0"' <<<"$unlimited" || fail "config.compensationMaxAttempts=0 is not rendered"
 zero_drain="$(helm template "$release" "$chart_dir" "${base[@]}" --set config.shutdownDrainDelay=0 --show-only templates/configmap.yaml)"
 grep -q 'SHUTDOWN_DRAIN_DELAY: "0"' <<<"$zero_drain" || fail "config.shutdownDrainDelay=0 is not rendered"
 

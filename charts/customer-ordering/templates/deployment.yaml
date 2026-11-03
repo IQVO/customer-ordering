@@ -86,6 +86,14 @@ spec:
             # The relay excludes a row after this many failures (0 = unlimited).
             - name: OUTBOX_MAX_ATTEMPTS
               value: {{ .Values.config.outboxMaxAttempts | quote }}
+            {{- if ne (toString .Values.config.compensationRetryInterval) "" }}
+            - name: COMPENSATION_RETRY_INTERVAL
+              value: {{ .Values.config.compensationRetryInterval | quote }}
+            {{- end }}
+            # The compensation worker excludes a queued cancel after this many
+            # failures (0 = unlimited).
+            - name: COMPENSATION_MAX_ATTEMPTS
+              value: {{ .Values.config.compensationMaxAttempts | quote }}
             {{- if ne (toString .Values.config.shutdownDrainDelay) "" }}
             - name: SHUTDOWN_DRAIN_DELAY
               value: {{ .Values.config.shutdownDrainDelay | quote }}
