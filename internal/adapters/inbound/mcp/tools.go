@@ -250,11 +250,14 @@ func (d Deps) getShipTo(ctx context.Context, in orderIDInput) (shipToView, error
 // --- registry -----------------------------------------------------------------
 
 // registerTools adds the three read-only tools. Every tool is annotated
-// read-only, idempotent and closed-world; TestToolSurface pins the set and
-// fails the build on any write-verb name (docs/adr/0005).
+// read-only, idempotent and closed-world (the annotations literal is inlined
+// per tool so the authority sensor can prove ReadOnlyHint statically —
+// identical values); every tool declares its authority level (Agentic
+// Standard v2, AS-1): a pure read of this context's own state is L1.
+// TestToolSurface pins the set and fails the build on any write-verb tool
+// name (docs/adr/0005).
 func (d Deps) registerTools(server *mcp.Server) {
 	closedWorld := false
-	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld}
 
 	addTool(server, &mcp.Tool{
 		Name: "get_order",
@@ -264,7 +267,8 @@ func (d Deps) registerTools(server *mcp.Server) {
 			"deliverByLatest), the line numbers it ships, its status and revision, and the cancellation request or " +
 			"refusal facts when there were any. The ship-to address is NOT part of it (use get_ship_to). Read-only; " +
 			"an unknown or malformed order id fails with not-found.",
-		Annotations: readOnly,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld},
+		Meta:        authorityMeta(authorityL1),
 	}, d.getOrder)
 
 	addTool(server, &mcp.Tool{
@@ -276,7 +280,8 @@ func (d Deps) registerTools(server *mcp.Server) {
 			"carrier, state, last scan node and time, delivery time and exception reason; a lost or returned group " +
 			"also carries lostAt/returnedAt and the outcome package. Read-only; an unknown or malformed order id " +
 			"fails with not-found.",
-		Annotations: readOnly,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld},
+		Meta:        authorityMeta(authorityL1),
 	}, d.getOrderTracking)
 
 	addTool(server, &mcp.Tool{
@@ -285,7 +290,8 @@ func (d Deps) registerTools(server *mcp.Server) {
 			"countryCode, phone). It is synthetic PII held only by this context and served by this one read, which " +
 			"REST restricts to label printing; it never appears in an event. Read-only; an unknown or malformed " +
 			"order id fails with not-found.",
-		Annotations: readOnly,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld},
+		Meta:        authorityMeta(authorityL1),
 	}, d.getShipTo)
 }
 
