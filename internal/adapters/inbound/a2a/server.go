@@ -108,7 +108,7 @@ func Card(cfg Config) *a2a.AgentCard {
 					"PARTIALLY_DELIVERED, DELIVERED, LOST, RETURNED or CANCELLED), the shopper, the destination postal prefix, when it was placed, the cart " +
 					"lines and every shipment group with its promise (promiseId, tier, shipBy, deliverByEarliest, deliverByLatest), its status and revision " +
 					"and any cancellation request or refusal. The ship-to address is not part of it. Answers a 404 problem when no order has that id. Persists nothing.",
-				Tags:       []string{"order", agentName, "read"},
+				Tags:       []string{"order", agentName, "read", "authority:L1"},
 				InputModes: []string{mediaTypeJSON},
 				Examples: []string{
 					`{"skill":"get_order","arguments":{"orderId":"ord-3f9c1a2b"}}`,
@@ -120,7 +120,7 @@ func Card(cfg Config) *a2a.AgentCard {
 				Description: "Find out how one order is travelling, by its orderId: for every shipment group its promise window, status, lock and ship times, " +
 					"the at-risk and unsourceable signals, the promise verdict (and how many minutes late it ran) and its packages with carrier, state, last scan " +
 					"and exception; a lost or returned group also carries the outcome. Answers a 404 problem when no order has that id. Persists nothing.",
-				Tags:       []string{"order", "tracking", agentName, "read"},
+				Tags:       []string{"order", "tracking", agentName, "read", "authority:L1"},
 				InputModes: []string{mediaTypeJSON},
 				Examples: []string{
 					`{"skill":"get_order_tracking","arguments":{"orderId":"ord-3f9c1a2b"}}`,

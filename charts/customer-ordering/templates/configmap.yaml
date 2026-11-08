@@ -27,6 +27,10 @@ data:
   OUTBOX_RELAY_INTERVAL: {{ .Values.config.outboxRelayInterval | quote }}
   {{- end }}
   OUTBOX_MAX_ATTEMPTS: {{ .Values.config.outboxMaxAttempts | quote }}
+  {{- if ne (toString .Values.config.compensationRetryInterval) "" }}
+  COMPENSATION_RETRY_INTERVAL: {{ .Values.config.compensationRetryInterval | quote }}
+  {{- end }}
+  COMPENSATION_MAX_ATTEMPTS: {{ .Values.config.compensationMaxAttempts | quote }}
   {{- if ne (toString .Values.config.shutdownDrainDelay) "" }}
   SHUTDOWN_DRAIN_DELAY: {{ .Values.config.shutdownDrainDelay | quote }}
   {{- end }}

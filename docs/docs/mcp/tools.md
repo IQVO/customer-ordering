@@ -25,18 +25,21 @@ in-cluster ClusterIP boundary, like REST and A2A.
 The three tools call the **same read use cases** the REST adapter uses
 (`GetOrder`, `GetOrderTracking`, `GetShipTo`), so an answer is the REST body of
 the corresponding route. All three carry the annotations `readOnlyHint: true`,
-`idempotentHint: true`, `openWorldHint: false`.
+`idempotentHint: true`, `openWorldHint: false` and declare the agent authority
+level `L1` (a pure read of this context's own state) in `_meta` under
+`com.warehouse/authority` — the fleet's Agentic Standard v2
+([ADR 0011](/docs/adr/0011-agent-authority-levels-and-complete-mcp-surface)).
 
 ## Tools
 
 The answers below were captured from a live `tools/list` against `cmd/mcp`
 built from this branch.
 
-| Tool | Input | Annotation | Reads | REST equivalent |
-| --- | --- | --- | --- | --- |
-| `get_order` | `orderId` (string, required) | read-only, idempotent | status, shopper, destination postal prefix, placed time, the cart lines (`lineNo`, `catalogItemId`, `quantity`) and every shipment group with its promise (`promiseId`, `tier`, `shipBy`, `deliverByEarliest`, `deliverByLatest`), line numbers, `status`, `revisionNo` and cancellation facts. **No address.** | `GET /orders/{orderId}` |
-| `get_order_tracking` | `orderId` (string, required) | read-only, idempotent | per group: promise window, status, `lockedAt`, `shippedAt`, at-risk and unsourceable reasons, `promiseVerdict` and `lateByMinutes`, `lostAt`/`returnedAt` and `outcomePackage`, and the packages (`trackingNumber`, `carrier`, `state`, last scan node and time, `deliveredAt`, `exceptionReason`). | `GET /orders/{orderId}/tracking` |
-| `get_ship_to` | `orderId` (string, required) | read-only, idempotent | the synthetic ship-to address (`name`, `line1`, `line2`, `city`, `region`, `postalCode`, `countryCode`, `phone`). Restricted to label printing in REST; it never appears in an event. | `GET /orders/{orderId}/ship-to` |
+| Tool | Input | Annotation | Authority | Reads | REST equivalent |
+| --- | --- | --- | --- | --- | --- |
+| `get_order` | `orderId` (string, required) | read-only, idempotent | `L1` | status, shopper, destination postal prefix, placed time, the cart lines (`lineNo`, `catalogItemId`, `quantity`) and every shipment group with its promise (`promiseId`, `tier`, `shipBy`, `deliverByEarliest`, `deliverByLatest`), line numbers, `status`, `revisionNo` and cancellation facts. **No address.** | `GET /orders/{orderId}` |
+| `get_order_tracking` | `orderId` (string, required) | read-only, idempotent | `L1` | per group: promise window, status, `lockedAt`, `shippedAt`, at-risk and unsourceable reasons, `promiseVerdict` and `lateByMinutes`, `lostAt`/`returnedAt` and `outcomePackage`, and the packages (`trackingNumber`, `carrier`, `state`, last scan node and time, `deliveredAt`, `exceptionReason`). | `GET /orders/{orderId}/tracking` |
+| `get_ship_to` | `orderId` (string, required) | read-only, idempotent | `L1` | the synthetic ship-to address (`name`, `line1`, `line2`, `city`, `region`, `postalCode`, `countryCode`, `phone`). Restricted to label printing in REST; it never appears in an event. | `GET /orders/{orderId}/ship-to` |
 
 Every input schema is `{"type":"object","properties":{"orderId":{"type":"string","description":"the order id, e.g. ord-3f9c1a2b"}},"required":["orderId"],"additionalProperties":false}`;
 every tool also declares an output schema with `additionalProperties: false`.
@@ -45,7 +48,42 @@ There are no write tools. Placing an order, cancelling one and registering a
 shopper are REST operations of `cmd/api`; the order lifecycle is driven by the
 events it consumes ([Integration](/docs/ecosystem/integration)).
 
+## Resource
+
+One scoped read model, loadable without a tool call (`resources/list`,
+`resources/read`; `L1` by nature, like every read here):
+
+| URI template | MIME | Model |
+| --- | --- | --- |
+| `warehouse://customer-ordering/orders/{orderId}/tracking` | `application/json` | the order-tracking read model of ONE order — the same `GetOrderTracking` use case as `get_order_tracking` and `GET /orders/{orderId}/tracking`: per group the promise window, status, verdicts, signals and packages. Never a dump of a table; the ship-to address is not a resource. |
+
+An unknown or malformed order id is an error, exactly like the tool.
+
+## Prompt
+
+One operator SOP (`prompts/list`, `prompts/get`):
+
+| Prompt | Argument | Returns |
+| --- | --- | --- |
+| `triage_order_status` | `orderId` (string, required) | the standard operating procedure for answering a customer's question about one order: read the order, read its tracking, interpret the promise verdicts and signals, know what to escalate (a LOST group, a big lateness, any change request). It names tools but never calls them, and it cannot write. |
+
 ## Try it
+
+The handler is **stateless** ([ADR 0011](/docs/adr/0011-agent-authority-levels-and-complete-mcp-surface)):
+no `Mcp-Session-Id` is issued, and the server answers both the 2026-07-28
+per-request handshake and legacy `initialize` clients. A 2026-07-28 client can
+call `tools/list` directly — no initialize, no session:
+
+```bash
+curl -s -X POST localhost:8090/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/list' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+```
+
+Every tool in the answer carries its authority level:
+`"_meta":{"com.warehouse/authority":"L1"}`. A legacy `initialize` (for example
+`2025-06-18`) still answers `200` — and issues no session id:
 
 ```bash
 curl -s -X POST localhost:8090/mcp \
@@ -53,18 +91,15 @@ curl -s -X POST localhost:8090/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"docs","version":"0"}}}' -i
 ```
 
-The answer carries an `Mcp-Session-Id` header; send it, with
-`Mcp-Protocol-Version: 2025-06-18`, on every later request (first the
-`notifications/initialized` notification, then `tools/list` or `tools/call`).
-Real `initialize` result (abridged):
+Real `initialize` result (abridged; note there is no `Mcp-Session-Id` header —
+a legacy client that does not need one for these reads sees no other change):
 
 ```text
 HTTP/1.1 200 OK
 Content-Type: text/event-stream
-Mcp-Session-Id: 47PK4I7I2YMPF5MQ23P4QRB3JI
 
 event: message
-data: {"jsonrpc":"2.0","id":1,"result":{"capabilities":{"logging":{},"tools":{"listChanged":true}},"instructions":"Customer ordering of the retail network (read-only): read a placed order with get_order ... Nothing here changes data: placing an order, cancelling one and registering a shopper are REST operations of customer-ordering ...","protocolVersion":"2025-06-18","serverInfo":{"name":"customer-ordering-mcp","version":"1.0.0"}}}
+data: {"jsonrpc":"2.0","id":1,"result":{"capabilities":{"logging":{},"prompts":{"listChanged":true},"resources":{"listChanged":true},"tools":{"listChanged":true}},"instructions":"Customer ordering of the retail network (read-only): read a placed order with get_order ... Nothing here changes data: placing an order, cancelling one and registering a shopper are REST operations of customer-ordering ...","protocolVersion":"2025-06-18","serverInfo":{"name":"customer-ordering-mcp","version":"1.0.0"}}}
 ```
 
 ## Errors
