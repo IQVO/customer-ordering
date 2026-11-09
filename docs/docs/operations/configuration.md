@@ -37,6 +37,8 @@ Source: `cmd/api/main.go` (`run`), `cmd/api/config.go` (`loadRuntime`),
 | `SHIPPING_CONSUMER_GROUP` | none | **yes** | Group id of the shipping-and-tracking consumer (topic `retailnetwork.shipping-and-tracking.events`). |
 | `OUTBOX_RELAY_INTERVAL` | `1s` | no | Pause between relay passes that did not fill a batch. A Go duration (`500ms`) or plain seconds (`2`, `0.5`). Unparsable or non-positive values log a WARN and use the default. |
 | `OUTBOX_MAX_ATTEMPTS` | `20` | no | Failures after which the relay stops claiming an outbox row. `0` = unlimited. Negative or unparsable values log a WARN and use `20`. |
+| `COMPENSATION_RETRY_INTERVAL` | `5s` | no | Poll interval of the compensation worker, which retries the promise cancels a failed checkout could not perform (table `compensation_cancels`). A Go duration (`500ms`) or plain seconds (`2`). Unparsable or non-positive values log a WARN and use `5s`. Read by `cmd/api` only. |
+| `COMPENSATION_MAX_ATTEMPTS` | `20` | no | Failures after which the compensation worker stops claiming a queued cancel (it logs the row once and leaves it for an operator to re-arm). `0` = unlimited. Negative or unparsable values log a WARN and use `20`. Read by `cmd/api` only. |
 | `SHUTDOWN_DRAIN_DELAY` | `5s` | no | After SIGINT/SIGTERM `/readyz` flips to 503 and the process waits this long before closing the listener. `0` disables the wait. Negative or unparsable values log a WARN and use `5s`. Read when the signal arrives. |
 | `LOG_LEVEL` | `info` | no | `debug`, `info`, `warn` (or `warning`), `error`, case-insensitive; anything else falls back to `info`. Logs are JSON on stdout. |
 | `OTEL_SERVICE_NAME` | `customer-ordering` | no | `service.name` of spans and metrics. |

@@ -24,13 +24,13 @@ The chart deploys up to four workloads from one image
 
 | Workload | Binary | Port | What runs in it | Dependencies |
 | --- | --- | --- | --- | --- |
-| `api` (Deployment `customer-ordering`) | `cmd/api` | `8080` (`config.httpAddr`; Service port 80) | REST API, the **outbox relay** and the **three Kafka consumers** in one process | Postgres, Kafka, delivery-promise |
+| `api` (Deployment `customer-ordering`) | `cmd/api` | `8080` (`config.httpAddr`; Service port 80) | REST API, the **outbox relay**, the **compensation worker** and the **three Kafka consumers** in one process | Postgres, Kafka, delivery-promise |
 | `mcp` (`customer-ordering-mcp`, `mcp.enabled`) | `cmd/mcp` | `8090` | read-only MCP, Streamable HTTP | Postgres only |
 | `a2a` (`customer-ordering-a2a`, `a2a.enabled`) | `cmd/a2a` | `8093` | read-only A2A agent, JSON-RPC and Agent Card | Postgres only |
 | `frontend` (`customer-ordering-frontend`, `frontend.enabled`) | static assets of `web/` | | the `customer_ordering_mfe` console remote, served under `/mfes/customer-ordering/` | none |
 
-There is no in-memory mode and no worker that can be switched off. If the relay
-or any consumer returns on its own, `cmd/api` exits non-zero so the
+There is no in-memory mode and no worker that can be switched off. If the relay,
+the compensation worker or any consumer returns on its own, `cmd/api` exits non-zero so the
 orchestrator replaces the pod (`cmd/api/main.go`, `serveUntilSignal` and
 `watchWorkers`). `cmd/mcp` and `cmd/a2a` can never write: no write use case is
 wired, so they cannot insert into the outbox. They also run the idempotent
@@ -81,22 +81,27 @@ Kong routes `/api/customer-ordering` (prefix stripped),
 
 SIGINT/SIGTERM on `cmd/api`: (1) `/readyz` 503, (2) wait `SHUTDOWN_DRAIN_DELAY`
 (5 s), (3) drain HTTP (10 s), (4) stop and await each consumer (10 s each),
-(5) stop and await the relay LAST so nothing committed above is stranded,
-(6) close the pool, then flush telemetry (5 s). Worst case 5 + 10 + 3 x 10 + 10
-= 55 s, so `terminationGracePeriodSeconds` must exceed `SHUTDOWN_DRAIN_DELAY`
-plus 50 s: the chart default is 60 and the chart refuses less. `cmd/mcp` and
+(5) stop and await the compensation worker (10 s), (6) stop and await the relay
+LAST so nothing committed above is stranded, (7) close the pool, then flush
+telemetry (5 s). Worst case 5 + 10 + 3 x 10 + 10 + 10 = 65 s. The chart refuses a
+`terminationGracePeriodSeconds` of `SHUTDOWN_DRAIN_DELAY` plus 50 s or less
+(default 60), and that guard does not count the compensation worker's 10 s
+(`charts/customer-ordering/templates/_helpers.tpl`); a worst-case shutdown can
+therefore outlast the default grace period, although each wait ends as soon as
+its worker stops. `cmd/mcp` and
 `cmd/a2a` drain their HTTP server (10 s) and close the pool.
 
 ## Migrations
 
 Embedded SQL (`internal/adapters/outbound/postgres/migrations/`, golang-migrate,
-four versions: `0001_customer_ordering_schema`, `0002_package_lost_and_returned`,
-`0003_shopper_addresses_and_order_history`, `0004_group_window_time_zone`) runs at
+five versions: `0001_customer_ordering_schema`, `0002_package_lost_and_returned`,
+`0003_shopper_addresses_and_order_history`, `0004_group_window_time_zone`,
+`0005_compensation_cancels`) runs at
 every boot inside a bounded retry (`internal/bootretry`) that tolerates a sidecar's
 first-dial reset; exhaustion refuses boot. Concurrent starts are safe
 (golang-migrate's advisory lock), which is why `MIGRATIONS_DATABASE_URL` must be a
 **direct** DSN when `DATABASE_URL` goes through PgBouncer. Check the state with
-`SELECT version, dirty FROM schema_migrations;` (a real fresh run reads `4 | f`).
+`SELECT version, dirty FROM schema_migrations;` (a fresh run reads `5 | f`: version 5 is `0005_compensation_cancels`).
 A `dirty = t` row means a migration died midway: repair the schema by hand,
 clear the flag (golang-migrate `force <version>`) and restart. The runtime only
 migrates up.
@@ -142,6 +147,30 @@ UPDATE outbox_events SET attempts = 0 WHERE id = <id>;
 The first write to a topic that does not exist yet can fail once with an
 unknown-topic error; the relay retries it with the same id. W3C `traceparent`
 headers are stored with the row and published as Kafka headers.
+
+## Compensation queue
+
+When a checkout fails after it confirmed promises at delivery-promise, the
+compensating `CancelPromise` call can itself fail. The cancel is then written to
+`compensation_cancels` (unique per `(order_id, group_no, promise_id)`; a replayed
+checkout enqueues the same cancel again without resetting its count). The
+always-on compensation worker of `cmd/api` polls every
+`COMPENSATION_RETRY_INTERVAL` (default `5s`), claims up to 100 unreleased rows in
+id order (`FOR UPDATE SKIP LOCKED`) and retries each cancel against
+delivery-promise one at a time. A success, or a refusal because the promise is
+already closed, sets `released_at`; the first other failure ends the pass and is
+stored on the row (`attempts`, `last_error`). A row that fails
+`COMPENSATION_MAX_ATTEMPTS` times (default 20, `0` = unlimited) is excluded from
+claims and logged once as `compensation worker: row reached the attempt cap and
+is excluded from future claims; re-arm it with attempts = 0, released_at = NULL
+after fixing the cause`. Inspect and re-arm:
+
+```sql
+SELECT count(*) FROM compensation_cancels WHERE released_at IS NULL;
+SELECT id, order_id, group_no, promise_id, attempts, last_error
+  FROM compensation_cancels WHERE released_at IS NULL ORDER BY id;
+UPDATE compensation_cancels SET attempts = 0, released_at = NULL WHERE id = <id>;
+```
 
 ## Consumers and the DLQ
 
