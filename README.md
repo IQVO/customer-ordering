@@ -145,6 +145,8 @@ All settings, the probes, the shutdown order and the outbox runbook: [Configurat
 | `HTTP_ADDR` | `:8080` | Listen address |
 | `OUTBOX_RELAY_INTERVAL` | `1s` | Relay poll interval (Go duration or plain seconds) |
 | `OUTBOX_MAX_ATTEMPTS` | `20` | Failures before the relay excludes a row (`0` = unlimited) |
+| `COMPENSATION_RETRY_INTERVAL` | `5s` | Compensation worker poll interval (Go duration or plain seconds) |
+| `COMPENSATION_MAX_ATTEMPTS` | `20` | Failures before the compensation worker excludes a queued cancel (`0` = unlimited) |
 | `SHUTDOWN_DRAIN_DELAY` | `5s` | Wait after flipping `/readyz` before closing |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 

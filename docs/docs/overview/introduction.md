@@ -53,7 +53,8 @@ optional components, off by default).
 | Choosing the shipping node, locking the assignment, accepting or refusing a cancel | `order-sourcing` |
 | Labels, scans, deliveries, the package journey | `shipping-and-tracking` (the only reader of the ship-to address, for the label) |
 | Carts, catalogue, prices, availability | the other Storefront contexts |
-| Payments, invoices, tax, notifications, returns after the lock | not built (future contexts) |
+| Payments, refunds, returns after the lock | other contexts: `customer-payments` (storefront, built on its `develop`) and `returns-processing` (WMS, built on its `develop`) exist, but this context has no edge to either: no call, no consumed or published event type of theirs |
+| Invoices, tax, notifications | no context found in the `IQVO` organisation, and none here |
 | Authentication | nothing: REST, MCP and A2A are unauthenticated fleet-wide; the shopper's identity is only a `shopperId` in the request |
 
 This context never calls `order-sourcing` or `shipping-and-tracking`. Its one

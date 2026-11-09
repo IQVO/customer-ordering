@@ -93,8 +93,8 @@ every historical event of an order this database does not hold. That is
 normal, and harmless (ADR 0002, A7).
 
 Migrations run at boot. After the first start `schema_migrations` reads
-`4|f` (version 4, not dirty) and the public schema holds `assignment_links,
-customer_orders, group_signals, idempotency_keys, order_groups, order_lines,
+`5|f` (version 5, not dirty) and the public schema holds `assignment_links,
+compensation_cancels, customer_orders, group_signals, idempotency_keys, order_groups, order_lines,
 outbox_events, processed_events, schema_migrations, shopper_addresses,
 shoppers, tracking_packages`.
 
