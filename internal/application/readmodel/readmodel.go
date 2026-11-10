@@ -14,6 +14,13 @@ type AssignmentLink struct {
 	PromiseID    string
 }
 
+// GroupRef names one shipment group of one order. A tracking number belongs to
+// a set of them once order-sourcing merges groups into one package (ADR 0012).
+type GroupRef struct {
+	OrderID string
+	GroupNo int
+}
+
 // Label is the effect of LabelIssued on a package row.
 type Label struct {
 	TrackingNumber string

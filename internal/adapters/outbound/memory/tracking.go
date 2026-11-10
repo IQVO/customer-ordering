@@ -60,6 +60,7 @@ func (r *TrackingRepository) LinkAssignment(ctx context.Context, l readmodel.Ass
 		if p.AssignmentID == l.AssignmentID {
 			p.OrderID, p.GroupNo = l.OrderID, l.GroupNo
 			r.s.packages[tn] = p
+			r.s.addGroupRef(tn, readmodel.GroupRef{OrderID: l.OrderID, GroupNo: l.GroupNo})
 		}
 	}
 	return nil
@@ -73,17 +74,6 @@ func (r *TrackingRepository) ResolveAssignment(ctx context.Context, assignmentID
 		return readmodel.AssignmentLink{}, fmt.Errorf("assignment %q: %w", assignmentID, ports.ErrNotFound)
 	}
 	return l, nil
-}
-
-// AttachTrackingNumbers implements ports.TrackingRepository.
-func (r *TrackingRepository) AttachTrackingNumbers(ctx context.Context, orderID string, groupNo int, tns []string) error {
-	defer r.s.enter(ctx)()
-	for _, tn := range tns {
-		p := r.row(tn)
-		p.OrderID, p.GroupNo = orderID, groupNo
-		r.s.packages[tn] = p
-	}
-	return nil
 }
 
 // ApplyLabel implements ports.TrackingRepository.
@@ -100,6 +90,7 @@ func (r *TrackingRepository) ApplyLabel(ctx context.Context, l readmodel.Label) 
 		p.State = "LABELLED"
 	}
 	r.s.packages[l.TrackingNumber] = r.identify(p, "", "")
+	r.linkGroup(l.TrackingNumber)
 	return nil
 }
 
@@ -114,6 +105,7 @@ func (r *TrackingRepository) ApplyScan(ctx context.Context, s readmodel.Scan) er
 		}
 	}
 	r.s.packages[s.TrackingNumber] = r.identify(p, "", "")
+	r.linkGroup(s.TrackingNumber)
 	return nil
 }
 
@@ -124,6 +116,7 @@ func (r *TrackingRepository) ApplyDelivery(ctx context.Context, d readmodel.Deli
 	at := shared.UTC(d.At)
 	p.DeliveredAt, p.LastScanAt, p.State = later(p.DeliveredAt, at), later(p.LastScanAt, at), "DELIVERED"
 	r.s.packages[d.TrackingNumber] = r.identify(p, d.AssignmentID, d.OrderID)
+	r.linkGroup(d.TrackingNumber)
 	return nil
 }
 
@@ -143,30 +136,13 @@ func (r *TrackingRepository) ApplyOutcome(ctx context.Context, o readmodel.Outco
 	return nil
 }
 
-// OutcomePackages implements ports.TrackingRepository.
-func (r *TrackingRepository) OutcomePackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Outcome, error) {
-	defer r.s.enter(ctx)()
-	out := []readmodel.Outcome{}
-	for _, p := range r.s.packages {
-		if p.OrderID == orderID && p.GroupNo == groupNo && p.Outcome != "" {
-			out = append(out, readmodel.Outcome{TrackingNumber: p.TrackingNumber, OrderID: orderID, Kind: p.Outcome, At: p.OutcomeAt})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if !out[i].At.Equal(out[j].At) {
-			return out[i].At.Before(out[j].At)
-		}
-		return out[i].TrackingNumber < out[j].TrackingNumber
-	})
-	return out, nil
-}
-
 // ApplyException implements ports.TrackingRepository.
 func (r *TrackingRepository) ApplyException(ctx context.Context, e readmodel.Exception) error {
 	defer r.s.enter(ctx)()
 	p := r.row(e.TrackingNumber)
 	p.ExceptionReason = e.Reason
 	r.s.packages[e.TrackingNumber] = r.identify(p, e.AssignmentID, e.OrderID)
+	r.linkGroup(e.TrackingNumber)
 	return nil
 }
 
@@ -179,19 +155,6 @@ func (r *TrackingRepository) ApplyVoid(ctx context.Context, tn string) error {
 	}
 	r.s.packages[tn] = p
 	return nil
-}
-
-// DeliveredPackages implements ports.TrackingRepository.
-func (r *TrackingRepository) DeliveredPackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Delivery, error) {
-	defer r.s.enter(ctx)()
-	out := []readmodel.Delivery{}
-	for _, p := range r.s.packages {
-		if p.OrderID == orderID && p.GroupNo == groupNo && !p.DeliveredAt.IsZero() {
-			out = append(out, readmodel.Delivery{TrackingNumber: p.TrackingNumber, AssignmentID: p.AssignmentID, OrderID: p.OrderID, At: p.DeliveredAt})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].TrackingNumber < out[j].TrackingNumber })
-	return out, nil
 }
 
 // PatchGroupSignal implements ports.TrackingRepository.
@@ -233,23 +196,5 @@ func (r *TrackingRepository) GroupSignals(ctx context.Context, orderID string) (
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].GroupNo < out[j].GroupNo })
-	return out, nil
-}
-
-// Packages implements ports.TrackingRepository.
-func (r *TrackingRepository) Packages(ctx context.Context, orderID string) ([]readmodel.Package, error) {
-	defer r.s.enter(ctx)()
-	out := []readmodel.Package{}
-	for _, p := range r.s.packages {
-		if p.OrderID == orderID {
-			out = append(out, p)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].GroupNo != out[j].GroupNo {
-			return out[i].GroupNo < out[j].GroupNo
-		}
-		return out[i].TrackingNumber < out[j].TrackingNumber
-	})
 	return out, nil
 }
