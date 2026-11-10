@@ -137,9 +137,9 @@ func loadOrder(ctx context.Context, q querier, id customerorder.ID, lock string)
 		status    string
 	)
 	err := q.QueryRow(ctx, `
-		SELECT order_id, shopper_id, ship_to, destination_postal_prefix, status, placed_at, cancelled_at, version
+		SELECT order_id, shopper_id, ship_to, destination_postal_prefix, status, placed_at, cancelled_at, version, coalesce(consolidation_key, '')
 		FROM customer_orders WHERE order_id = $1`+lock, string(id)).
-		Scan(&snap.ID, &snap.ShopperID, &shipJSON, &snap.DestinationPostalPrefix, &status, &snap.PlacedAt, &cancelled, &snap.Version)
+		Scan(&snap.ID, &snap.ShopperID, &shipJSON, &snap.DestinationPostalPrefix, &status, &snap.PlacedAt, &cancelled, &snap.Version, &snap.ConsolidationKey)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("order %s: %w", id, ports.ErrNotFound)
 	}
@@ -241,9 +241,9 @@ func insertOrder(ctx context.Context, q querier, s customerorder.Snapshot) error
 		return fmt.Errorf("encode ship-to: %w", err)
 	}
 	_, err = q.Exec(ctx, `
-		INSERT INTO customer_orders (order_id, shopper_id, ship_to, destination_postal_prefix, status, placed_at, cancelled_at, version)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		string(s.ID), s.ShopperID, string(ship), s.DestinationPostalPrefix, string(s.Status), s.PlacedAt.UTC(), nullTime(s.CancelledAt), s.Version)
+		INSERT INTO customer_orders (order_id, shopper_id, ship_to, destination_postal_prefix, status, placed_at, cancelled_at, version, consolidation_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))`,
+		string(s.ID), s.ShopperID, string(ship), s.DestinationPostalPrefix, string(s.Status), s.PlacedAt.UTC(), nullTime(s.CancelledAt), s.Version, s.ConsolidationKey)
 	if _, dup := isUniqueViolation(err); dup {
 		return fmt.Errorf("order %s already stored: %w", s.ID, ports.ErrConcurrentUpdate)
 	}

@@ -201,3 +201,12 @@ type OrderMetrics interface {
 	// stable, low-cardinality slug.
 	OrderRejected(ctx context.Context, reason string)
 }
+
+// ConsolidationKeyer derives the opaque consolidation key that lets
+// order-sourcing merge the groups of one shopper and one address without ever
+// seeing the address (ADR 0012). normalizedShipTo is shipto.NormalizedAddress().
+// The key is 64 lower-case hex characters; an implementation that has no
+// secret is not wired at all (a nil Deps.ConsolidationKeys derives no key).
+type ConsolidationKeyer interface {
+	KeyFor(shopperID, normalizedShipTo string) string
+}
