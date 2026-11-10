@@ -3,6 +3,8 @@ package usecases
 import (
 	"context"
 	"errors"
+	"slices"
+	"strconv"
 	"time"
 
 	"github.com/claudioed/customer-ordering/internal/application/ports"
@@ -79,9 +81,10 @@ type PackageDelivered struct {
 }
 
 // ApplyPackageDelivered marks the package delivered and runs
-// MarkGroupDelivered when the group is known. A delivery whose group is not
-// known yet stays in the tracking rows and is replayed when the group's
-// shipment arrives (A21).
+// MarkGroupDelivered for EVERY group that named the tracking number (a package
+// shared by merged groups closes all of them, ADR 0012) and for the group the
+// event itself resolves. A delivery whose group is not known yet stays in the
+// tracking rows and is replayed when the group's shipment arrives (A21).
 func (c Consumer) ApplyPackageDelivered(ctx context.Context, m Meta, in PackageDelivered) error {
 	return c.handle(ctx, m, func(ctx context.Context) error {
 		at := orElse(in.DeliveredAt, c.when(m))
@@ -90,11 +93,11 @@ func (c Consumer) ApplyPackageDelivered(ctx context.Context, m Meta, in PackageD
 		}); err != nil {
 			return err
 		}
-		orderID, groupNo, err := c.locate(ctx, in)
-		if err != nil || orderID == "" {
+		targets, err := c.deliveryTargets(ctx, in)
+		if err != nil {
 			return err
 		}
-		return c.mutate(ctx, orderID, quiet(func(o *customerorder.CustomerOrder) error {
+		return c.eachGroup(ctx, targets, func(o *customerorder.CustomerOrder, groupNo int) error {
 			n := groupNo
 			if n == 0 {
 				var ok bool
@@ -103,8 +106,75 @@ func (c Consumer) ApplyPackageDelivered(ctx context.Context, m Meta, in PackageD
 				}
 			}
 			return o.MarkGroupDelivered(n, in.TrackingNumber, at)
-		}))
+		})
 	})
+}
+
+// groupTarget is one group a package event applies to; groupNo 0 means "the
+// group the order resolves from the event" (the delivery of a package whose
+// assignment link is not known yet).
+type groupTarget struct {
+	orderID string
+	groupNo int
+}
+
+// refTargets turns the group set of a tracking number into targets.
+func refTargets(refs []readmodel.GroupRef) []groupTarget {
+	out := make([]groupTarget, len(refs))
+	for i, r := range refs {
+		out[i] = groupTarget{orderID: r.OrderID, groupNo: r.GroupNo}
+	}
+	return out
+}
+
+// deliveryTargets are the groups of the tracking number plus the group the
+// event resolves through the assignment link (the carrier's, which is also in
+// the set once it shipped).
+func (c Consumer) deliveryTargets(ctx context.Context, in PackageDelivered) ([]groupTarget, error) {
+	refs, err := c.Tracking.GroupsOfTracking(ctx, in.TrackingNumber)
+	if err != nil {
+		return nil, err
+	}
+	targets := refTargets(refs)
+	orderID, groupNo, err := c.locate(ctx, in)
+	if err != nil || orderID == "" {
+		return targets, err
+	}
+	if groupNo != 0 {
+		return withTarget(targets, groupTarget{orderID: orderID, groupNo: groupNo}), nil
+	}
+	for _, t := range targets {
+		if t.orderID == orderID {
+			return targets, nil // the order's groups of this package are all targets already
+		}
+	}
+	return append(targets, groupTarget{orderID: orderID}), nil
+}
+
+func withTarget(targets []groupTarget, t groupTarget) []groupTarget {
+	if slices.Contains(targets, t) {
+		return targets
+	}
+	return append(targets, t)
+}
+
+// eachGroup applies one command to every target, each in its own mutate inside
+// the event's unit of work. A target the order cannot take (unknown order,
+// illegal for the group's state) is recorded and skipped without stopping the
+// others: one shared package must still reach every group that can take it (A7).
+func (c Consumer) eachGroup(ctx context.Context, targets []groupTarget, apply func(o *customerorder.CustomerOrder, groupNo int) error) error {
+	for _, t := range targets {
+		err := c.mutate(ctx, t.orderID, quiet(func(o *customerorder.CustomerOrder) error { return apply(o, t.groupNo) }))
+		if err == nil {
+			continue
+		}
+		if !skippable(err) {
+			return err
+		}
+		c.logger().InfoContext(ctx, "consumed event skipped for one group of a shared package",
+			"orderId", sanitizeLog(t.orderID), "groupNo", sanitizeLog(strconv.Itoa(t.groupNo)), "reason", err.Error())
+	}
+	return nil
 }
 
 // locate resolves the order and, when the assignment link is known, the group.
@@ -164,17 +234,33 @@ func (c Consumer) ApplyPackageReturned(ctx context.Context, m Meta, in PackageRe
 	})
 }
 
+// applyOutcome records the outcome on the package row and marks EVERY group of
+// the tracking number (ADR 0012): the package is one, so a merged shipment is
+// lost or returned for all of its groups. When the event's own order is not in
+// the set yet, the group that announced the package in that order is marked, as
+// before.
 func (c Consumer) applyOutcome(ctx context.Context, out readmodel.Outcome) error {
 	if err := c.Tracking.ApplyOutcome(ctx, out); err != nil {
 		return err
 	}
-	return c.mutate(ctx, out.OrderID, quiet(func(o *customerorder.CustomerOrder) error {
-		n, ok := o.GroupNoByTrackingNumber(out.TrackingNumber)
-		if !ok {
-			return nil // the shipment is not known yet: replayed by reconcile
+	refs, err := c.Tracking.GroupsOfTracking(ctx, out.TrackingNumber)
+	if err != nil {
+		return err
+	}
+	targets := refTargets(refs)
+	if !slices.ContainsFunc(targets, func(t groupTarget) bool { return t.orderID == out.OrderID }) {
+		targets = append(targets, groupTarget{orderID: out.OrderID})
+	}
+	return c.eachGroup(ctx, targets, func(o *customerorder.CustomerOrder, groupNo int) error {
+		n := groupNo
+		if n == 0 {
+			var ok bool
+			if n, ok = o.GroupNoByTrackingNumber(out.TrackingNumber); !ok {
+				return nil // the shipment is not known yet: replayed by reconcile
+			}
 		}
 		return markOutcome(o, n, out)
-	}))
+	})
 }
 
 func markOutcome(o *customerorder.CustomerOrder, groupNo int, out readmodel.Outcome) error {
