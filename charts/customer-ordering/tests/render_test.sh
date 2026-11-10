@@ -23,7 +23,7 @@ for g in "${groups[@]}"; do base+=(--set "config.${g%%:*}=${g#*:}"); done
 # Every optional value set, so every env var cmd/api can read is rendered.
 everything=(--set config.deliveryPromiseTimeout=3s --set config.outboxRelayInterval=2s
   --set config.compensationRetryInterval=9s
-  --set config.shutdownDrainDelay=5s --set database.migrationsUrl=postgres://u@example.invalid:5432/direct
+  --set config.shutdownDrainDelay=5s --set consolidation.existingSecret=consolidation-key --set database.migrationsUrl=postgres://u@example.invalid:5432/direct
   --set autoscaling.api.enabled=true --set ingress.enabled=true --set gatewayApi.enabled=true)
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -140,6 +140,25 @@ no_secret="$(helm template "$release" "$chart_dir" --set database.existingSecret
   --set config.deliveryPromiseUrl=http://dp "${base[@]:6}")"
 if grep -q 'kind: Secret' <<<"$no_secret"; then fail "no Secret may be created when database.existingSecret is set"; fi
 helm template "$release" "$chart_dir" "${base[@]}" "${everything[@]}" | grep -q 'kind: Secret' || fail "database.url must create the Secret"
+
+# CONSOLIDATION_KEY_SECRET (ADR 0012) comes from a Secret only and is optional:
+# nothing renders without consolidation.existingSecret, the secretKeyRef is
+# `optional: true` and reads consolidation.existingSecretKey, and the ConfigMap
+# never carries it.
+if grep -q 'CONSOLIDATION_KEY_SECRET' <<<"$api_deployment$configmap"; then
+  fail "CONSOLIDATION_KEY_SECRET must not render without consolidation.existingSecret"
+fi
+grep -A7 'name: CONSOLIDATION_KEY_SECRET$' <<<"$full_deployment" | grep -q 'secretKeyRef:' || fail "CONSOLIDATION_KEY_SECRET must come from a Secret (secretKeyRef)"
+grep -A7 'name: CONSOLIDATION_KEY_SECRET$' <<<"$full_deployment" | grep -q 'name: "consolidation-key"' || fail "CONSOLIDATION_KEY_SECRET must read consolidation.existingSecret"
+grep -A7 'name: CONSOLIDATION_KEY_SECRET$' <<<"$full_deployment" | grep -q 'key: "CONSOLIDATION_KEY_SECRET"' || fail "CONSOLIDATION_KEY_SECRET must read consolidation.existingSecretKey"
+grep -A7 'name: CONSOLIDATION_KEY_SECRET$' <<<"$full_deployment" | grep -q 'optional: true' || fail "CONSOLIDATION_KEY_SECRET must be optional: true"
+if grep -q 'CONSOLIDATION_KEY_SECRET' <<<"$full_configmap"; then fail "the secret must never land in the ConfigMap"; fi
+expect_extra_env_refusal() { # extraEnv may not bring the secret back as a plain value
+  if helm template "$release" "$chart_dir" "${base[@]}" --set 'extraEnv[0].name=CONSOLIDATION_KEY_SECRET' --set 'extraEnv[0].value=x' >/dev/null 2>&1; then
+    fail "extraEnv must not be able to set CONSOLIDATION_KEY_SECRET"
+  fi
+}
+expect_extra_env_refusal
 
 # Pod hardening, probes, the image tag and shutdown room.
 for want in 'runAsNonRoot: true' 'readOnlyRootFilesystem: true' 'allowPrivilegeEscalation: false' 'type: RuntimeDefault' 'path: /healthz' 'path: /readyz'; do
