@@ -21,7 +21,8 @@ erDiagram
   customer_orders ||--|{ order_groups : "shipped in"
   customer_orders }o..o| shoppers : "placed by (shopper_id, no FK)"
   order_groups ||..o| group_signals : "(order_id, group_no)"
-  order_groups ||..o{ tracking_packages : "(order_id, group_no)"
+  order_groups ||..o{ tracking_package_groups : "(order_id, group_no)"
+  tracking_packages ||--o{ tracking_package_groups : "tracking_number"
   order_groups ||..o| assignment_links : "(order_id, group_no)"
 
   shoppers {
@@ -99,6 +100,11 @@ erDiagram
     text exception_reason
     text outcome "LOST or RETURNED"
   }
+  tracking_package_groups {
+    text tracking_number PK
+    text order_id PK
+    int group_no PK
+  }
   assignment_links {
     text assignment_id PK
     text order_id
@@ -144,10 +150,12 @@ erDiagram
 
 Source: `internal/adapters/outbound/postgres/migrations/0001_customer_ordering_schema.up.sql`,
 `0002_package_lost_and_returned.up.sql`, `0003_shopper_addresses_and_order_history.up.sql`,
-`0004_group_window_time_zone.up.sql`, `0005_compensation_cancels.up.sql`. Columns not drawn: `order_groups` also holds
+`0004_group_window_time_zone.up.sql`, `0005_compensation_cancels.up.sql`,
+`0006_order_consolidation_key.up.sql` (adds `customer_orders.consolidation_key`),
+`0007_tracking_package_groups.up.sql`. Columns not drawn: `order_groups` also holds
 `node_id`, `locked_at`, `shipped_at`, `delivered_at`, `cancel_requested_at`,
 `cancelled_at`, `cancel_refused_reason`, `lost_at`, `returned_at`;
-`tracking_packages` also holds `last_scan_node_id`, `outcome_at`; `outbox_events`
+`tracking_packages` also holds `last_scan_node_id`, `outcome_at`, and keeps `order_id`/`group_no` as "the first group that named the package" (ADR 0012: the set of groups of a package is `tracking_package_groups`, rows only added, so merged groups can share one tracking number); `outbox_events`
 also holds `subject`, `dataschema`, `created_at`.
 
 ## Reading it
@@ -161,7 +169,7 @@ also holds `subject`, `dataschema`, `created_at`.
   places an address is stored. The order list index
   `customer_orders_history_idx (shopper_id, placed_at DESC, order_id)` serves
   `GET /orders?shopperId=` keyset paging.
-- **Read model.** `group_signals`, `tracking_packages` and `assignment_links` are
+- **Read model.** `group_signals`, `tracking_packages`, `tracking_package_groups` and `assignment_links` are
   event-fed upserts that tolerate any arrival order; they are joined with the
   order's groups by `GET /orders/{orderId}/tracking`.
 - **Infrastructure.** `processed_events` (inbox) is written in the same

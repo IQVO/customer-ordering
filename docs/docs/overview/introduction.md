@@ -42,7 +42,7 @@ optional components, off by default).
 | **CustomerOrder** (aggregate) | `internal/domain/customerorder` | Lines, one promise per shipment group, the ship-to, and the customer-facing status derived from the group states. Every line is in exactly one group; the promise destination matches the ship-to; status only moves forward. |
 | **Shopper** (aggregate) | `internal/domain/shopper` | A registered, synthetic shopper with a unique lower-cased e-mail and at most 20 saved addresses. |
 | **ShipTo** (value object) | `internal/domain/shipto` | The delivery address. Synthetic PII, served by one restricted route and never carried by an event; events carry only the destination postal prefix. |
-| **Order tracking** (read model) | tables `group_signals`, `tracking_packages`, `assignment_links` | Event-fed: promise signals, verdicts, packages, scans, exceptions and outcomes of every group. |
+| **Order tracking** (read model) | tables `group_signals`, `tracking_packages`, `tracking_package_groups`, `assignment_links` | Event-fed: promise signals, verdicts, packages, scans, exceptions and outcomes of every group. |
 | **Inbox, idempotency, outbox** | tables `processed_events`, `idempotency_keys`, `outbox_events` | At-most-once consumption, replayed POSTs for 24 h, at-least-once publication. |
 
 ## What it does NOT own

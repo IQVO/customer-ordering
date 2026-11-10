@@ -116,7 +116,7 @@ Source: `cmd/api/main.go`, `cmd/mcp/main.go`, `cmd/a2a/main.go`,
 
 | Store | What | Owner |
 | --- | --- | --- |
-| PostgreSQL (one database, accessed through PgBouncer in the cluster) | `customer_orders`, `order_lines`, `order_groups` (the CustomerOrder aggregate), `shoppers`, `shopper_addresses`, `group_signals`, `tracking_packages`, `assignment_links` (tracking read model), `processed_events` (inbox), `idempotency_keys`, `outbox_events`, `compensation_cancels` (durable queue of promise cancels), plus golang-migrate's `schema_migrations` | `cmd/api` writes; `cmd/mcp` and `cmd/a2a` read |
+| PostgreSQL (one database, accessed through PgBouncer in the cluster) | `customer_orders`, `order_lines`, `order_groups` (the CustomerOrder aggregate), `shoppers`, `shopper_addresses`, `group_signals`, `tracking_packages`, `tracking_package_groups`, `assignment_links` (tracking read model), `processed_events` (inbox), `idempotency_keys`, `outbox_events`, `compensation_cancels` (durable queue of promise cancels), plus golang-migrate's `schema_migrations` | `cmd/api` writes; `cmd/mcp` and `cmd/a2a` read |
 | Kafka | produces `retailnetwork.customer-ordering.events`; consumes `retailnetwork.delivery-promise.events`, `retailnetwork.order-sourcing.events`, `retailnetwork.shipping-and-tracking.events`; dead letters `<topic>.dlq` | `cmd/api` only |
 
 No cache, no object store, no second database. The schema is described in

@@ -69,8 +69,8 @@ transaction as its effect, so an event is applied at most once.
 | same | `...assignment.FulfillmentCancelRefused` | group back to `LOCKED`, refusal reason kept |
 | `retailnetwork.shipping-and-tracking.events` (`SHIPPING_CONSUMER_GROUP`) | `com.retailnetwork.logistics.shipping-and-tracking.label.LabelIssued`, `...label.LabelVoided` | package created or completed / voided |
 | same | `...journey.PackageScanned`, `...journey.PackageExceptionRaised` | newest scan / exception reason |
-| same | `...journey.PackageDelivered` | package delivered; group `DELIVERED` when all its packages are |
-| same | `...journey.PackageLost`, `...journey.PackageReturned` | group `LOST` / `RETURNED` (terminal) |
+| same | `...journey.PackageDelivered` | package delivered; every group that named the tracking number (several, once order-sourcing merges groups into one package, ADR 0012) becomes `DELIVERED` when all its packages are |
+| same | `...journey.PackageLost`, `...journey.PackageReturned` | every group that named the tracking number becomes `LOST` / `RETURNED` (terminal) |
 
 Seventeen types are consumed (five from delivery-promise, five from
 order-sourcing, seven from shipping-and-tracking), one `Consumer.Apply*` handler

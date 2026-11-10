@@ -92,7 +92,7 @@ flowchart TB
     end
     P0["Consumer handler:<br/>claim event id, then apply"]:::policy
     G["CustomerOrder"]:::aggregate
-    V["Tracking view<br/>group_signals, tracking_packages,<br/>assignment_links"]:::readmodel
+    V["Tracking view<br/>group_signals, tracking_packages,<br/>tracking_package_groups, assignment_links"]:::readmodel
     Q1["GET /orders/id/tracking"]:::readmodel
     H3["H3 no ordering across topics:<br/>early deliveries are replayed"]:::hotspot
 

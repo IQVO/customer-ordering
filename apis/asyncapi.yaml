@@ -602,7 +602,7 @@ components:
       name: PackageDelivered
       title: PackageDelivered (consumed)
       summary: A package was delivered (MarkGroupDelivered once every package of the group is).
-      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. A package was delivered (MarkGroupDelivered once every package of the group is). Dispatch on the full type; unknown fields are ignored.'
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. A package was delivered (MarkGroupDelivered once every package of the group is). When order-sourcing merged several groups into one package, the event carries the carrier''s assignmentId and orderId and every group that named the tracking number is marked (ADR 0012). Dispatch on the full type; unknown fields are ignored.'
       contentType: application/cloudevents+json
       tags:
       - name: consumed
@@ -657,7 +657,7 @@ components:
       name: PackageLost
       title: PackageLost (consumed)
       summary: A package was declared lost.
-      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. The group that announced the package becomes LOST (terminal); a package reported before its shipment is known is replayed when FulfillmentShipped arrives. Dispatch on the full type; unknown fields are ignored.'
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. Every group that announced the package becomes LOST (terminal; several groups share one package once order-sourcing merges them, ADR 0012); a package reported before the shipment of a group is known is replayed when the FulfillmentShipped of that group arrives. Dispatch on the full type; unknown fields are ignored.'
       contentType: application/cloudevents+json
       tags:
       - name: consumed
@@ -683,7 +683,7 @@ components:
       name: PackageReturned
       title: PackageReturned (consumed)
       summary: A package was returned to the sender.
-      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. The group that announced the package becomes RETURNED (terminal), with the same rules as PackageLost. Dispatch on the full type; unknown fields are ignored.'
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. Every group that announced the package becomes RETURNED (terminal), with the same rules as PackageLost. Dispatch on the full type; unknown fields are ignored.'
       contentType: application/cloudevents+json
       tags:
       - name: consumed
