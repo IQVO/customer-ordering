@@ -138,7 +138,7 @@ authoritative; unknown fields are ignored).
 | `LabelVoided` | same | `trackingNumber`, `reason` | package marked voided |
 | `PackageScanned` | `logistics.shipping-and-tracking.journey` | `trackingNumber`, `scanId`, `nodeId`, `scanType`, `at`, `state` | newest scan on the package |
 | `PackageExceptionRaised` | same | `trackingNumber`, `assignmentId`, `orderId`, `reason`, `at` | exception reason |
-| `PackageDelivered` | same | `trackingNumber`, `assignmentId`, `orderId`, `deliveredAt` | `MarkGroupDelivered` once every package of the group is delivered |
+| `PackageDelivered` | same | `trackingNumber`, `assignmentId`, `orderId`, `deliveredAt` | `MarkGroupDelivered` for every group of the tracking number, once every package of the group is delivered (ADR 0012) |
 | `PackageLost` | same | `trackingNumber`, `orderId`, `declaredAt` (falls back to the event time) | `MarkGroupLost`: terminal |
 | `PackageReturned` | same | `trackingNumber`, `orderId`, `returnedAt` (falls back to the event time) | `MarkGroupReturned`: terminal |
 

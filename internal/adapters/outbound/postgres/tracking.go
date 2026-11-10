@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -49,7 +48,13 @@ func (r *TrackingRepository) LinkAssignment(ctx context.Context, l readmodel.Ass
 			l.AssignmentID, l.OrderID, l.GroupNo, l.PromiseID); err != nil {
 			return err
 		}
-		_, err := q.Exec(ctx, `UPDATE tracking_packages SET order_id = $2, group_no = $3 WHERE assignment_id = $1`, l.AssignmentID, l.OrderID, l.GroupNo)
+		if _, err := q.Exec(ctx, `UPDATE tracking_packages SET order_id = $2, group_no = $3 WHERE assignment_id = $1`, l.AssignmentID, l.OrderID, l.GroupNo); err != nil {
+			return err
+		}
+		_, err := q.Exec(ctx, `
+			INSERT INTO tracking_package_groups (tracking_number, order_id, group_no)
+			SELECT tracking_number, $2, $3 FROM tracking_packages WHERE assignment_id = $1
+			ON CONFLICT DO NOTHING`, l.AssignmentID, l.OrderID, l.GroupNo)
 		return err
 	})
 }
@@ -68,20 +73,6 @@ func (r *TrackingRepository) ResolveAssignment(ctx context.Context, assignmentID
 	return l, nil
 }
 
-// AttachTrackingNumbers implements ports.TrackingRepository.
-func (r *TrackingRepository) AttachTrackingNumbers(ctx context.Context, orderID string, groupNo int, tns []string) error {
-	return r.exec(ctx, "attach tracking numbers", func(q querier) error {
-		for _, tn := range tns {
-			if _, err := q.Exec(ctx, `
-				INSERT INTO tracking_packages (tracking_number, order_id, group_no) VALUES ($1, $2, $3)
-				ON CONFLICT (tracking_number) DO UPDATE SET order_id = EXCLUDED.order_id, group_no = EXCLUDED.group_no`, tn, orderID, groupNo); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
 // ApplyLabel implements ports.TrackingRepository.
 func (r *TrackingRepository) ApplyLabel(ctx context.Context, l readmodel.Label) error {
 	return r.exec(ctx, "apply label "+l.TrackingNumber, func(q querier) error {
@@ -93,8 +84,7 @@ func (r *TrackingRepository) ApplyLabel(ctx context.Context, l readmodel.Label) 
 				state = coalesce(tracking_packages.state, 'LABELLED')`, l.TrackingNumber, l.AssignmentID, l.Carrier); err != nil {
 			return err
 		}
-		_, err := q.Exec(ctx, linkRow, l.TrackingNumber)
-		return err
+		return linkRows(ctx, q, l.TrackingNumber)
 	})
 }
 
@@ -112,8 +102,7 @@ func (r *TrackingRepository) ApplyScan(ctx context.Context, s readmodel.Scan) er
 				last_scan_at = greatest(tracking_packages.last_scan_at, $3)`, s.TrackingNumber, s.NodeID, at, s.State); err != nil {
 			return err
 		}
-		_, err := q.Exec(ctx, linkRow, s.TrackingNumber)
-		return err
+		return linkRows(ctx, q, s.TrackingNumber)
 	})
 }
 
@@ -132,8 +121,7 @@ func (r *TrackingRepository) ApplyDelivery(ctx context.Context, d readmodel.Deli
 				state = 'DELIVERED'`, d.TrackingNumber, d.AssignmentID, d.OrderID, at); err != nil {
 			return err
 		}
-		_, err := q.Exec(ctx, linkRow, d.TrackingNumber)
-		return err
+		return linkRows(ctx, q, d.TrackingNumber)
 	})
 }
 
@@ -154,28 +142,6 @@ func (r *TrackingRepository) ApplyOutcome(ctx context.Context, o readmodel.Outco
 	})
 }
 
-// OutcomePackages implements ports.TrackingRepository.
-func (r *TrackingRepository) OutcomePackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Outcome, error) {
-	rows, err := queryFor(ctx, r.pool).Query(ctx, `
-		SELECT tracking_number, outcome, outcome_at FROM tracking_packages
-		WHERE order_id = $1 AND group_no = $2 AND outcome IS NOT NULL ORDER BY outcome_at, tracking_number`, orderID, groupNo)
-	if err != nil {
-		return nil, fmt.Errorf("read package outcomes: %w", err)
-	}
-	defer rows.Close()
-	out := []readmodel.Outcome{}
-	for rows.Next() {
-		o := readmodel.Outcome{OrderID: orderID}
-		var at time.Time
-		if err := rows.Scan(&o.TrackingNumber, &o.Kind, &at); err != nil {
-			return nil, fmt.Errorf("scan package outcome: %w", err)
-		}
-		o.At = at.UTC()
-		out = append(out, o)
-	}
-	return out, rows.Err()
-}
-
 // ApplyException implements ports.TrackingRepository.
 func (r *TrackingRepository) ApplyException(ctx context.Context, e readmodel.Exception) error {
 	return r.exec(ctx, "apply exception "+e.TrackingNumber, func(q querier) error {
@@ -187,8 +153,7 @@ func (r *TrackingRepository) ApplyException(ctx context.Context, e readmodel.Exc
 				exception_reason = $4`, e.TrackingNumber, e.AssignmentID, e.OrderID, e.Reason); err != nil {
 			return err
 		}
-		_, err := q.Exec(ctx, linkRow, e.TrackingNumber)
-		return err
+		return linkRows(ctx, q, e.TrackingNumber)
 	})
 }
 
@@ -201,28 +166,6 @@ func (r *TrackingRepository) ApplyVoid(ctx context.Context, tn string) error {
 				state = CASE WHEN tracking_packages.state IS NULL OR tracking_packages.state = 'LABELLED' THEN 'VOIDED' ELSE tracking_packages.state END`, tn)
 		return err
 	})
-}
-
-// DeliveredPackages implements ports.TrackingRepository.
-func (r *TrackingRepository) DeliveredPackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Delivery, error) {
-	rows, err := queryFor(ctx, r.pool).Query(ctx, `
-		SELECT tracking_number, coalesce(assignment_id, ''), delivered_at FROM tracking_packages
-		WHERE order_id = $1 AND group_no = $2 AND delivered_at IS NOT NULL ORDER BY tracking_number`, orderID, groupNo)
-	if err != nil {
-		return nil, fmt.Errorf("read delivered packages: %w", err)
-	}
-	defer rows.Close()
-	out := []readmodel.Delivery{}
-	for rows.Next() {
-		d := readmodel.Delivery{OrderID: orderID}
-		var at time.Time
-		if err := rows.Scan(&d.TrackingNumber, &d.AssignmentID, &at); err != nil {
-			return nil, fmt.Errorf("scan delivered package: %w", err)
-		}
-		d.At = at.UTC()
-		out = append(out, d)
-	}
-	return out, rows.Err()
 }
 
 // PatchGroupSignal implements ports.TrackingRepository.
@@ -257,29 +200,6 @@ func (r *TrackingRepository) GroupSignals(ctx context.Context, orderID string) (
 			return nil, fmt.Errorf("scan group signal: %w", err)
 		}
 		out = append(out, g)
-	}
-	return out, rows.Err()
-}
-
-// Packages implements ports.TrackingRepository.
-func (r *TrackingRepository) Packages(ctx context.Context, orderID string) ([]readmodel.Package, error) {
-	rows, err := queryFor(ctx, r.pool).Query(ctx, `
-		SELECT tracking_number, coalesce(assignment_id, ''), coalesce(group_no, 0), coalesce(carrier, ''), coalesce(state, ''),
-			coalesce(last_scan_node_id, ''), last_scan_at, delivered_at, coalesce(exception_reason, ''), coalesce(outcome, ''), outcome_at
-		FROM tracking_packages WHERE order_id = $1 ORDER BY coalesce(group_no, 0), tracking_number`, orderID)
-	if err != nil {
-		return nil, fmt.Errorf("read packages: %w", err)
-	}
-	defer rows.Close()
-	out := []readmodel.Package{}
-	for rows.Next() {
-		p := readmodel.Package{OrderID: orderID}
-		var scan, delivered, outcomeAt *time.Time
-		if err := rows.Scan(&p.TrackingNumber, &p.AssignmentID, &p.GroupNo, &p.Carrier, &p.State, &p.LastScanNodeID, &scan, &delivered, &p.ExceptionReason, &p.Outcome, &outcomeAt); err != nil {
-			return nil, fmt.Errorf("scan package: %w", err)
-		}
-		p.LastScanAt, p.DeliveredAt, p.OutcomeAt = timeOrZero(scan), timeOrZero(delivered), timeOrZero(outcomeAt)
-		out = append(out, p)
 	}
 	return out, rows.Err()
 }

@@ -62,9 +62,14 @@ type TrackingRepository interface {
 	LinkAssignment(ctx context.Context, link readmodel.AssignmentLink) error
 	// ResolveAssignment returns the link of the assignment, or ErrNotFound.
 	ResolveAssignment(ctx context.Context, assignmentID string) (readmodel.AssignmentLink, error)
-	// AttachTrackingNumbers sets orderId and groupNo on the package rows of
-	// the tracking numbers, creating the missing rows.
+	// AttachTrackingNumbers adds the group to the set of groups of each
+	// tracking number, creating the missing package rows. A package may belong
+	// to several groups (ADR 0012): the call only adds, it never replaces the
+	// group another call attached.
 	AttachTrackingNumbers(ctx context.Context, orderID string, groupNo int, trackingNumbers []string) error
+	// GroupsOfTracking returns every group that named the tracking number,
+	// ordered by order id then group number; empty when none did yet.
+	GroupsOfTracking(ctx context.Context, trackingNumber string) ([]readmodel.GroupRef, error)
 	// ApplyLabel upserts the package row from a label; the order link comes
 	// from the assignment link when it is known.
 	ApplyLabel(ctx context.Context, l readmodel.Label) error
@@ -81,17 +86,20 @@ type TrackingRepository interface {
 	// outcome unless the package was reported delivered, and a later scan
 	// no longer changes the state.
 	ApplyOutcome(ctx context.Context, o readmodel.Outcome) error
-	// OutcomePackages returns the packages of the group that have an outcome,
-	// ordered by instant then tracking number.
+	// OutcomePackages returns the packages of the group (through the group set
+	// of each tracking number) that have an outcome, ordered by instant then
+	// tracking number.
 	OutcomePackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Outcome, error)
-	// DeliveredPackages returns the packages of the group reported delivered.
+	// DeliveredPackages returns the packages of the group (through the group
+	// set of each tracking number) reported delivered.
 	DeliveredPackages(ctx context.Context, orderID string, groupNo int) ([]readmodel.Delivery, error)
 	// PatchGroupSignal sets the non-nil fields of the group's signal row.
 	PatchGroupSignal(ctx context.Context, p readmodel.GroupSignalPatch) error
 	// GroupSignals returns the signal rows of the order ordered by groupNo.
 	GroupSignals(ctx context.Context, orderID string) ([]readmodel.GroupSignal, error)
 	// Packages returns the package rows of the order ordered by group and
-	// tracking number.
+	// tracking number; a package shared by several groups is listed once per
+	// group, and a package that only names the order is listed under group 0.
 	Packages(ctx context.Context, orderID string) ([]readmodel.Package, error)
 }
 

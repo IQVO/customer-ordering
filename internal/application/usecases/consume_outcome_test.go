@@ -77,7 +77,7 @@ func TestAnOutcomeForAnUnknownOrderOrPackageIsRecordedAndSkipped(t *testing.T) {
 	id := f.place()
 	shipBoth(t, f, id)
 	c := f.consumer()
-	must(t, c.ApplyPackageLost(bg(), f.meta("shipping.Lost"), usecases.PackageLost{TrackingNumber: "TRK-1", OrderID: "order-nope"}))
+	must(t, c.ApplyPackageLost(bg(), f.meta("shipping.Lost"), usecases.PackageLost{TrackingNumber: "TRK-nope", OrderID: "order-nope"}))
 	must(t, c.ApplyPackageLost(bg(), f.meta("shipping.Lost"), usecases.PackageLost{TrackingNumber: "TRK-unknown", OrderID: id}))
 	if got := f.groupStatus(id, 1); got != customerorder.GroupShipped {
 		t.Fatalf("group 1 = %s", got)
