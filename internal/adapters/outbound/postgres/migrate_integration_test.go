@@ -35,7 +35,7 @@ func TestMigrationsGoUpDownUp(t *testing.T) {
 	up := tableCount(t, url)
 	// 0001 creates 9, 0002 adds none, 0003 adds shopper_addresses (NG1), 0004 a column (ADR 0009),
 	// 0005 adds compensation_cancels (durable CancelPromise retries), 0006 a column (ADR 0012),
-	// 0007 adds tracking_package_groups (ADR 0012).
+	// 0007 adds tracking_package_groups (ADR 0012), 0008 a tier and two columns (ADR 0013).
 	if up != 13 {
 		t.Fatalf("after up: %d tables, want 13", up)
 	}

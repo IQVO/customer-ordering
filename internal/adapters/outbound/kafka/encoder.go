@@ -39,6 +39,10 @@ type placedGroupData struct {
 	DeliverByLatest   string     `json:"deliverByLatest"`
 	TimeZone          string     `json:"timeZone,omitempty"`
 	Lines             []lineData `json:"lines"`
+	// ChosenDeliveryDay and ConsolidationEligible: CONSOLIDATED groups only,
+	// omitted when unknown; an absent eligibility is never false (ADR 0013).
+	ChosenDeliveryDay     string `json:"chosenDeliveryDay,omitempty"`
+	ConsolidationEligible *bool  `json:"consolidationEligible,omitempty"`
 }
 
 type placedData struct {
@@ -143,6 +147,7 @@ func placedPayload(e customerorder.CustomerOrderPlaced) placedData {
 		groups[i] = placedGroupData{
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: string(g.Tier), WitnessNodeID: g.WitnessNodeID, ShipBy: ts(g.ShipBy),
 			DeliverByEarliest: ts(g.DeliverByEarliest), DeliverByLatest: ts(g.DeliverByLatest), TimeZone: g.TimeZone, Lines: lines,
+			ChosenDeliveryDay: g.ChosenDeliveryDay, ConsolidationEligible: g.ConsolidationEligible,
 		}
 	}
 	return placedData{
