@@ -23,6 +23,13 @@ var t0 = time.Date(2026, 10, 23, 10, 15, 30, 123456000, time.UTC)
 
 func placedOrder(t *testing.T) (*customerorder.CustomerOrder, []shared.Event) {
 	t.Helper()
+	return placedOrderKeyed(t, "")
+}
+
+// placedOrderKeyed places the fixture order carrying the given consolidation
+// key ("" = none, as a service without a secret).
+func placedOrderKeyed(t *testing.T, key string) (*customerorder.CustomerOrder, []shared.Event) {
+	t.Helper()
 	group := func(no int, promise string, tier customerorder.Tier, lines ...int) customerorder.GroupInput {
 		return customerorder.GroupInput{
 			GroupNo: no, PromiseID: promise, Tier: tier, WitnessNodeID: "fc-aus-1", ShipBy: t0.Add(12 * time.Hour),
@@ -36,7 +43,7 @@ func placedOrder(t *testing.T) (*customerorder.CustomerOrder, []shared.Event) {
 		ID: "7a1e6c52-0d2b-4f0e-9d6a-5c6f1b8e2a10", ShopperID: "3b0c1f0e-6f0a-4a39-8a55-2b7f0d8c9e11",
 		ShipTo: shipto.ShipTo{Name: "Ana Example", Line1: "1 Sample Street", City: "Austin", Region: "TX", PostalCode: "78701", CountryCode: "US", Phone: "+1 555 0100"},
 		Lines:  []customerorder.OrderLine{{LineNo: 1, CatalogItemID: "sku-100", Quantity: 2}, {LineNo: 2, CatalogItemID: "sku-200", Quantity: 1}, {LineNo: 3, CatalogItemID: "sku-300", Quantity: 5}},
-		Groups: []customerorder.GroupInput{first, group(2, "p-1002", customerorder.TierStandard, 3)},
+		Groups: []customerorder.GroupInput{first, group(2, "p-1002", customerorder.TierStandard, 3)}, ConsolidationKey: key,
 	}, t0)
 	if err != nil {
 		t.Fatal(err)

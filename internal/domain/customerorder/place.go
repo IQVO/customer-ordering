@@ -29,6 +29,9 @@ type NewOrder struct {
 	ShipTo    shipto.ShipTo
 	Lines     []OrderLine
 	Groups    []GroupInput
+	// ConsolidationKey is "" (feature off: the event omits it) or the 64 hex
+	// characters of the keyed hash of shopper and address (ADR 0012).
+	ConsolidationKey string
 }
 
 // Place creates a PLACED order at version 1 and raises CustomerOrderPlaced
@@ -44,6 +47,9 @@ func Place(in NewOrder, now time.Time) (*CustomerOrder, []shared.Event, error) {
 	if err := in.ShipTo.Validate(); err != nil {
 		return nil, nil, err
 	}
+	if !ValidConsolidationKey(in.ConsolidationKey) {
+		return nil, nil, shared.Invalid("consolidationKey must be empty or 64 lower-case hex characters")
+	}
 	if err := validateLines(in.Lines); err != nil {
 		return nil, nil, err
 	}
@@ -54,10 +60,12 @@ func Place(in NewOrder, now time.Time) (*CustomerOrder, []shared.Event, error) {
 	o := &CustomerOrder{
 		id: in.ID, shopperID: in.ShopperID, shipTo: in.ShipTo, prefix: in.ShipTo.DestinationPrefix(),
 		status: StatusPlaced, placedAt: shared.UTC(now), lines: append([]OrderLine{}, in.Lines...), groups: groups, version: 1,
+		consolidationKey: in.ConsolidationKey,
 	}
 	ev := CustomerOrderPlaced{
 		Header: shared.Header{Version: o.version, At: o.placedAt}, OrderID: o.id, ShopperID: o.shopperID,
 		DestinationPostalPrefix: o.prefix, PlacedAt: o.placedAt, Groups: placedGroups(o),
+		ConsolidationKey: o.consolidationKey,
 	}
 	return o, []shared.Event{ev}, nil
 }

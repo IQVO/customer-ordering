@@ -53,6 +53,12 @@ func hasTimeZoneColumn(t *testing.T, url string) bool {
 
 func zonedOrder(t *testing.T, id string) *customerorder.CustomerOrder {
 	t.Helper()
+	return zonedOrderKeyed(t, id, "")
+}
+
+// zonedOrderKeyed places the zoned fixture order with a consolidation key.
+func zonedOrderKeyed(t *testing.T, id, key string) *customerorder.CustomerOrder {
+	t.Helper()
 	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	o, _, err := customerorder.Place(customerorder.NewOrder{
 		ID: customerorder.ID(id), ShopperID: "shopper-1",
@@ -62,7 +68,7 @@ func zonedOrder(t *testing.T, id string) *customerorder.CustomerOrder {
 			GroupNo: 1, PromiseID: "p-" + id, Tier: customerorder.TierNextDay, WitnessNodeID: "fc-aus-1", ShipBy: at.Add(6 * time.Hour),
 			DeliverByEarliest: time.Date(2026, 10, 31, 14, 0, 0, 0, time.UTC), DeliverByLatest: time.Date(2026, 11, 1, 2, 0, 0, 0, time.UTC),
 			TimeZone: "America/Chicago", LineNos: []int{1}, DestinationPostalPrefix: "787",
-		}},
+		}}, ConsolidationKey: key,
 	}, at)
 	if err != nil {
 		t.Fatalf("Place: %v", err)
@@ -99,13 +105,14 @@ func TestTimeZoneMigrationGoesDownAndUpKeepingTheGroups(t *testing.T) {
 		t.Fatalf("stored zone read back as %q", z)
 	}
 
-	// 0005 (compensation_cancels) is the top migration now: step past it AND 0004
-	// to drop the time_zone column while the order rows survive.
-	stepMigrations(t, url, -2)
+	// 0006 (order_consolidation_key) is the top migration now: step past it, 0005
+	// (compensation_cancels) AND 0004 to drop the time_zone column while the
+	// order rows survive.
+	stepMigrations(t, url, -3)
 	if hasTimeZoneColumn(t, url) {
 		t.Fatal("after down past 0004: time_zone is still there")
 	}
-	stepMigrations(t, url, 2)
+	stepMigrations(t, url, 3)
 	if !hasTimeZoneColumn(t, url) {
 		t.Fatal("after up again: order_groups has no time_zone column")
 	}

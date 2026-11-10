@@ -137,6 +137,11 @@ const sidebars: SidebarsConfig = {
           label: '0011 agent authority levels and complete MCP surface',
           href: '/docs/adr/0011-agent-authority-levels-and-complete-mcp-surface',
         },
+        {
+          type: 'link',
+          label: '0012 the consolidation key and shared tracking numbers',
+          href: '/docs/adr/0012-consolidation-key-and-shared-tracking-numbers',
+        },
       ],
     },
   ],

@@ -145,6 +145,18 @@ database:
   migrationsExistingSecretKey: "MIGRATIONS_DATABASE_URL"
   migrationsUrl: ""
 
+# CONSOLIDATION_KEY_SECRET (ADR 0012): the secret the consolidation key on
+# CustomerOrderPlaced is keyed with (at least 16 bytes). OPTIONAL: while it is not
+# set the service derives no key, the event omits the field and no order is
+# merged with another (the pod logs one warning at start). It always comes from
+# a Secret you create (secretKeyRef, `optional: true`), never from the ConfigMap
+# or a chart value; the chart renders the variable only when existingSecret is
+# set. Rotating it only stops merges between orders keyed under different
+# secrets.
+consolidation:
+  existingSecret: ""
+  existingSecretKey: "CONSOLIDATION_KEY_SECRET"
+
 # KAFKA_BROKERS (comma-separated) is MANDATORY: outbox relay, the three
 # consumers and /readyz dial Kafka. Produced topic:
 # retailnetwork.customer-ordering.events; consumed:

@@ -63,6 +63,7 @@ ENABLE_EVERYTHING = BASE + [
     "--set", "config.outboxRelayInterval=2s",
     "--set", "config.shutdownDrainDelay=5s",
     "--set", "database.migrationsUrl=postgres://u@example.invalid:5432/direct",
+    "--set", "consolidation.existingSecret=consolidation-key",
 ]
 
 # The optional components of ADR 0005 (mcp), ADR 0008 (a2a) and ADR 0006
@@ -90,7 +91,7 @@ API_ENV = (
     "HTTP_ADDR", "LOG_LEVEL", "DATABASE_URL", "MIGRATIONS_DATABASE_URL", "KAFKA_BROKERS",
     "DELIVERY_PROMISE_URL", "DELIVERY_PROMISE_TIMEOUT",
     "DELIVERY_PROMISE_CONSUMER_GROUP", "ORDER_SOURCING_CONSUMER_GROUP", "SHIPPING_CONSUMER_GROUP",
-    "OUTBOX_RELAY_INTERVAL", "OUTBOX_MAX_ATTEMPTS", "SHUTDOWN_DRAIN_DELAY",
+    "OUTBOX_RELAY_INTERVAL", "OUTBOX_MAX_ATTEMPTS", "SHUTDOWN_DRAIN_DELAY", "CONSOLIDATION_KEY_SECRET",
 )
 
 
@@ -305,7 +306,7 @@ def main() -> int:
         failures.append(f"optional templates rendered with default values: {stray}")
     dep = next(d for d in defaults if d.get("kind") == "Deployment")
     names = env_names(dep)
-    off = {"DELIVERY_PROMISE_TIMEOUT", "OUTBOX_RELAY_INTERVAL", "SHUTDOWN_DRAIN_DELAY"}
+    off = {"DELIVERY_PROMISE_TIMEOUT", "OUTBOX_RELAY_INTERVAL", "SHUTDOWN_DRAIN_DELAY", "CONSOLIDATION_KEY_SECRET"}
     if off & set(names):
         failures.append(f"these must be off with default values: {sorted(off & set(names))}")
     for want in ("KAFKA_BROKERS", "DELIVERY_PROMISE_URL", *(k for k in API_ENV if k.endswith("_CONSUMER_GROUP"))):

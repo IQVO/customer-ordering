@@ -54,6 +54,7 @@ except the cancellation of an unkeepable group.
 | `shopperId` | string | the shopper (an id, not PII) |
 | `destinationPostalPrefix` | string | first 3 letters or digits of the normalised ship-to postal code; never the address |
 | `placedAt` | timestamp | when the order was placed |
+| `consolidationKey` | string, optional | 64 lower-case hex: keyed hash of shopper and normalised ship-to (ADR 0012); omitted when no secret is configured, which means the order never merges |
 | `groups[].groupNo` | integer | group number inside the order |
 | `groups[].promiseId` | string | the delivery-promise promise of the group |
 | `groups[].tier` | enum | `SAME_DAY`, `NEXT_DAY`, `TWO_DAY`, `STANDARD` |
@@ -96,6 +97,7 @@ Example envelope (from `apis/asyncapi.yaml`, synthetic ids):
     "shopperId": "3b0c1f0e-6f0a-4a39-8a55-2b7f0d8c9e11",
     "destinationPostalPrefix": "787",
     "placedAt": "2026-10-23T10:15:30Z",
+    "consolidationKey": "9f2c6d0b1a7e4c3d8b5a0e6f1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4",
     "groups": [
       {
         "groupNo": 1,

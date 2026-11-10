@@ -30,6 +30,9 @@ type CustomerOrderPlaced struct {
 	DestinationPostalPrefix string
 	PlacedAt                time.Time
 	Groups                  []PlacedGroup
+	// ConsolidationKey is the keyed hash of shopper and ship-to (ADR 0012),
+	// "" when the service has no secret: the wire field is then omitted.
+	ConsolidationKey string
 }
 
 // EventName returns "CustomerOrderPlaced".

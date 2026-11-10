@@ -36,13 +36,17 @@ partition and in order. The `id` is minted once, when the event is written to
 
 | Type | Raised when | `data` |
 | --- | --- | --- |
-| `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced` | `PlaceOrder` saved the order in state `PLACED` | `orderId`, `shopperId`, `destinationPostalPrefix`, `placedAt`, `groups[{groupNo, promiseId, tier, witnessNodeId, shipBy, deliverByEarliest, deliverByLatest, timeZone?, lines[{lineNo, catalogItemId, quantity}]}]` |
+| `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced` | `PlaceOrder` saved the order in state `PLACED` | `orderId`, `shopperId`, `destinationPostalPrefix`, `placedAt`, `consolidationKey?`, `groups[{groupNo, promiseId, tier, witnessNodeId, shipBy, deliverByEarliest, deliverByLatest, timeZone?, lines[{lineNo, catalogItemId, quantity}]}]` |
 | `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderCancelled` | the shopper cancelled (`CancelOrder`) or the `CancelOnUnfulfillable` policy cancelled a group (`PromiseUnkeepable`) | `orderId`, `reason`, `cancelledAt`, `groupNos[]` |
 
 `tier` is `SAME_DAY`, `NEXT_DAY`, `TWO_DAY` or `STANDARD`. `timeZone` is the
 IANA zone of the destination, optional and additive on v1
 ([ADR 0009](/docs/adr/0009-delivery-window-time-zone)); it is omitted when
-unknown. No event carries the ship-to address. A cancellation is a **request**:
+unknown. `consolidationKey` is the opaque keyed hash of shopper and ship-to that
+lets order-sourcing merge the groups of one shopper and one address
+([ADR 0012](/docs/adr/0012-consolidation-key-and-shared-tracking-numbers)); it is
+optional and additive on v1, omitted when the service has no secret, and an absent
+key means the order never merges. No event carries the ship-to address. A cancellation is a **request**:
 order-sourcing answers with `FulfillmentCancelled` or `FulfillmentCancelRefused`.
 Nothing is published on `retailnetwork.customer-ordering.analytics`.
 

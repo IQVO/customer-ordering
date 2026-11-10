@@ -127,6 +127,17 @@ spec:
                   key: {{ .Values.database.migrationsExistingSecretKey }}
                   optional: true
             {{- end }}
+            {{- if .Values.consolidation.existingSecret }}
+            # The consolidation key's secret (ADR 0012). `optional: true`: a
+            # Secret without the key starts the pod with consolidation keys off
+            # (one startup warning), never a crash loop.
+            - name: CONSOLIDATION_KEY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.consolidation.existingSecret | quote }}
+                  key: {{ .Values.consolidation.existingSecretKey | quote }}
+                  optional: true
+            {{- end }}
             # Mandatory: the relay, the three consumers and /readyz dial Kafka.
             - name: KAFKA_BROKERS
               value: {{ .Values.kafka.brokers | quote }}
