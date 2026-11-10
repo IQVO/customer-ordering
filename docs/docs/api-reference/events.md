@@ -74,10 +74,16 @@ transaction as its effect, so an event is applied at most once.
 
 Seventeen types are consumed (five from delivery-promise, five from
 order-sourcing, seven from shipping-and-tracking), one `Consumer.Apply*` handler
-each. The prose in `apis/asyncapi.yaml` says "Fifteen events" but its channels
-and operations list seventeen; the code and the channel lists agree on
-seventeen. The messages list only the fields this service relies on; unknown
-fields are ignored (tolerant reader).
+each; the code (`internal/adapters/inbound/kafka/handlers.go`), the channel and
+operation lists and the prose in `apis/asyncapi.yaml` all say seventeen. The
+messages list only the fields this service relies on; unknown fields are ignored
+(tolerant reader).
+
+Only these three topics are consumed. In particular this service does not
+consume `TransferAllocationReleaseRequested` (ADR 0051 of inventory-storage):
+that command is published by network-inventory-planning and consumed by
+inventory-storage, and no string of it appears in this repository's code or
+contracts.
 
 A failed handler is retried (capped backoff, 5 attempts) and then the message
 goes to `<topic>.dlq` with `x-dlq-*` headers; a payload that can never be
