@@ -94,6 +94,7 @@ Messages by binary (all in the code, searchable in Loki as `{app="customer-order
 | `service exited with error`, `mcp server exited with error`, `a2a agent exited with error` (`error`) | ERROR | boot failures, a worker that stopped |
 | `consumer stopped`, `outbox relay stopped`, `kafka relay writer close failed` | ERROR | `cmd/api` |
 | `invalid OUTBOX_RELAY_INTERVAL; using the default`, `invalid OUTBOX_MAX_ATTEMPTS; using the default`, `ignoring invalid SHUTDOWN_DRAIN_DELAY` | WARN | configuration typos |
+| `CONSOLIDATION_KEY_SECRET is not set: no consolidation key is derived, ...` | WARN | `cmd/api` at start, once (the feature is off) |
 | `outbox relay pass failed` (`error`) | ERROR | relay, every failed pass |
 | `outbox relay: row reached the attempt cap and is excluded from future claims; re-arm it with attempts = 0 after fixing the cause` | ERROR | relay, once per parked row |
 | `skipping a message that is not a valid CloudEvent` (`consumer`, `topic`, `error`) | WARN | consumers |

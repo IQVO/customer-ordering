@@ -159,7 +159,7 @@ components:
       name: CustomerOrderPlaced
       title: CustomerOrderPlaced
       summary: A customer order was placed (every group promised and confirmed).
-      description: '`type` = `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced`; subject and key = the orderId. Raised by PlaceOrder when the order is saved in state PLACED, in the same transaction as the outbox row. Consumed by order-sourcing (creates one assignment per group) and delivery-promise (a repeated confirm is a no-op, ADR 0003). Carries the destination postal prefix only: the ship-to address never leaves customer-ordering except through GET /orders/{orderId}/ship-to.'
+      description: '`type` = `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced`; subject and key = the orderId. Raised by PlaceOrder when the order is saved in state PLACED, in the same transaction as the outbox row. Consumed by order-sourcing (creates one assignment per group) and delivery-promise (a repeated confirm is a no-op, ADR 0003). Carries the destination postal prefix only: the ship-to address never leaves customer-ordering except through GET /orders/{orderId}/ship-to. Also carries the optional consolidationKey (ADR 0012): an opaque keyed hash of shopper and ship-to that lets order-sourcing merge the groups of one shopper and one address; an absent consolidationKey means the order never merges.'
       contentType: application/cloudevents+json
       tags:
       - name: customerorder
@@ -182,6 +182,7 @@ components:
             shopperId: 3b0c1f0e-6f0a-4a39-8a55-2b7f0d8c9e11
             destinationPostalPrefix: '787'
             placedAt: '2026-10-23T10:15:30Z'
+            consolidationKey: 9f2c6d0b1a7e4c3d8b5a0e6f1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4
             groups:
             - groupNo: 1
               promiseId: p-1001
@@ -724,6 +725,10 @@ components:
         placedAt: &id001
           type: string
           format: date-time
+        consolidationKey:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          description: 'Opaque consolidation key (ADR 0012): hex(HMAC-SHA-256(secret, "consolidation-key/v1" || 0x00 || shopperId || 0x00 || normalised ship-to)), 64 lower-case hex characters. It links the orders of ONE shopper to ONE address without carrying either and is not reversible without the secret. Optional and additive on v1; omitted when customer-ordering has no secret configured. An absent key means the order never merges (never read it as an empty key).'
         groups:
           type: array
           items:

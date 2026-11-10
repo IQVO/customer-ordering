@@ -213,6 +213,7 @@ helm upgrade --install customer-ordering charts/customer-ordering \
 | `KAFKA_BROKERS` | `kafka.brokers` |
 | `DELIVERY_PROMISE_URL`, `DELIVERY_PROMISE_TIMEOUT` | `config.deliveryPromiseUrl`, `config.deliveryPromiseTimeout` |
 | `DELIVERY_PROMISE_CONSUMER_GROUP`, `ORDER_SOURCING_CONSUMER_GROUP`, `SHIPPING_CONSUMER_GROUP` | `config.deliveryPromiseConsumerGroup`, `config.orderSourcingConsumerGroup`, `config.shippingConsumerGroup` |
+| `CONSOLIDATION_KEY_SECRET` | Secret key `consolidation.existingSecretKey` of `consolidation.existingSecret` (`secretKeyRef`, `optional: true`; not rendered while `existingSecret` is empty, which switches consolidation keys off) |
 | `HTTP_ADDR`, `LOG_LEVEL` | `config.httpAddr` (its port must equal `service.targetPort`), `config.logLevel` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `SERVICE_VERSION`, `ENVIRONMENT` | `otel.endpoint`, `otel.serviceName` (`<name>-mcp` and `<name>-a2a` for those components), `image.tag` or appVersion, `environment` (chart default `production`) |
 | `OUTBOX_RELAY_INTERVAL`, `OUTBOX_MAX_ATTEMPTS`, `SHUTDOWN_DRAIN_DELAY` | `config.outboxRelayInterval`, `config.outboxMaxAttempts`, `config.shutdownDrainDelay` |
