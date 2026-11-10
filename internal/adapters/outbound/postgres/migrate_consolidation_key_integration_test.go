@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/postgres"
-	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
 	"github.com/claudioed/customer-ordering/internal/testing/pgtest"
 )
 
@@ -47,13 +46,7 @@ func TestConsolidationKeyMigrationGoesDownAndUpKeepingTheOrders(t *testing.T) {
 	}
 	defer pool.Close()
 	repo := postgres.NewOrderRepository(pool)
-	o := zonedOrder(t, "order-key")
-	snap := o.Snapshot()
-	snap.ConsolidationKey = migrationKey
-	keyed, err := customerorder.Restore(snap)
-	if err != nil {
-		t.Fatalf("Restore: %v", err)
-	}
+	keyed := zonedOrderKeyed(t, "order-key", migrationKey)
 	if err := repo.Save(context.Background(), keyed); err != nil {
 		t.Fatalf("save: %v", err)
 	}

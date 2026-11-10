@@ -53,6 +53,12 @@ func hasTimeZoneColumn(t *testing.T, url string) bool {
 
 func zonedOrder(t *testing.T, id string) *customerorder.CustomerOrder {
 	t.Helper()
+	return zonedOrderKeyed(t, id, "")
+}
+
+// zonedOrderKeyed places the zoned fixture order with a consolidation key.
+func zonedOrderKeyed(t *testing.T, id, key string) *customerorder.CustomerOrder {
+	t.Helper()
 	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	o, _, err := customerorder.Place(customerorder.NewOrder{
 		ID: customerorder.ID(id), ShopperID: "shopper-1",
@@ -62,7 +68,7 @@ func zonedOrder(t *testing.T, id string) *customerorder.CustomerOrder {
 			GroupNo: 1, PromiseID: "p-" + id, Tier: customerorder.TierNextDay, WitnessNodeID: "fc-aus-1", ShipBy: at.Add(6 * time.Hour),
 			DeliverByEarliest: time.Date(2026, 10, 31, 14, 0, 0, 0, time.UTC), DeliverByLatest: time.Date(2026, 11, 1, 2, 0, 0, 0, time.UTC),
 			TimeZone: "America/Chicago", LineNos: []int{1}, DestinationPostalPrefix: "787",
-		}},
+		}}, ConsolidationKey: key,
 	}, at)
 	if err != nil {
 		t.Fatalf("Place: %v", err)
