@@ -112,7 +112,7 @@ func TestLostAndReturnedForUnknownOrdersOrPackagesAreSkipped(t *testing.T) {
 	w := newWorld(t)
 	apply(t, w.sourcing(), shipped("e1", 1, "TRK-1"))
 	apply(t, w.shipping(),
-		event("l1", kafkaconsumer.TypePackageLost, map[string]any{"trackingNumber": "TRK-1", "orderId": "order-unknown"}),
+		event("l1", kafkaconsumer.TypePackageLost, map[string]any{"trackingNumber": "TRK-nope", "orderId": "order-unknown"}),
 		lost("l2", "TRK-unknown", nil))
 	if w.groupStatus(t, 1) != "SHIPPED" {
 		t.Fatalf("group 1 = %s", w.groupStatus(t, 1))
