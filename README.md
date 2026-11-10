@@ -38,7 +38,7 @@ Page map (source under `docs/docs/`):
 | Ecosystem | [Integration](docs/docs/ecosystem/integration.md), [MCP tools](docs/docs/mcp/tools.md) |
 | DDD | [Use cases](docs/docs/ddd/use-cases.md), [Subdomain classification](docs/docs/ddd/subdomain-classification.md), [DDD artifacts](docs/docs/ddd/ddd-artifacts.md) (the 11-page ddd-crew pack: core domain chart, bounded context canvas, context map, aggregate design canvas, domain message flow, EventStorming, ubiquitous language, class diagram, entity-relationship, sequence diagrams, domain events) |
 | API reference | [API overview](docs/docs/api-reference/overview.md) (REST pages generated from `apis/openapi.yaml`), [Event catalogue](docs/docs/api-reference/events.md) |
-| Decisions | [ADR index](docs/adr/index.md) — decisions 0001 to 0012 with status |
+| Decisions | [ADR index](docs/adr/index.md) — decisions 0001 to 0013 with status |
 
 The upstream design of the context also lives in the warehouse-docs
 retail-network pages

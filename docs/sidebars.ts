@@ -142,6 +142,11 @@ const sidebars: SidebarsConfig = {
           label: '0012 the consolidation key and shared tracking numbers',
           href: '/docs/adr/0012-consolidation-key-and-shared-tracking-numbers',
         },
+        {
+          type: 'link',
+          label: '0013 the CONSOLIDATED tier and the stored chosen delivery day',
+          href: '/docs/adr/0013-consolidated-tier-and-chosen-delivery-day',
+        },
       ],
     },
   ],
