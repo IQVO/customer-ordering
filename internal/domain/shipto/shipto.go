@@ -93,6 +93,20 @@ func (s ShipTo) DestinationPrefix() string {
 	return n[:min(len(n), PrefixLength)]
 }
 
+// NormalizedAddress is the address as the consolidation key reads it (ADR
+// 0012): line1, line2, city, region and postal code each reduced by Normalize
+// and the country code, joined with "|". The recipient name and the phone are
+// left out on purpose: two orders for one place under different names are the
+// same stop. It is the same rule the network's shipping context uses for its
+// stop key, so orders it treats as one stop share the address part of the key.
+// The result is PII-derived: it is hashed by the keyer and never stored,
+// logged or published.
+func (s ShipTo) NormalizedAddress() string {
+	return strings.Join([]string{
+		Normalize(s.Line1), Normalize(s.Line2), Normalize(s.City), Normalize(s.Region), Normalize(s.PostalCode), s.CountryCode,
+	}, "|")
+}
+
 // PrefixMatches reports whether prefix (a delivery-promise destination) is a
 // non-empty prefix of the normalised postal code.
 func (s ShipTo) PrefixMatches(prefix string) bool {

@@ -200,6 +200,8 @@ type CustomerOrder struct {
 	groups      []GroupPromise
 	version     int64
 	loaded      int64
+	// consolidationKey is "" or 64 lower-case hex characters (ADR 0012).
+	consolidationKey string
 }
 
 // Snapshot is the persisted form of an order. Restore validates it.
@@ -214,6 +216,8 @@ type Snapshot struct {
 	Lines                   []OrderLine
 	Groups                  []GroupPromise
 	Version                 int64
+	// ConsolidationKey is "" (not derived) or 64 lower-case hex characters.
+	ConsolidationKey string
 }
 
 // ID returns the order id.
@@ -299,6 +303,7 @@ func (o *CustomerOrder) Snapshot() Snapshot {
 	return Snapshot{
 		ID: o.id, ShopperID: o.shopperID, ShipTo: o.shipTo, DestinationPostalPrefix: o.prefix, Status: o.status,
 		PlacedAt: o.placedAt, CancelledAt: o.cancelledAt, Lines: o.Lines(), Groups: o.Groups(), Version: o.version,
+		ConsolidationKey: o.consolidationKey,
 	}
 }
 
