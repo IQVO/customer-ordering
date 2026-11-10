@@ -291,7 +291,7 @@ func groupInput(g CheckoutGroup, t promising.Terms) customerorder.GroupInput {
 	return customerorder.GroupInput{
 		GroupNo: g.GroupNo, PromiseID: t.PromiseID, Tier: customerorder.Tier(t.Tier), WitnessNodeID: t.WitnessNodeID,
 		ShipBy: t.ShipBy, DeliverByEarliest: t.DeliverByEarliest, DeliverByLatest: t.DeliverByLatest, TimeZone: t.TimeZone, LineNos: g.LineNos,
-		DestinationPostalPrefix: t.DestinationPostalPrefix,
+		DestinationPostalPrefix: t.DestinationPostalPrefix, ChosenDeliveryDay: chosenDeliveryDay(t), ConsolidationEligible: consolidationEligible(t),
 	}
 }
 

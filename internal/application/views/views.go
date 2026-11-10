@@ -23,19 +23,23 @@ type OrderLine struct {
 
 // OrderGroup is one shipment group with its promise and status.
 type OrderGroup struct {
-	GroupNo             int
-	PromiseID           string
-	Tier                string
-	ShipBy              time.Time
-	DeliverByEarliest   time.Time
-	DeliverByLatest     time.Time
-	TimeZone            string // optional IANA zone of the window; empty = unknown (ADR 0009)
-	LineNos             []int
-	Status              string
-	RevisionNo          int
-	CancelReason        string
-	CancelRequestedAt   time.Time
-	CancelRefusedReason string
+	GroupNo           int
+	PromiseID         string
+	Tier              string
+	ShipBy            time.Time
+	DeliverByEarliest time.Time
+	DeliverByLatest   time.Time
+	TimeZone          string // optional IANA zone of the window; empty = unknown (ADR 0009)
+	LineNos           []int
+	Status            string
+	RevisionNo        int
+	// ChosenDeliveryDay and ConsolidationEligible: CONSOLIDATED groups only;
+	// empty / nil = unknown (ADR 0013).
+	ChosenDeliveryDay     string
+	ConsolidationEligible *bool
+	CancelReason          string
+	CancelRequestedAt     time.Time
+	CancelRefusedReason   string
 }
 
 // Order is the customer order without the ship-to address.
@@ -62,6 +66,7 @@ func OrderFrom(o *customerorder.CustomerOrder) Order {
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: string(g.Tier), ShipBy: g.ShipBy,
 			DeliverByEarliest: g.DeliverByEarliest, DeliverByLatest: g.DeliverByLatest, TimeZone: g.TimeZone, LineNos: g.LineNos,
 			Status: string(g.Status), RevisionNo: g.RevisionNo, CancelReason: g.CancelReason,
+			ChosenDeliveryDay: g.ChosenDeliveryDay, ConsolidationEligible: g.ConsolidationEligible,
 			CancelRequestedAt: g.CancelRequestedAt, CancelRefusedReason: g.CancelRefusedReason,
 		})
 	}
