@@ -57,10 +57,12 @@ except the cancellation of an unkeepable group.
 | `consolidationKey` | string, optional | 64 lower-case hex: keyed hash of shopper and normalised ship-to (ADR 0012); omitted when no secret is configured, which means the order never merges |
 | `groups[].groupNo` | integer | group number inside the order |
 | `groups[].promiseId` | string | the delivery-promise promise of the group |
-| `groups[].tier` | enum | `SAME_DAY`, `NEXT_DAY`, `TWO_DAY`, `STANDARD` |
+| `groups[].tier` | enum | `SAME_DAY`, `NEXT_DAY`, `TWO_DAY`, `STANDARD`, `CONSOLIDATED` (the real tier, never mapped; ADR 0013) |
 | `groups[].witnessNodeId` | string | the node of the promise's witness path; order-sourcing may choose another node |
 | `groups[].shipBy`, `deliverByEarliest`, `deliverByLatest` | timestamp | the promise terms |
 | `groups[].timeZone` | string, optional | IANA zone of the destination the window is read in (ADR 0009) |
+| `groups[].chosenDeliveryDay` | `YYYY-MM-DD`, optional | CONSOLIDATED groups only: the local date of `deliverByLatest` in `timeZone` the shopper chose at placement; omitted when unknown (ADR 0013) |
+| `groups[].consolidationEligible` | boolean, optional | CONSOLIDATED groups only: delivery-promise's answer whether the option leaves the network time to merge; an absent value is unknown, never `false` (ADR 0013) |
 | `groups[].lines[]` | `{lineNo, catalogItemId, quantity}` | the lines of the group |
 
 Consumers: order-sourcing (queues one assignment per group) and delivery-promise

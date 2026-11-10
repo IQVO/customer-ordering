@@ -78,7 +78,10 @@ What customer-ordering must change is what it does with the value it receives:
    `CONSOLIDATED` offer expired re-quotes through the storefront; the 409
    `offer-not-quotable` answer therefore never offers it. This is an accepted
    limitation of this slice.
-8. **Out of scope (activation gate Q5).** The storefront callers (cart, checkout,
+8. **MCP and A2A keep their shape.** Their group outputs pass the tier string
+   through (`CONSOLIDATED` included) and, like `timeZone` in ADR 0009, do not
+   gain the two new fields; they can add them the same way later.
+9. **Out of scope (activation gate Q5).** The storefront callers (cart, checkout,
    pricing, web) validate exactly four tiers and must accept the fifth before
    they ask for it; the incentive amount, the picker copy and the day range shown
    to shoppers belong to pricing and the storefront. The network sends no fee.
