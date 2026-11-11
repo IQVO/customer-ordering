@@ -20,6 +20,9 @@ type GroupInput struct {
 	TimeZone                string // optional IANA zone of the window (ADR 0009)
 	LineNos                 []int
 	DestinationPostalPrefix string
+	// ChosenDeliveryDay and ConsolidationEligible: CONSOLIDATED groups only (ADR 0013).
+	ChosenDeliveryDay     string
+	ConsolidationEligible *bool
 }
 
 // NewOrder is the input of Place.
@@ -84,6 +87,7 @@ func placedGroups(o *CustomerOrder) []PlacedGroup {
 		out[i] = PlacedGroup{
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: g.Tier, WitnessNodeID: g.WitnessNodeID, ShipBy: g.ShipBy,
 			DeliverByEarliest: g.DeliverByEarliest, DeliverByLatest: g.DeliverByLatest, TimeZone: g.TimeZone, Lines: lines,
+			ChosenDeliveryDay: g.ChosenDeliveryDay, ConsolidationEligible: cloneBool(g.ConsolidationEligible),
 		}
 	}
 	return out
@@ -159,6 +163,9 @@ func checkGroup(g GroupInput, to shipto.ShipTo) error {
 	if !to.PrefixMatches(g.DestinationPostalPrefix) {
 		return wrapDestination(g.GroupNo, g.DestinationPostalPrefix)
 	}
+	if err := checkChoice(g.Tier, g.ChosenDeliveryDay, g.ConsolidationEligible); err != nil {
+		return shared.Invalid("group %d: %v", g.GroupNo, err)
+	}
 	return nil
 }
 
@@ -184,6 +191,7 @@ func newGroup(g GroupInput) GroupPromise {
 		GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: g.Tier, WitnessNodeID: g.WitnessNodeID,
 		ShipBy: shared.UTC(g.ShipBy), DeliverByEarliest: shared.UTC(g.DeliverByEarliest), DeliverByLatest: shared.UTC(g.DeliverByLatest),
 		TimeZone: g.TimeZone, LineNos: append([]int{}, g.LineNos...), Status: GroupPromised,
+		ChosenDeliveryDay: g.ChosenDeliveryDay, ConsolidationEligible: cloneBool(g.ConsolidationEligible),
 		TrackingNumbers: []string{}, DeliveredTrackingNumbers: []string{},
 	}
 }

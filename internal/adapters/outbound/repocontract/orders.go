@@ -22,11 +22,12 @@ func assertZones(t *testing.T, got *customerorder.CustomerOrder) {
 }
 
 // assertZonesAndKey checks the ADR 0009 zones and the ADR 0012 consolidation
-// key of newOrder's round trip, and that an order placed without a key (the
+// key of newOrder's round trip, the ADR 0013 choice of a CONSOLIDATED group, and that an order placed without a key (the
 // history helper's) reads back without one.
 func assertZonesAndKey(t *testing.T, e Env, got *customerorder.CustomerOrder) {
 	t.Helper()
 	assertZones(t, got)
+	assertConsolidatedChoice(t, e)
 	if got.ConsolidationKey() != contractKey {
 		t.Fatalf("consolidation key read back as %q, want %q", got.ConsolidationKey(), contractKey)
 	}

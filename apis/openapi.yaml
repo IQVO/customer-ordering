@@ -619,7 +619,11 @@ components:
         group or offer delivery-promise stored before it carried the zone; read the window in UTC then.'
     Tier:
       type: string
-      enum: [SAME_DAY, NEXT_DAY, TWO_DAY, STANDARD]
+      enum: [SAME_DAY, NEXT_DAY, TWO_DAY, STANDARD, CONSOLIDATED]
+      description: >-
+        The delivery-promise service tier. CONSOLIDATED (ADR 0013) is the opt-in later delivery day the network
+        may merge with other orders of the same shopper and address; it only appears on a group the shopper chose it
+        for (its offerId carries the choice), never on a default quote or the 409 re-quote.
     OrderStatus:
       type: string
       description: >-
@@ -751,6 +755,20 @@ components:
           format: date-time
         timeZone:
           $ref: '#/components/schemas/TimeZone'
+        chosenDeliveryDay:
+          type: string
+          format: date
+          example: '2026-10-27'
+          description: >-
+            Only on a CONSOLIDATED group (ADR 0013): the local calendar date of deliverByLatest in timeZone that the
+            shopper chose at placement. A record of the choice: a later PromiseRevised moves the window, not this day.
+            Omitted for every other tier and when the zone is unknown.
+        consolidationEligible:
+          type: boolean
+          description: >-
+            Only on a CONSOLIDATED group (ADR 0013): delivery-promise's answer whether the option leaves the network
+            at least one local day to merge the order with others. It never asserts that another order exists.
+            Omitted when unknown or for another tier; an absent value is unknown, never false.
         lineNos:
           type: array
           items:

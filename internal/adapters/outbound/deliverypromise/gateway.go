@@ -77,6 +77,16 @@ func zone(name string) string {
 	return ""
 }
 
+// optionalBool decodes an optional boolean tolerantly: absent, null or any
+// non-boolean is unknown (nil), a boolean is kept, false included.
+func optionalBool(raw json.RawMessage) *bool {
+	var v *bool
+	if len(raw) == 0 || json.Unmarshal(raw, &v) != nil {
+		return nil
+	}
+	return v
+}
+
 type offerDTO struct {
 	OfferID   string    `json:"offerId"`
 	State     string    `json:"state"`
@@ -98,6 +108,9 @@ type promiseDTO struct {
 		DeliverByEarliest time.Time `json:"deliverByEarliest"`
 		DeliverByLatest   time.Time `json:"deliverByLatest"`
 		TimeZone          string    `json:"timeZone"`
+		// Eligible is read tolerantly (see optionalBool): a value that is not a
+		// boolean is unknown, it never fails the checkout (ADR 0013).
+		Eligible json.RawMessage `json:"consolidationEligible"`
 	} `json:"terms"`
 	WitnessPath struct {
 		NodeID string `json:"nodeId"`
@@ -147,7 +160,7 @@ func (g *Gateway) MakePromise(ctx context.Context, req promising.MakeRequest) (p
 	return promising.Terms{
 		PromiseID: p.PromiseID, Tier: p.Terms.Tier, WitnessNodeID: p.WitnessPath.NodeID, ShipBy: p.Terms.ShipBy.UTC(),
 		DeliverByEarliest: p.Terms.DeliverByEarliest.UTC(), DeliverByLatest: p.Terms.DeliverByLatest.UTC(), TimeZone: zone(p.Terms.TimeZone),
-		DestinationPostalPrefix: p.DestinationPostalPrefix,
+		DestinationPostalPrefix: p.DestinationPostalPrefix, ConsolidationEligible: optionalBool(p.Terms.Eligible),
 	}, nil
 }
 

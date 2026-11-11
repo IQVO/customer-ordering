@@ -36,10 +36,15 @@ partition and in order. The `id` is minted once, when the event is written to
 
 | Type | Raised when | `data` |
 | --- | --- | --- |
-| `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced` | `PlaceOrder` saved the order in state `PLACED` | `orderId`, `shopperId`, `destinationPostalPrefix`, `placedAt`, `consolidationKey?`, `groups[{groupNo, promiseId, tier, witnessNodeId, shipBy, deliverByEarliest, deliverByLatest, timeZone?, lines[{lineNo, catalogItemId, quantity}]}]` |
+| `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced` | `PlaceOrder` saved the order in state `PLACED` | `orderId`, `shopperId`, `destinationPostalPrefix`, `placedAt`, `consolidationKey?`, `groups[{groupNo, promiseId, tier, witnessNodeId, shipBy, deliverByEarliest, deliverByLatest, timeZone?, chosenDeliveryDay?, consolidationEligible?, lines[{lineNo, catalogItemId, quantity}]}]` |
 | `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderCancelled` | the shopper cancelled (`CancelOrder`) or the `CancelOnUnfulfillable` policy cancelled a group (`PromiseUnkeepable`) | `orderId`, `reason`, `cancelledAt`, `groupNos[]` |
 
-`tier` is `SAME_DAY`, `NEXT_DAY`, `TWO_DAY` or `STANDARD`. `timeZone` is the
+`tier` is `SAME_DAY`, `NEXT_DAY`, `TWO_DAY`, `STANDARD` or `CONSOLIDATED` (the
+real tier of the promise; [ADR 0013](/docs/adr/0013-consolidated-tier-and-chosen-delivery-day)).
+`chosenDeliveryDay` and `consolidationEligible` exist on `CONSOLIDATED` groups
+only, are optional and additive on v1, and an absent `consolidationEligible` is
+unknown, never `false`; a consumer must accept the fifth tier before any shopper
+can choose it. `timeZone` is the
 IANA zone of the destination, optional and additive on v1
 ([ADR 0009](/docs/adr/0009-delivery-window-time-zone)); it is omitted when
 unknown. `consolidationKey` is the opaque keyed hash of shopper and ship-to that

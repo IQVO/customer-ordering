@@ -31,6 +31,10 @@ type Terms struct {
 	DeliverByLatest         time.Time
 	TimeZone                string // optional IANA zone of the window; empty = unknown (ADR 0009)
 	DestinationPostalPrefix string
+	// ConsolidationEligible is delivery-promise's answer, present only for a
+	// CONSOLIDATED promise: whether the option leaves the network time to merge.
+	// nil = absent or not a boolean (unknown, never false; ADR 0013).
+	ConsolidationEligible *bool
 }
 
 // Offer is one quoted delivery offer.

@@ -102,6 +102,9 @@ func checkGroupSnapshot(g GroupPromise) error {
 	if !g.Status.Valid() {
 		return fmt.Errorf("status %q is not a group state", g.Status)
 	}
+	if err := checkChoice(g.Tier, g.ChosenDeliveryDay, g.ConsolidationEligible); err != nil {
+		return err
+	}
 	if err := checkPackages(g); err != nil {
 		return err
 	}

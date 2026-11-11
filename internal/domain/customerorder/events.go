@@ -19,6 +19,10 @@ type PlacedGroup struct {
 	DeliverByLatest   time.Time
 	TimeZone          string // optional IANA zone of the window (ADR 0009)
 	Lines             []OrderLine
+	// ChosenDeliveryDay and ConsolidationEligible: CONSOLIDATED groups only,
+	// omitted on the wire when unknown (ADR 0013).
+	ChosenDeliveryDay     string
+	ConsolidationEligible *bool
 }
 
 // CustomerOrderPlaced is raised by Place. Its fields are the model's data list.
