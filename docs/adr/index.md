@@ -27,3 +27,4 @@ The *Status* column is copied from each ADR's own `## Status` section.
 | [0011](./0011-agent-authority-levels-and-complete-mcp-surface.md) | agent authority levels and complete MCP surface | Accepted (2026-11-02) |
 | [0012](./0012-consolidation-key-and-shared-tracking-numbers.md) | the consolidation key and shared tracking numbers | Accepted (2026-11-10) |
 | [0013](./0013-consolidated-tier-and-chosen-delivery-day.md) | the CONSOLIDATED tier and the stored chosen delivery day | Accepted (2026-11-10) |
+| [0014](./0014-day-of-eta-window-on-the-tracking-view.md) | the day-of ETA window on the tracking view | Accepted (2026-11-11) |
