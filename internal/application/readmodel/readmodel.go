@@ -54,6 +54,17 @@ type Exception struct {
 	At             time.Time
 }
 
+// Eta is the effect of PackageEtaWindowAssigned (ADR 0014): the day-of delivery
+// window of one package. AssignedAt orders windows (the latest wins).
+type Eta struct {
+	TrackingNumber string
+	AssignmentID   string
+	OrderID        string
+	Start          time.Time
+	End            time.Time
+	AssignedAt     time.Time
+}
+
 // The terminal package outcomes (PackageLost, PackageReturned), also the state
 // the tracking view shows for the package.
 const (
@@ -87,6 +98,12 @@ type Package struct {
 	// PackageReturned was applied (first one wins), with its instant.
 	Outcome   string
 	OutcomeAt time.Time
+	// EtaStart, EtaEnd and EtaAssignedAt are the stored day-of window of the
+	// package (PackageEtaWindowAssigned, ADR 0014); all zero when none arrived.
+	// Whether it is still current is the view's rule, not the store's.
+	EtaStart      time.Time
+	EtaEnd        time.Time
+	EtaAssignedAt time.Time
 }
 
 // GroupSignalPatch sets the signal fields that are non-nil for one group.

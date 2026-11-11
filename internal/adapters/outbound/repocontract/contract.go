@@ -46,6 +46,7 @@ func Run(t *testing.T, newEnv func(t *testing.T) Env) {
 		"orders":        testOrders,
 		"shoppers":      testShoppers,
 		"tracking":      testTracking,
+		"tracking-eta":  testTrackingEta,
 		"inbox":         testInbox,
 		"unitofwork":    testUnitOfWork,
 		"idempotency":   testIdempotency,

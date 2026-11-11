@@ -38,23 +38,24 @@ const (
 // FULL CloudEvents types of the consumed events, byte-identical to the
 // producers' contracts.
 const (
-	TypePromiseAtRisk           = typePrefixDeliveryPromise + "PromiseAtRisk"
-	TypePromiseRevised          = typePrefixDeliveryPromise + "PromiseRevised"
-	TypePromiseKept             = typePrefixDeliveryPromise + "PromiseKept"
-	TypePromiseBroken           = typePrefixDeliveryPromise + "PromiseBroken"
-	TypePromiseUnkeepable       = typePrefixDeliveryPromise + "PromiseUnkeepable"
-	TypeFulfillmentLocked       = typePrefixOrderSourcing + "FulfillmentLocked"
-	TypeFulfillmentShipped      = typePrefixOrderSourcing + "FulfillmentShipped"
-	TypeFulfillmentUnsourceable = typePrefixOrderSourcing + "FulfillmentUnsourceable"
-	TypeFulfillmentCancelled    = typePrefixOrderSourcing + "FulfillmentCancelled"
-	TypeFulfillmentCancelRefuse = typePrefixOrderSourcing + "FulfillmentCancelRefused"
-	TypeLabelIssued             = typePrefixShippingLabel + "LabelIssued"
-	TypeLabelVoided             = typePrefixShippingLabel + "LabelVoided"
-	TypePackageScanned          = typePrefixShippingJourney + "PackageScanned"
-	TypePackageDelivered        = typePrefixShippingJourney + "PackageDelivered"
-	TypePackageException        = typePrefixShippingJourney + "PackageExceptionRaised"
-	TypePackageLost             = typePrefixShippingJourney + "PackageLost"
-	TypePackageReturned         = typePrefixShippingJourney + "PackageReturned"
+	TypePromiseAtRisk            = typePrefixDeliveryPromise + "PromiseAtRisk"
+	TypePromiseRevised           = typePrefixDeliveryPromise + "PromiseRevised"
+	TypePromiseKept              = typePrefixDeliveryPromise + "PromiseKept"
+	TypePromiseBroken            = typePrefixDeliveryPromise + "PromiseBroken"
+	TypePromiseUnkeepable        = typePrefixDeliveryPromise + "PromiseUnkeepable"
+	TypeFulfillmentLocked        = typePrefixOrderSourcing + "FulfillmentLocked"
+	TypeFulfillmentShipped       = typePrefixOrderSourcing + "FulfillmentShipped"
+	TypeFulfillmentUnsourceable  = typePrefixOrderSourcing + "FulfillmentUnsourceable"
+	TypeFulfillmentCancelled     = typePrefixOrderSourcing + "FulfillmentCancelled"
+	TypeFulfillmentCancelRefuse  = typePrefixOrderSourcing + "FulfillmentCancelRefused"
+	TypeLabelIssued              = typePrefixShippingLabel + "LabelIssued"
+	TypeLabelVoided              = typePrefixShippingLabel + "LabelVoided"
+	TypePackageScanned           = typePrefixShippingJourney + "PackageScanned"
+	TypePackageDelivered         = typePrefixShippingJourney + "PackageDelivered"
+	TypePackageException         = typePrefixShippingJourney + "PackageExceptionRaised"
+	TypePackageLost              = typePrefixShippingJourney + "PackageLost"
+	TypePackageReturned          = typePrefixShippingJourney + "PackageReturned"
+	TypePackageEtaWindowAssigned = typePrefixShippingJourney + "PackageEtaWindowAssigned"
 )
 
 // meta is the identity of the consumed CloudEvent.
@@ -232,6 +233,7 @@ func ShippingAndTrackingHandlers(c usecases.Consumer) map[string]HandlerFunc {
 		}, func(ctx context.Context, m usecases.Meta, d packageReturnedData) error {
 			return c.ApplyPackageReturned(ctx, m, usecases.PackageReturned{TrackingNumber: d.TrackingNumber, OrderID: d.OrderID, ReturnedAt: d.ReturnedAt})
 		}),
+		TypePackageEtaWindowAssigned: etaHandler(c),
 		TypePackageException: handler("PackageExceptionRaised", func(d packageExceptionData) error {
 			return tracking("PackageExceptionRaised")(d.TrackingNumber)
 		}, func(ctx context.Context, m usecases.Meta, d packageExceptionData) error {
