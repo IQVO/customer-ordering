@@ -19,6 +19,8 @@
 //	OUTBOX_MAX_ATTEMPTS              failures before the relay excludes a row (default 20, 0 = unlimited)
 //	COMPENSATION_RETRY_INTERVAL      compensation-cancels worker poll interval (Go duration or seconds, default 5s)
 //	COMPENSATION_MAX_ATTEMPTS        failures before the worker excludes a cancel (default 20, 0 = unlimited)
+//	CONSOLIDATION_KEY_SECRET         key of the consolidation key on CustomerOrderPlaced (>= 16 bytes, optional:
+//	                                 unset = no key is derived and no order is merged, ADR 0012)
 //	SHUTDOWN_DRAIN_DELAY             wait after flipping /readyz before closing (default 5s)
 //	LOG_LEVEL                        debug | info | warn | error (default info)
 //	OTEL_SERVICE_NAME                service.name of spans and metrics (default customer-ordering)
@@ -169,6 +171,11 @@ func buildAdapters(ctx context.Context, rt runtimeEnv, logger *slog.Logger) (ada
 		return adapters{}, noop, err
 	}
 	logger.Info("postgres adapters configured")
+	keyer, err := consolidationKeyer(rt.consolidationSecret, logger)
+	if err != nil {
+		pool.Close()
+		return adapters{}, noop, err
+	}
 
 	outbox := postgres.NewOutboxRepo(pool, outboundkafka.NewEncoder())
 	ad := adapters{pool: pool, outbox: outbox, compensations: postgres.NewCompensationRepo(pool), idempotency: postgres.NewIdempotencyStore(pool)}
@@ -176,7 +183,7 @@ func buildAdapters(ctx context.Context, rt runtimeEnv, logger *slog.Logger) (ada
 		Orders: postgres.NewOrderRepository(pool), Shoppers: postgres.NewShopperRepository(pool), Tracking: postgres.NewTrackingRepository(pool),
 		Inbox: postgres.NewInbox(pool), Outbox: outbox, UoW: postgres.NewUnitOfWork(pool), Compensations: ad.compensations,
 		Promises: deliverypromise.New(rt.deliveryPromiseURL, &http.Client{Timeout: rt.deliveryPromiseTimeout}),
-		Clock:    ad.clock, IDs: ad.ids, Log: logger,
+		Clock:    ad.clock, IDs: ad.ids, Log: logger, ConsolidationKeys: keyer,
 	}
 	return ad, pool.Close, nil
 }

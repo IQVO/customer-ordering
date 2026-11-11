@@ -22,7 +22,7 @@ diagram is Mermaid, derived from the code and ADRs on `develop`, and carries a
 | [EventStorming](/docs/ddd/eventstorming) | [EventStorming glossary and cheat sheet](https://github.com/ddd-crew/eventstorming-glossary-cheat-sheet) | Design-level process boards with sticky-note colours, plus hotspots. |
 | [Ubiquitous language](/docs/ddd/ubiquitous-language) | Glossary | Every term with the code identifier that implements it. |
 | [Class diagrams](/docs/ddd/class-diagram) | UML class diagram | Domain types, and the hexagonal ports with the adapters that implement them. |
-| [Entity-relationship diagram](/docs/ddd/entity-relationship) | ER diagram | The Postgres schema of migrations `0001` to `0004`: eleven tables. |
+| [Entity-relationship diagram](/docs/ddd/entity-relationship) | ER diagram | The Postgres schema of migrations `0001` to `0005`: twelve tables. |
 | [Sequence diagrams](/docs/ddd/sequence-diagrams) | UML sequence diagram | Place, cancel, consume, ship-to read and unkeepable promise, with error branches. |
 | [Domain events](/docs/ddd/domain-events) | Event catalogue | Every event published and consumed: type, topic, key, payload, effect. |
 

@@ -41,18 +41,28 @@ const instructions = "Customer ordering of the retail network (read-only): read 
 	"order, cancelling one and registering a shopper are REST operations of customer-ordering, and the order " +
 	"lifecycle is driven by the events it consumes."
 
-// NewServer builds the MCP server for this bounded context with every tool
-// registered.
+// NewServer builds the MCP server for this bounded context with every tool,
+// resource, and workflow prompt registered.
 func NewServer(deps Deps) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: serverName, Version: serverVersion},
 		&mcp.ServerOptions{Instructions: instructions},
 	)
 	deps.registerTools(server)
+	deps.registerResources(server)
+	deps.registerPrompts(server)
 	return server
 }
 
 // Handler returns the Streamable HTTP handler for the MCP server.
 func Handler(server *mcp.Server) http.Handler {
-	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	// Stateless (Agentic Standard v2, AS-4): no Mcp-Session-Id is issued, so
+	// the server also answers the 2026-07-28 revision's per-request handshake
+	// (server/discover) while legacy initialize clients keep working.
+	// Nothing here relies on cross-call session state: every tool is a pure
+	// read (ADR 0005), so there is no conversation to remember.
+	return mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return server },
+		&mcp.StreamableHTTPOptions{Stateless: true},
+	)
 }

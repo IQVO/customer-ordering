@@ -21,6 +21,25 @@ func assertZones(t *testing.T, got *customerorder.CustomerOrder) {
 	}
 }
 
+// assertZonesAndKey checks the ADR 0009 zones and the ADR 0012 consolidation
+// key of newOrder's round trip, the ADR 0013 choice of a CONSOLIDATED group, and that an order placed without a key (the
+// history helper's) reads back without one.
+func assertZonesAndKey(t *testing.T, e Env, got *customerorder.CustomerOrder) {
+	t.Helper()
+	assertZones(t, got)
+	assertConsolidatedChoice(t, e)
+	if got.ConsolidationKey() != contractKey {
+		t.Fatalf("consolidation key read back as %q, want %q", got.ConsolidationKey(), contractKey)
+	}
+	keyless := newOrderAt(t, "order-nokey", "shopper-nk", at(0))
+	must(t, e.Orders.Save(bg(), keyless))
+	back, err := e.Orders.Get(bg(), "order-nokey")
+	must(t, err)
+	if back.ConsolidationKey() != "" || !reflect.DeepEqual(back.Snapshot(), keyless.Snapshot()) {
+		t.Fatalf("a keyless order changed on the round trip: key %q", back.ConsolidationKey())
+	}
+}
+
 func testOrders(t *testing.T, e Env) {
 	t.Run("a miss is ErrNotFound", func(t *testing.T) {
 		_, err := e.Orders.Get(bg(), "order-nope")
@@ -34,7 +53,7 @@ func testOrders(t *testing.T, e Env) {
 		if !reflect.DeepEqual(got.Snapshot(), o.Snapshot()) {
 			t.Fatalf("round trip changed the order:\n got %+v\nwant %+v", got.Snapshot(), o.Snapshot())
 		}
-		assertZones(t, got)
+		assertZonesAndKey(t, e, got)
 	})
 	t.Run("every group state and fact round-trips", func(t *testing.T) {
 		o := newOrder(t, "order-facts")

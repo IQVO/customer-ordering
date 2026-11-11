@@ -33,6 +33,8 @@ type runtimeEnv struct {
 	// groups maps a consumer's group variable to its value; every consumer
 	// always runs, so every entry is present.
 	groups map[string]string
+	// consolidationSecret keys the consolidation key (ADR 0012); empty = off.
+	consolidationSecret string
 }
 
 // loadRuntime validates the environment before anything is opened or bound:
@@ -63,6 +65,10 @@ func loadRuntime(env func(string) string) (runtimeEnv, error) {
 			return runtimeEnv{}, fmt.Errorf("%s is required: the consumer always runs on real Kafka", spec.groupEnv)
 		}
 		rt.groups[spec.groupEnv] = group
+	}
+	var err error
+	if rt.consolidationSecret, err = loadConsolidationSecret(env); err != nil {
+		return runtimeEnv{}, err
 	}
 	return rt, nil
 }

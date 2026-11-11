@@ -41,6 +41,7 @@ type Store struct {
 	emails        map[string]shopper.ID
 	links         map[string]readmodel.AssignmentLink
 	packages      map[string]readmodel.Package
+	pkgGroups     map[string][]readmodel.GroupRef
 	signals       map[signalKey]readmodel.GroupSignal
 	inbox         map[string]string
 	outbox        []shared.Event
@@ -57,7 +58,7 @@ type Store struct {
 func NewStore(clock ports.Clock) *Store {
 	return &Store{
 		orders: map[customerorder.ID]customerorder.Snapshot{}, shoppers: map[shopper.ID]shopper.Snapshot{}, emails: map[string]shopper.ID{},
-		links: map[string]readmodel.AssignmentLink{}, packages: map[string]readmodel.Package{},
+		links: map[string]readmodel.AssignmentLink{}, packages: map[string]readmodel.Package{}, pkgGroups: map[string][]readmodel.GroupRef{},
 		signals: map[signalKey]readmodel.GroupSignal{}, inbox: map[string]string{}, idempotency: map[string]idempotency.Record{},
 		compensations: &Compensations{}, clock: clock,
 	}
@@ -70,14 +71,15 @@ func (s *Store) now() time.Time { return s.clock.Now() }
 // state is a copy of everything a unit of work can change. Stored values are
 // replaced, never edited in place, so copying the maps is enough.
 type state struct {
-	orders   map[customerorder.ID]customerorder.Snapshot
-	shoppers map[shopper.ID]shopper.Snapshot
-	emails   map[string]shopper.ID
-	links    map[string]readmodel.AssignmentLink
-	packages map[string]readmodel.Package
-	signals  map[signalKey]readmodel.GroupSignal
-	inbox    map[string]string
-	outbox   []shared.Event
+	orders    map[customerorder.ID]customerorder.Snapshot
+	shoppers  map[shopper.ID]shopper.Snapshot
+	emails    map[string]shopper.ID
+	links     map[string]readmodel.AssignmentLink
+	packages  map[string]readmodel.Package
+	pkgGroups map[string][]readmodel.GroupRef
+	signals   map[signalKey]readmodel.GroupSignal
+	inbox     map[string]string
+	outbox    []shared.Event
 }
 
 func cloneMap[K comparable, V any](m map[K]V) map[K]V {
@@ -91,13 +93,14 @@ func cloneMap[K comparable, V any](m map[K]V) map[K]V {
 func (s *Store) capture() state {
 	return state{
 		orders: cloneMap(s.orders), shoppers: cloneMap(s.shoppers), emails: cloneMap(s.emails), links: cloneMap(s.links),
-		packages: cloneMap(s.packages), signals: cloneMap(s.signals), inbox: cloneMap(s.inbox), outbox: append([]shared.Event(nil), s.outbox...),
+		packages: cloneMap(s.packages), pkgGroups: cloneMap(s.pkgGroups), signals: cloneMap(s.signals), inbox: cloneMap(s.inbox),
+		outbox: append([]shared.Event(nil), s.outbox...),
 	}
 }
 
 func (s *Store) restore(st state) {
-	s.orders, s.shoppers, s.emails, s.links, s.packages, s.signals, s.inbox, s.outbox =
-		st.orders, st.shoppers, st.emails, st.links, st.packages, st.signals, st.inbox, st.outbox
+	s.orders, s.shoppers, s.emails, s.links, s.packages, s.pkgGroups, s.signals, s.inbox, s.outbox =
+		st.orders, st.shoppers, st.emails, st.links, st.packages, st.pkgGroups, st.signals, st.inbox, st.outbox
 }
 
 // txKey marks a ctx that carries the open unit of work of one store.
@@ -139,7 +142,7 @@ func (s *Store) Idempotency() *IdempotencyStore { return &IdempotencyStore{s} }
 
 // Counts is how many rows each table of the store holds.
 type Counts struct {
-	Orders, Shoppers, Links, Packages, Signals, Inbox, OutboxEvents int
+	Orders, Shoppers, Links, Packages, PackageGroups, Signals, Inbox, OutboxEvents int
 	// VersionSum is the sum of every aggregate version: any saved change moves it.
 	VersionSum int64
 }
@@ -158,7 +161,7 @@ func (s *Store) Counts() Counts {
 		versions += sh.Version
 	}
 	return Counts{
-		Orders: len(s.orders), Shoppers: len(s.shoppers), Links: len(s.links), Packages: len(s.packages),
+		Orders: len(s.orders), Shoppers: len(s.shoppers), Links: len(s.links), Packages: len(s.packages), PackageGroups: s.groupRefCount(),
 		Signals: len(s.signals), Inbox: len(s.inbox), OutboxEvents: len(s.outbox), VersionSum: versions,
 	}
 }

@@ -22,6 +22,7 @@ classDiagram
     -string prefix
     -Status status
     -time placedAt
+    -string consolidationKey
     -int64 version
     +Place(NewOrder, now) CustomerOrder, events
     +CancelOrder(reason, now) events
@@ -122,6 +123,7 @@ classDiagram
     +string DestinationPostalPrefix
     +time PlacedAt
     +PlacedGroup[] Groups
+    +string ConsolidationKey
   }
   class CustomerOrderCancelled {
     +ID OrderID

@@ -194,3 +194,39 @@ func TestServeUntilSignalReturnsAListenError(t *testing.T) {
 		t.Fatal("binding a taken port must fail")
 	}
 }
+
+func TestLoadRuntimeReadsTheConsolidationSecret(t *testing.T) {
+	rt, err := loadRuntime(envOf(fullEnv()))
+	if err != nil || rt.consolidationSecret != "" {
+		t.Fatalf("unset secret = %q, %v: want empty and no error (the feature is off)", rt.consolidationSecret, err)
+	}
+	env := fullEnv()
+	env["CONSOLIDATION_KEY_SECRET"] = "0123456789abcdef"
+	if rt, err = loadRuntime(envOf(env)); err != nil || rt.consolidationSecret != "0123456789abcdef" {
+		t.Fatalf("16-byte secret = %q, %v", rt.consolidationSecret, err)
+	}
+	env["CONSOLIDATION_KEY_SECRET"] = "short"
+	if _, err = loadRuntime(envOf(env)); err == nil || !strings.Contains(err.Error(), "CONSOLIDATION_KEY_SECRET") {
+		t.Fatalf("a short secret must be refused naming the variable: %v", err)
+	}
+}
+
+func TestConsolidationKeyerWarnsOnceWithoutASecret(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	keyer, err := consolidationKeyer("", logger)
+	if err != nil || keyer != nil {
+		t.Fatalf("no secret = %v, %v: want a nil keyer", keyer, err)
+	}
+	if got := strings.Count(buf.String(), "CONSOLIDATION_KEY_SECRET is not set"); got != 1 || !strings.Contains(buf.String(), "level=WARN") {
+		t.Fatalf("want exactly one WARN, got %d in %q", got, buf.String())
+	}
+	buf.Reset()
+	keyer, err = consolidationKeyer("0123456789abcdef", logger)
+	if err != nil || keyer == nil || buf.Len() != 0 {
+		t.Fatalf("a good secret = %v, %v, log %q: want a keyer and silence", keyer, err, buf.String())
+	}
+	if got := keyer.KeyFor("s", "a"); len(got) != 64 {
+		t.Fatalf("key = %q", got)
+	}
+}

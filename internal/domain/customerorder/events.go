@@ -19,6 +19,10 @@ type PlacedGroup struct {
 	DeliverByLatest   time.Time
 	TimeZone          string // optional IANA zone of the window (ADR 0009)
 	Lines             []OrderLine
+	// ChosenDeliveryDay and ConsolidationEligible: CONSOLIDATED groups only,
+	// omitted on the wire when unknown (ADR 0013).
+	ChosenDeliveryDay     string
+	ConsolidationEligible *bool
 }
 
 // CustomerOrderPlaced is raised by Place. Its fields are the model's data list.
@@ -30,6 +34,9 @@ type CustomerOrderPlaced struct {
 	DestinationPostalPrefix string
 	PlacedAt                time.Time
 	Groups                  []PlacedGroup
+	// ConsolidationKey is the keyed hash of shopper and ship-to (ADR 0012),
+	// "" when the service has no secret: the wire field is then omitted.
+	ConsolidationKey string
 }
 
 // EventName returns "CustomerOrderPlaced".

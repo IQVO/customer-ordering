@@ -159,7 +159,7 @@ components:
       name: CustomerOrderPlaced
       title: CustomerOrderPlaced
       summary: A customer order was placed (every group promised and confirmed).
-      description: '`type` = `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced`; subject and key = the orderId. Raised by PlaceOrder when the order is saved in state PLACED, in the same transaction as the outbox row. Consumed by order-sourcing (creates one assignment per group) and delivery-promise (a repeated confirm is a no-op, ADR 0003). Carries the destination postal prefix only: the ship-to address never leaves customer-ordering except through GET /orders/{orderId}/ship-to.'
+      description: '`type` = `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced`; subject and key = the orderId. Raised by PlaceOrder when the order is saved in state PLACED, in the same transaction as the outbox row. Consumed by order-sourcing (creates one assignment per group) and delivery-promise (a repeated confirm is a no-op, ADR 0003). Carries the destination postal prefix only: the ship-to address never leaves customer-ordering except through GET /orders/{orderId}/ship-to. Also carries the optional consolidationKey (ADR 0012): an opaque keyed hash of shopper and ship-to that lets order-sourcing merge the groups of one shopper and one address; an absent consolidationKey means the order never merges. Each group carries its REAL tier, which may be CONSOLIDATED (ADR 0013), with the optional chosenDeliveryDay and consolidationEligible of that choice.'
       contentType: application/cloudevents+json
       tags:
       - name: customerorder
@@ -182,6 +182,7 @@ components:
             shopperId: 3b0c1f0e-6f0a-4a39-8a55-2b7f0d8c9e11
             destinationPostalPrefix: '787'
             placedAt: '2026-10-23T10:15:30Z'
+            consolidationKey: 9f2c6d0b1a7e4c3d8b5a0e6f1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4
             groups:
             - groupNo: 1
               promiseId: p-1001
@@ -601,7 +602,7 @@ components:
       name: PackageDelivered
       title: PackageDelivered (consumed)
       summary: A package was delivered (MarkGroupDelivered once every package of the group is).
-      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. A package was delivered (MarkGroupDelivered once every package of the group is). Dispatch on the full type; unknown fields are ignored.'
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. A package was delivered (MarkGroupDelivered once every package of the group is). When order-sourcing merged several groups into one package, the event carries the carrier''s assignmentId and orderId and every group that named the tracking number is marked (ADR 0012). Dispatch on the full type; unknown fields are ignored.'
       contentType: application/cloudevents+json
       tags:
       - name: consumed
@@ -656,7 +657,7 @@ components:
       name: PackageLost
       title: PackageLost (consumed)
       summary: A package was declared lost.
-      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. The group that announced the package becomes LOST (terminal); a package reported before its shipment is known is replayed when FulfillmentShipped arrives. Dispatch on the full type; unknown fields are ignored.'
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. Every group that announced the package becomes LOST (terminal; several groups share one package once order-sourcing merges them, ADR 0012); a package reported before the shipment of a group is known is replayed when the FulfillmentShipped of that group arrives. Dispatch on the full type; unknown fields are ignored.'
       contentType: application/cloudevents+json
       tags:
       - name: consumed
@@ -682,7 +683,7 @@ components:
       name: PackageReturned
       title: PackageReturned (consumed)
       summary: A package was returned to the sender.
-      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. The group that announced the package becomes RETURNED (terminal), with the same rules as PackageLost. Dispatch on the full type; unknown fields are ignored.'
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`. Every group that announced the package becomes RETURNED (terminal), with the same rules as PackageLost. Dispatch on the full type; unknown fields are ignored.'
       contentType: application/cloudevents+json
       tags:
       - name: consumed
@@ -724,6 +725,10 @@ components:
         placedAt: &id001
           type: string
           format: date-time
+        consolidationKey:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          description: 'Opaque consolidation key (ADR 0012): hex(HMAC-SHA-256(secret, "consolidation-key/v1" || 0x00 || shopperId || 0x00 || normalised ship-to)), 64 lower-case hex characters. It links the orders of ONE shopper to ONE address without carrying either and is not reversible without the secret. Optional and additive on v1; omitted when customer-ordering has no secret configured. An absent key means the order never merges (never read it as an empty key).'
         groups:
           type: array
           items:
@@ -743,13 +748,15 @@ components:
                 minimum: 1
               promiseId:
                 type: string
-              tier: &id002
+              tier:
                 type: string
                 enum:
                 - SAME_DAY
                 - NEXT_DAY
                 - TWO_DAY
                 - STANDARD
+                - CONSOLIDATED
+                description: "The REAL tier of the promise, never mapped. CONSOLIDATED (ADR 0013) is the opt-in later delivery day the network may merge; a consumer must accept it before any shopper can choose it."
               witnessNodeId:
                 type: string
               shipBy: *id001
@@ -762,6 +769,13 @@ components:
                   deliverByEarliest/deliverByLatest belong to, copied from the promise. Optional and additive on v1
                   (ADR 0009); omitted when unknown (a promise delivery-promise stored before it carried the zone), in
                   which case read the window in UTC.
+              chosenDeliveryDay:
+                type: string
+                format: date
+                description: "Only on a CONSOLIDATED group (ADR 0013): the local calendar date (YYYY-MM-DD) of deliverByLatest in timeZone that the shopper chose at placement. Optional and additive on v1; omitted for every other tier and when the zone is unknown."
+              consolidationEligible:
+                type: boolean
+                description: "Only on a CONSOLIDATED group (ADR 0013): delivery-promise's answer whether the option leaves the network at least one local day to merge the order with others; it never asserts that another order exists. Optional and additive on v1; an absent value means unknown or not a CONSOLIDATED option, never false."
               lines:
                 type: array
                 items:
@@ -1378,7 +1392,13 @@ components:
         packageNo:
           type: integer
           minimum: 1
-        tier: *id002
+        tier:
+          type: string
+          enum:
+          - SAME_DAY
+          - NEXT_DAY
+          - TWO_DAY
+          - STANDARD
         carrier:
           type: string
     LabelIssuedEvent:

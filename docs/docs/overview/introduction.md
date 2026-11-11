@@ -42,7 +42,7 @@ optional components, off by default).
 | **CustomerOrder** (aggregate) | `internal/domain/customerorder` | Lines, one promise per shipment group, the ship-to, and the customer-facing status derived from the group states. Every line is in exactly one group; the promise destination matches the ship-to; status only moves forward. |
 | **Shopper** (aggregate) | `internal/domain/shopper` | A registered, synthetic shopper with a unique lower-cased e-mail and at most 20 saved addresses. |
 | **ShipTo** (value object) | `internal/domain/shipto` | The delivery address. Synthetic PII, served by one restricted route and never carried by an event; events carry only the destination postal prefix. |
-| **Order tracking** (read model) | tables `group_signals`, `tracking_packages`, `assignment_links` | Event-fed: promise signals, verdicts, packages, scans, exceptions and outcomes of every group. |
+| **Order tracking** (read model) | tables `group_signals`, `tracking_packages`, `tracking_package_groups`, `assignment_links` | Event-fed: promise signals, verdicts, packages, scans, exceptions and outcomes of every group. |
 | **Inbox, idempotency, outbox** | tables `processed_events`, `idempotency_keys`, `outbox_events` | At-most-once consumption, replayed POSTs for 24 h, at-least-once publication. |
 
 ## What it does NOT own
@@ -53,7 +53,8 @@ optional components, off by default).
 | Choosing the shipping node, locking the assignment, accepting or refusing a cancel | `order-sourcing` |
 | Labels, scans, deliveries, the package journey | `shipping-and-tracking` (the only reader of the ship-to address, for the label) |
 | Carts, catalogue, prices, availability | the other Storefront contexts |
-| Payments, invoices, tax, notifications, returns after the lock | not built (future contexts) |
+| Payments, refunds, returns after the lock | other contexts: `customer-payments` (storefront, built on its `develop`) and `returns-processing` (WMS, built on its `develop`) exist, but this context has no edge to either: no call, no consumed or published event type of theirs |
+| Invoices, tax, notifications | no context found in the `IQVO` organisation, and none here |
 | Authentication | nothing: REST, MCP and A2A are unauthenticated fleet-wide; the shopper's identity is only a `shopperId` in the request |
 
 This context never calls `order-sourcing` or `shipping-and-tracking`. Its one

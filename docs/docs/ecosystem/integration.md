@@ -122,8 +122,15 @@ logs, not as unreadiness.
   `GET /journeys/{trackingNumber}` of shipping-and-tracking.
 - **No `warehouse.*` topic and no warehouse-systems service** (WMS/WES) is
   consumed or called.
-- **No payments, notification or returns edge**: those contexts are not built
-  here.
+- **No payments, notification or returns edge.** `customer-payments` (storefront)
+  and `returns-processing` (WMS) exist as contexts, but no code or contract of
+  this repository references either: the three consumed topics are
+  `retailnetwork.delivery-promise.events`, `retailnetwork.order-sourcing.events` and
+  `retailnetwork.shipping-and-tracking.events`, the only produced topic is
+  `retailnetwork.customer-ordering.events`, and `apis/openapi.yaml` has no payment
+  or return operation. `customer-payments` consumes checkout, order-sourcing and
+  shipping-and-tracking events, not this context's. No invoice, tax or
+  notification context was found in the `IQVO` organisation.
 - **MCP and A2A are inbound and read-only**: they wire read use cases only, own
   no Kafka adapter and no outbound client.
 - **The web remote** (`web/`, `customer_ordering_mfe`) calls only this

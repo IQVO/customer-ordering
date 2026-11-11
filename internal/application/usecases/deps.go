@@ -39,6 +39,10 @@ type Deps struct {
 	// Metrics records the business outcome of each checkout; nil records
 	// nothing, so unit tests need no wiring.
 	Metrics ports.OrderMetrics
+	// ConsolidationKeys derives the consolidation key PlaceOrder puts on the
+	// order (ADR 0012); nil derives none: the event omits the field and the
+	// order never merges.
+	ConsolidationKeys ports.ConsolidationKeyer
 }
 
 const (

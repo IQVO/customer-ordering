@@ -5,6 +5,9 @@ database:
   migrationsUrl: "postgres://u@example.invalid:5432/direct"
   existingSecretKey: "DATABASE_URL"
   migrationsExistingSecretKey: "MIGRATIONS_DATABASE_URL"
+consolidation:
+  existingSecret: "customer-ordering-consolidation"
+  existingSecretKey: "CONSOLIDATION_KEY_SECRET"
 kafka:
   brokers: "kafka.example.invalid:9092"
 config:

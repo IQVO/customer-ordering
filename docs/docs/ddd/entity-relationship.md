@@ -8,8 +8,8 @@ sidebar_position: 9
 # Entity-relationship diagram
 
 The Postgres schema as the embedded migrations create it
-(`internal/adapters/outbound/postgres/migrations/0001` to `0004`, applied at boot
-by golang-migrate). Eleven tables of the context plus golang-migrate's own
+(`internal/adapters/outbound/postgres/migrations/0001` to `0005`, applied at boot
+by golang-migrate). Twelve tables of the context plus golang-migrate's own
 `schema_migrations`. Foreign keys exist only where the diagram draws a
 relationship; the tracking read model and the infrastructure tables are keyed by
 ids copied from events and carry no foreign key.
@@ -21,7 +21,8 @@ erDiagram
   customer_orders ||--|{ order_groups : "shipped in"
   customer_orders }o..o| shoppers : "placed by (shopper_id, no FK)"
   order_groups ||..o| group_signals : "(order_id, group_no)"
-  order_groups ||..o{ tracking_packages : "(order_id, group_no)"
+  order_groups ||..o{ tracking_package_groups : "(order_id, group_no)"
+  tracking_packages ||--o{ tracking_package_groups : "tracking_number"
   order_groups ||..o| assignment_links : "(order_id, group_no)"
 
   shoppers {
@@ -99,6 +100,11 @@ erDiagram
     text exception_reason
     text outcome "LOST or RETURNED"
   }
+  tracking_package_groups {
+    text tracking_number PK
+    text order_id PK
+    int group_no PK
+  }
   assignment_links {
     text assignment_id PK
     text order_id
@@ -130,14 +136,26 @@ erDiagram
     int attempts
     text last_error
   }
+  compensation_cancels {
+    bigserial id PK
+    text order_id "unique with group_no and promise_id"
+    int group_no
+    text promise_id
+    timestamptz created_at
+    timestamptz released_at "null until released"
+    int attempts
+    text last_error
+  }
 ```
 
 Source: `internal/adapters/outbound/postgres/migrations/0001_customer_ordering_schema.up.sql`,
 `0002_package_lost_and_returned.up.sql`, `0003_shopper_addresses_and_order_history.up.sql`,
-`0004_group_window_time_zone.up.sql`. Columns not drawn: `order_groups` also holds
+`0004_group_window_time_zone.up.sql`, `0005_compensation_cancels.up.sql`,
+`0006_order_consolidation_key.up.sql` (adds `customer_orders.consolidation_key`),
+`0007_tracking_package_groups.up.sql`. Columns not drawn: `order_groups` also holds
 `node_id`, `locked_at`, `shipped_at`, `delivered_at`, `cancel_requested_at`,
 `cancelled_at`, `cancel_refused_reason`, `lost_at`, `returned_at`;
-`tracking_packages` also holds `last_scan_node_id`, `outcome_at`; `outbox_events`
+`tracking_packages` also holds `last_scan_node_id`, `outcome_at`, and keeps `order_id`/`group_no` as "the first group that named the package" (ADR 0012: the set of groups of a package is `tracking_package_groups`, rows only added, so merged groups can share one tracking number); `outbox_events`
 also holds `subject`, `dataschema`, `created_at`.
 
 ## Reading it
@@ -151,7 +169,7 @@ also holds `subject`, `dataschema`, `created_at`.
   places an address is stored. The order list index
   `customer_orders_history_idx (shopper_id, placed_at DESC, order_id)` serves
   `GET /orders?shopperId=` keyset paging.
-- **Read model.** `group_signals`, `tracking_packages` and `assignment_links` are
+- **Read model.** `group_signals`, `tracking_packages`, `tracking_package_groups` and `assignment_links` are
   event-fed upserts that tolerate any arrival order; they are joined with the
   order's groups by `GET /orders/{orderId}/tracking`.
 - **Infrastructure.** `processed_events` (inbox) is written in the same
@@ -159,6 +177,16 @@ also holds `subject`, `dataschema`, `created_at`.
   for 24 hours. `outbox_events` has a partial index on rows not yet published;
   the relay claims them, and rows past `OUTBOX_MAX_ATTEMPTS` failures are
   excluded from claims (see the [Runbook](/docs/operations/runbook#outbox-relay)).
-- **Down migrations** exist for all four steps; there is no cross-service
+- **Compensation queue.** `compensation_cancels` (migration 0005) is the durable
+  queue of promise cancels that a failed checkout could not perform at
+  delivery-promise. A row is unique per `(order_id, group_no, promise_id)`; the
+  compensation worker claims unreleased rows in id order (partial index
+  `compensation_cancels_pending_idx` on rows with `released_at IS NULL`), sets
+  `released_at` when the cancel succeeds (or delivery-promise refuses it because
+  the promise is already closed), and records `attempts` and `last_error` on a
+  failure. Rows past `COMPENSATION_MAX_ATTEMPTS` failures are excluded from claims
+  (see the [Runbook](/docs/operations/runbook#compensation-queue)). Like the
+  infrastructure tables it carries no foreign key.
+- **Down migrations** exist for all five steps; there is no cross-service
   database access (`MIGRATIONS_DATABASE_URL` is the direct DSN, `DATABASE_URL`
   goes through PgBouncer).

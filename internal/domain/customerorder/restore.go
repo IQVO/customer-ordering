@@ -25,7 +25,7 @@ func Restore(s Snapshot) (*CustomerOrder, error) {
 	return &CustomerOrder{
 		id: s.ID, shopperID: s.ShopperID, shipTo: s.ShipTo, prefix: s.DestinationPostalPrefix, status: s.Status,
 		placedAt: shared.UTC(s.PlacedAt), cancelledAt: shared.UTC(s.CancelledAt), lines: append([]OrderLine{}, s.Lines...),
-		groups: groups, version: s.Version, loaded: s.Version,
+		groups: groups, version: s.Version, loaded: s.Version, consolidationKey: s.ConsolidationKey,
 	}, nil
 }
 
@@ -38,6 +38,9 @@ func checkSnapshot(s Snapshot) error {
 	}
 	if s.DestinationPostalPrefix != s.ShipTo.DestinationPrefix() {
 		return errors.New("destinationPostalPrefix does not match the ship-to")
+	}
+	if !ValidConsolidationKey(s.ConsolidationKey) {
+		return errors.New("consolidationKey must be empty or 64 lower-case hex characters")
 	}
 	if s.PlacedAt.IsZero() || s.Version < 1 {
 		return errors.New("placedAt and a version of at least 1 are required")
@@ -98,6 +101,9 @@ func checkGroupSnapshot(g GroupPromise) error {
 	}
 	if !g.Status.Valid() {
 		return fmt.Errorf("status %q is not a group state", g.Status)
+	}
+	if err := checkChoice(g.Tier, g.ChosenDeliveryDay, g.ConsolidationEligible); err != nil {
+		return err
 	}
 	if err := checkPackages(g); err != nil {
 		return err

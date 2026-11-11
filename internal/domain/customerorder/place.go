@@ -20,6 +20,9 @@ type GroupInput struct {
 	TimeZone                string // optional IANA zone of the window (ADR 0009)
 	LineNos                 []int
 	DestinationPostalPrefix string
+	// ChosenDeliveryDay and ConsolidationEligible: CONSOLIDATED groups only (ADR 0013).
+	ChosenDeliveryDay     string
+	ConsolidationEligible *bool
 }
 
 // NewOrder is the input of Place.
@@ -29,6 +32,9 @@ type NewOrder struct {
 	ShipTo    shipto.ShipTo
 	Lines     []OrderLine
 	Groups    []GroupInput
+	// ConsolidationKey is "" (feature off: the event omits it) or the 64 hex
+	// characters of the keyed hash of shopper and address (ADR 0012).
+	ConsolidationKey string
 }
 
 // Place creates a PLACED order at version 1 and raises CustomerOrderPlaced
@@ -44,6 +50,9 @@ func Place(in NewOrder, now time.Time) (*CustomerOrder, []shared.Event, error) {
 	if err := in.ShipTo.Validate(); err != nil {
 		return nil, nil, err
 	}
+	if !ValidConsolidationKey(in.ConsolidationKey) {
+		return nil, nil, shared.Invalid("consolidationKey must be empty or 64 lower-case hex characters")
+	}
 	if err := validateLines(in.Lines); err != nil {
 		return nil, nil, err
 	}
@@ -54,10 +63,12 @@ func Place(in NewOrder, now time.Time) (*CustomerOrder, []shared.Event, error) {
 	o := &CustomerOrder{
 		id: in.ID, shopperID: in.ShopperID, shipTo: in.ShipTo, prefix: in.ShipTo.DestinationPrefix(),
 		status: StatusPlaced, placedAt: shared.UTC(now), lines: append([]OrderLine{}, in.Lines...), groups: groups, version: 1,
+		consolidationKey: in.ConsolidationKey,
 	}
 	ev := CustomerOrderPlaced{
 		Header: shared.Header{Version: o.version, At: o.placedAt}, OrderID: o.id, ShopperID: o.shopperID,
 		DestinationPostalPrefix: o.prefix, PlacedAt: o.placedAt, Groups: placedGroups(o),
+		ConsolidationKey: o.consolidationKey,
 	}
 	return o, []shared.Event{ev}, nil
 }
@@ -76,6 +87,7 @@ func placedGroups(o *CustomerOrder) []PlacedGroup {
 		out[i] = PlacedGroup{
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: g.Tier, WitnessNodeID: g.WitnessNodeID, ShipBy: g.ShipBy,
 			DeliverByEarliest: g.DeliverByEarliest, DeliverByLatest: g.DeliverByLatest, TimeZone: g.TimeZone, Lines: lines,
+			ChosenDeliveryDay: g.ChosenDeliveryDay, ConsolidationEligible: cloneBool(g.ConsolidationEligible),
 		}
 	}
 	return out
@@ -151,6 +163,9 @@ func checkGroup(g GroupInput, to shipto.ShipTo) error {
 	if !to.PrefixMatches(g.DestinationPostalPrefix) {
 		return wrapDestination(g.GroupNo, g.DestinationPostalPrefix)
 	}
+	if err := checkChoice(g.Tier, g.ChosenDeliveryDay, g.ConsolidationEligible); err != nil {
+		return shared.Invalid("group %d: %v", g.GroupNo, err)
+	}
 	return nil
 }
 
@@ -176,6 +191,7 @@ func newGroup(g GroupInput) GroupPromise {
 		GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: g.Tier, WitnessNodeID: g.WitnessNodeID,
 		ShipBy: shared.UTC(g.ShipBy), DeliverByEarliest: shared.UTC(g.DeliverByEarliest), DeliverByLatest: shared.UTC(g.DeliverByLatest),
 		TimeZone: g.TimeZone, LineNos: append([]int{}, g.LineNos...), Status: GroupPromised,
+		ChosenDeliveryDay: g.ChosenDeliveryDay, ConsolidationEligible: cloneBool(g.ConsolidationEligible),
 		TrackingNumbers: []string{}, DeliveredTrackingNumbers: []string{},
 	}
 }

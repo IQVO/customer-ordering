@@ -90,7 +90,7 @@ func (u PlaceOrder) execute(ctx context.Context, in PlaceOrderInput) (_ views.Or
 		return views.Order{}, false, err
 	}
 	placed, err := transact(ctx, u.UoW, commandAttempts, func(ctx context.Context) (views.Order, error) {
-		o, events, err := customerorder.Place(newOrder(in, groups), u.now())
+		o, events, err := customerorder.Place(u.newOrder(in, groups), u.now())
 		if err != nil {
 			return views.Order{}, err
 		}
@@ -105,8 +105,15 @@ func (u PlaceOrder) execute(ctx context.Context, in PlaceOrderInput) (_ views.Or
 	return placed, false, err
 }
 
-func newOrder(in PlaceOrderInput, groups []customerorder.GroupInput) customerorder.NewOrder {
-	return customerorder.NewOrder{ID: in.OrderID, ShopperID: in.ShopperID, ShipTo: in.ShipTo, Lines: in.Lines, Groups: groups}
+// newOrder builds the Place input. The consolidation key is derived from the
+// shopper and the ship-to AFTER resolveAddress copied a saved address into in
+// (ADR 0012); without a keyer it stays empty.
+func (u PlaceOrder) newOrder(in PlaceOrderInput, groups []customerorder.GroupInput) customerorder.NewOrder {
+	key := ""
+	if u.ConsolidationKeys != nil {
+		key = u.ConsolidationKeys.KeyFor(in.ShopperID, in.ShipTo.NormalizedAddress())
+	}
+	return customerorder.NewOrder{ID: in.OrderID, ShopperID: in.ShopperID, ShipTo: in.ShipTo, Lines: in.Lines, Groups: groups, ConsolidationKey: key}
 }
 
 // checkAddressChoice enforces NG1: exactly one of shipTo / shipToAddressId.
@@ -156,7 +163,7 @@ func (u PlaceOrder) preflight(in PlaceOrderInput) error {
 			DeliverByEarliest: now, DeliverByLatest: now, LineNos: g.LineNos, DestinationPostalPrefix: in.ShipTo.DestinationPrefix(),
 		}
 	}
-	_, _, err := customerorder.Place(newOrder(in, groups), now)
+	_, _, err := customerorder.Place(u.newOrder(in, groups), now)
 	return err
 }
 
@@ -210,7 +217,7 @@ func (u PlaceOrder) promiseGroups(ctx context.Context, in PlaceOrderInput) ([]cu
 		}
 		out = append(out, groupInput(g, t))
 	}
-	if _, _, err := customerorder.Place(newOrder(in, out), u.now()); err != nil {
+	if _, _, err := customerorder.Place(u.newOrder(in, out), u.now()); err != nil {
 		return nil, err
 	}
 	for i, g := range out {
@@ -284,7 +291,7 @@ func groupInput(g CheckoutGroup, t promising.Terms) customerorder.GroupInput {
 	return customerorder.GroupInput{
 		GroupNo: g.GroupNo, PromiseID: t.PromiseID, Tier: customerorder.Tier(t.Tier), WitnessNodeID: t.WitnessNodeID,
 		ShipBy: t.ShipBy, DeliverByEarliest: t.DeliverByEarliest, DeliverByLatest: t.DeliverByLatest, TimeZone: t.TimeZone, LineNos: g.LineNos,
-		DestinationPostalPrefix: t.DestinationPostalPrefix,
+		DestinationPostalPrefix: t.DestinationPostalPrefix, ChosenDeliveryDay: chosenDeliveryDay(t), ConsolidationEligible: consolidationEligible(t),
 	}
 }
 

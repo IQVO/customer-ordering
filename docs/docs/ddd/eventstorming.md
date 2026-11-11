@@ -92,7 +92,7 @@ flowchart TB
     end
     P0["Consumer handler:<br/>claim event id, then apply"]:::policy
     G["CustomerOrder"]:::aggregate
-    V["Tracking view<br/>group_signals, tracking_packages,<br/>assignment_links"]:::readmodel
+    V["Tracking view<br/>group_signals, tracking_packages,<br/>tracking_package_groups, assignment_links"]:::readmodel
     Q1["GET /orders/id/tracking"]:::readmodel
     H3["H3 no ordering across topics:<br/>early deliveries are replayed"]:::hotspot
 
@@ -176,4 +176,4 @@ Source: `internal/application/usecases/cancel.go`,
 | H3 | Producers key by their own ids, so a delivery or outcome can arrive before `FulfillmentShipped`; the code stores and replays it, an unknown order is skipped, not retried. | `consume_tracking.go`, ADR 0002 A7 |
 | H4 | `ErrCancelAfterLock` is advisory: a lock this service has not consumed yet cannot be seen, and order-sourcing's answer decides. | `customerorder/cancel.go` |
 | H5 | If publishing to a `.dlq` topic fails, the consumer keeps retrying and the partition is blocked. | [Runbook](/docs/operations/runbook#consumers-and-the-dlq) |
-| H6 | `apis/asyncapi.yaml` says the service consumes "Fifteen events" but lists seventeen. | `apis/asyncapi.yaml` info description |
+| H6 | Resolved: the `apis/asyncapi.yaml` description once said "Fifteen events" while listing seventeen; it now says seventeen, matching the code. | `apis/asyncapi.yaml` info description |

@@ -110,17 +110,19 @@ func (s GroupStatus) Valid() bool {
 // Tier is a delivery-promise service tier.
 type Tier string
 
-// The four service tiers.
+// The five service tiers. TierConsolidated is the opt-in later delivery day the
+// network may merge with other orders (ADR 0013).
 const (
-	TierSameDay  Tier = "SAME_DAY"
-	TierNextDay  Tier = "NEXT_DAY"
-	TierTwoDay   Tier = "TWO_DAY"
-	TierStandard Tier = "STANDARD"
+	TierSameDay      Tier = "SAME_DAY"
+	TierNextDay      Tier = "NEXT_DAY"
+	TierTwoDay       Tier = "TWO_DAY"
+	TierStandard     Tier = "STANDARD"
+	TierConsolidated Tier = "CONSOLIDATED"
 )
 
-// Valid reports whether t is one of the four tiers.
+// Valid reports whether t is one of the five tiers.
 func (t Tier) Valid() bool {
-	return t == TierSameDay || t == TierNextDay || t == TierTwoDay || t == TierStandard
+	return t == TierSameDay || t == TierNextDay || t == TierTwoDay || t == TierStandard || t == TierConsolidated
 }
 
 // OrderLine is one cart line.
@@ -146,6 +148,14 @@ type GroupPromise struct {
 	LineNos    []int
 	Status     GroupStatus
 	RevisionNo int
+
+	// ChosenDeliveryDay is the local calendar date (YYYY-MM-DD, in TimeZone) of
+	// deliverByLatest the shopper chose at placement; ConsolidationEligible is
+	// delivery-promise's answer whether the option leaves time to merge (nil =
+	// unknown, never false by default). Both only exist on a CONSOLIDATED group
+	// (ADR 0013); the day is a record of the choice, not moved by a revision.
+	ChosenDeliveryDay     string
+	ConsolidationEligible *bool
 
 	AssignmentID string
 	NodeID       string
@@ -181,6 +191,7 @@ func (g GroupPromise) terminal() bool {
 }
 
 func (g GroupPromise) clone() GroupPromise {
+	g.ConsolidationEligible = cloneBool(g.ConsolidationEligible)
 	g.LineNos = append([]int{}, g.LineNos...)
 	g.TrackingNumbers = append([]string{}, g.TrackingNumbers...)
 	g.DeliveredTrackingNumbers = append([]string{}, g.DeliveredTrackingNumbers...)
@@ -200,6 +211,8 @@ type CustomerOrder struct {
 	groups      []GroupPromise
 	version     int64
 	loaded      int64
+	// consolidationKey is "" or 64 lower-case hex characters (ADR 0012).
+	consolidationKey string
 }
 
 // Snapshot is the persisted form of an order. Restore validates it.
@@ -214,6 +227,8 @@ type Snapshot struct {
 	Lines                   []OrderLine
 	Groups                  []GroupPromise
 	Version                 int64
+	// ConsolidationKey is "" (not derived) or 64 lower-case hex characters.
+	ConsolidationKey string
 }
 
 // ID returns the order id.
@@ -299,6 +314,7 @@ func (o *CustomerOrder) Snapshot() Snapshot {
 	return Snapshot{
 		ID: o.id, ShopperID: o.shopperID, ShipTo: o.shipTo, DestinationPostalPrefix: o.prefix, Status: o.status,
 		PlacedAt: o.placedAt, CancelledAt: o.cancelledAt, Lines: o.Lines(), Groups: o.Groups(), Version: o.version,
+		ConsolidationKey: o.consolidationKey,
 	}
 }
 

@@ -94,6 +94,7 @@ Messages by binary (all in the code, searchable in Loki as `{app="customer-order
 | `service exited with error`, `mcp server exited with error`, `a2a agent exited with error` (`error`) | ERROR | boot failures, a worker that stopped |
 | `consumer stopped`, `outbox relay stopped`, `kafka relay writer close failed` | ERROR | `cmd/api` |
 | `invalid OUTBOX_RELAY_INTERVAL; using the default`, `invalid OUTBOX_MAX_ATTEMPTS; using the default`, `ignoring invalid SHUTDOWN_DRAIN_DELAY` | WARN | configuration typos |
+| `CONSOLIDATION_KEY_SECRET is not set: no consolidation key is derived, ...` | WARN | `cmd/api` at start, once (the feature is off) |
 | `outbox relay pass failed` (`error`) | ERROR | relay, every failed pass |
 | `outbox relay: row reached the attempt cap and is excluded from future claims; re-arm it with attempts = 0 after fixing the cause` | ERROR | relay, once per parked row |
 | `skipping a message that is not a valid CloudEvent` (`consumer`, `topic`, `error`) | WARN | consumers |
@@ -105,6 +106,7 @@ Messages by binary (all in the code, searchable in Loki as `{app="customer-order
 | `consumed event skipped` (`eventId`, `type`, `reason`) | INFO | consumers: unknown order or a status that would move backwards |
 | `event processed` (`type`, `event_id`, `what`) | DEBUG | consumers |
 | `readiness: dependency is not ready` (`dependency`, `error`) | WARN | `/readyz`; the cause of a 503 lives here, never in the response |
+| `compensation worker running` (`interval`, `max_attempts`), `compensation worker: row reached the attempt cap and is excluded from future claims; re-arm it with attempts = 0, released_at = NULL after fixing the cause`, `invalid COMPENSATION_RETRY_INTERVAL; using the default`, `invalid COMPENSATION_MAX_ATTEMPTS; using the default` | INFO, ERROR, WARN | compensation worker (boot and drain) |
 | `compensating cancel refused by delivery-promise; nothing to release`, `compensating cancel of a confirmed promise failed; the hold stays at delivery-promise`, `cancelled a confirmed promise of a failed checkout` | WARN, ERROR, INFO | checkout compensation |
 | `mcp tool failed with an unexpected error`, `a2a skill failed` | ERROR | agent adapters |
 

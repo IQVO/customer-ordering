@@ -38,7 +38,7 @@ Page map (source under `docs/docs/`):
 | Ecosystem | [Integration](docs/docs/ecosystem/integration.md), [MCP tools](docs/docs/mcp/tools.md) |
 | DDD | [Use cases](docs/docs/ddd/use-cases.md), [Subdomain classification](docs/docs/ddd/subdomain-classification.md), [DDD artifacts](docs/docs/ddd/ddd-artifacts.md) (the 11-page ddd-crew pack: core domain chart, bounded context canvas, context map, aggregate design canvas, domain message flow, EventStorming, ubiquitous language, class diagram, entity-relationship, sequence diagrams, domain events) |
 | API reference | [API overview](docs/docs/api-reference/overview.md) (REST pages generated from `apis/openapi.yaml`), [Event catalogue](docs/docs/api-reference/events.md) |
-| Decisions | [ADR index](docs/adr/index.md) — decisions 0001 to 0009 with status |
+| Decisions | [ADR index](docs/adr/index.md) — decisions 0001 to 0013 with status |
 
 The upstream design of the context also lives in the warehouse-docs
 retail-network pages
@@ -145,6 +145,8 @@ All settings, the probes, the shutdown order and the outbox runbook: [Configurat
 | `HTTP_ADDR` | `:8080` | Listen address |
 | `OUTBOX_RELAY_INTERVAL` | `1s` | Relay poll interval (Go duration or plain seconds) |
 | `OUTBOX_MAX_ATTEMPTS` | `20` | Failures before the relay excludes a row (`0` = unlimited) |
+| `COMPENSATION_RETRY_INTERVAL` | `5s` | Compensation worker poll interval (Go duration or plain seconds) |
+| `COMPENSATION_MAX_ATTEMPTS` | `20` | Failures before the compensation worker excludes a queued cancel (`0` = unlimited) |
 | `SHUTDOWN_DRAIN_DELAY` | `5s` | Wait after flipping `/readyz` before closing |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 
@@ -227,6 +229,10 @@ relay, no consumers — it can never write ([ADR 0005](docs/adr/0005-mcp-server-
 | `get_order(orderId)` | `GET /orders/{orderId}`: status, lines, the promise of every group |
 | `get_order_tracking(orderId)` | `GET /orders/{orderId}/tracking`: verdicts, signals, packages, outcomes |
 | `get_ship_to(orderId)` | `GET /orders/{orderId}/ship-to`: the restricted address read |
+
+Every tool and A2A skill declares its agent authority level (`L1` here: the whole agent surface is a read) and the handler is stateless, answering both the
+2026-07-28 per-request handshake and legacy sessions; the server also offers one resource (`warehouse://customer-ordering/orders/{orderId}/tracking`) and one
+prompt (`triage_order_status`) — [ADR 0011](docs/adr/0011-agent-authority-levels-and-complete-mcp-surface.md).
 
 ```sh
 export DATABASE_URL=postgres://user:***@localhost:5432/customer_ordering?sslmode=disable

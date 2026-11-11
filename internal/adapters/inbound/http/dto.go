@@ -71,19 +71,23 @@ type registerShopperRequest struct {
 }
 
 type groupDTO struct {
-	GroupNo             int    `json:"groupNo"`
-	PromiseID           string `json:"promiseId"`
-	Tier                string `json:"tier"`
-	ShipBy              string `json:"shipBy"`
-	DeliverByEarliest   string `json:"deliverByEarliest"`
-	DeliverByLatest     string `json:"deliverByLatest"`
-	TimeZone            string `json:"timeZone,omitempty"`
-	LineNos             []int  `json:"lineNos"`
-	Status              string `json:"status"`
-	RevisionNo          int    `json:"revisionNo,omitempty"`
-	CancelReason        string `json:"cancelReason,omitempty"`
-	CancelRequestedAt   string `json:"cancelRequestedAt,omitempty"`
-	CancelRefusedReason string `json:"cancelRefusedReason,omitempty"`
+	GroupNo           int    `json:"groupNo"`
+	PromiseID         string `json:"promiseId"`
+	Tier              string `json:"tier"`
+	ShipBy            string `json:"shipBy"`
+	DeliverByEarliest string `json:"deliverByEarliest"`
+	DeliverByLatest   string `json:"deliverByLatest"`
+	TimeZone          string `json:"timeZone,omitempty"`
+	LineNos           []int  `json:"lineNos"`
+	Status            string `json:"status"`
+	RevisionNo        int    `json:"revisionNo,omitempty"`
+	// ChosenDeliveryDay and ConsolidationEligible: CONSOLIDATED groups only,
+	// omitted when unknown; an absent eligibility is never false (ADR 0013).
+	ChosenDeliveryDay     string `json:"chosenDeliveryDay,omitempty"`
+	ConsolidationEligible *bool  `json:"consolidationEligible,omitempty"`
+	CancelReason          string `json:"cancelReason,omitempty"`
+	CancelRequestedAt     string `json:"cancelRequestedAt,omitempty"`
+	CancelRefusedReason   string `json:"cancelRefusedReason,omitempty"`
 }
 
 type orderDTO struct {
@@ -112,6 +116,7 @@ func orderView(o views.Order) orderDTO {
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: g.Tier, ShipBy: ts(g.ShipBy), DeliverByEarliest: ts(g.DeliverByEarliest),
 			DeliverByLatest: ts(g.DeliverByLatest), TimeZone: g.TimeZone, LineNos: nos, Status: g.Status, RevisionNo: g.RevisionNo, CancelReason: g.CancelReason,
 			CancelRequestedAt: ts(g.CancelRequestedAt), CancelRefusedReason: g.CancelRefusedReason,
+			ChosenDeliveryDay: g.ChosenDeliveryDay, ConsolidationEligible: g.ConsolidationEligible,
 		}
 	}
 	return orderDTO{

@@ -39,6 +39,10 @@ type placedGroupData struct {
 	DeliverByLatest   string     `json:"deliverByLatest"`
 	TimeZone          string     `json:"timeZone,omitempty"`
 	Lines             []lineData `json:"lines"`
+	// ChosenDeliveryDay and ConsolidationEligible: CONSOLIDATED groups only,
+	// omitted when unknown; an absent eligibility is never false (ADR 0013).
+	ChosenDeliveryDay     string `json:"chosenDeliveryDay,omitempty"`
+	ConsolidationEligible *bool  `json:"consolidationEligible,omitempty"`
 }
 
 type placedData struct {
@@ -47,6 +51,9 @@ type placedData struct {
 	DestinationPostalPrefix string            `json:"destinationPostalPrefix"`
 	PlacedAt                string            `json:"placedAt"`
 	Groups                  []placedGroupData `json:"groups"`
+	// ConsolidationKey is the keyed hash of shopper and ship-to (ADR 0012);
+	// omitted when the service has no secret.
+	ConsolidationKey string `json:"consolidationKey,omitempty"`
 }
 
 type cancelledData struct {
@@ -140,10 +147,12 @@ func placedPayload(e customerorder.CustomerOrderPlaced) placedData {
 		groups[i] = placedGroupData{
 			GroupNo: g.GroupNo, PromiseID: g.PromiseID, Tier: string(g.Tier), WitnessNodeID: g.WitnessNodeID, ShipBy: ts(g.ShipBy),
 			DeliverByEarliest: ts(g.DeliverByEarliest), DeliverByLatest: ts(g.DeliverByLatest), TimeZone: g.TimeZone, Lines: lines,
+			ChosenDeliveryDay: g.ChosenDeliveryDay, ConsolidationEligible: g.ConsolidationEligible,
 		}
 	}
 	return placedData{
 		OrderID: string(e.OrderID), ShopperID: e.ShopperID, DestinationPostalPrefix: e.DestinationPostalPrefix, PlacedAt: ts(e.PlacedAt), Groups: groups,
+		ConsolidationKey: e.ConsolidationKey,
 	}
 }
 

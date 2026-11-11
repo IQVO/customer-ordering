@@ -51,6 +51,10 @@ func testTracking(t *testing.T, e Env) {
 		{"a void closes a labelled package only", trackingAVoidClosesALabelledPackageOnly},
 		{"outcomes: the first one wins, are listed per group and survive later scans", trackingOutcomesAreRememberedListedPerGroupAndFinal},
 		{"group signals accumulate per field and sort by group", trackingGroupSignalsAccumulatePerFieldAndSortByG},
+		{"a tracking number shared by several groups lists each of them", trackingSharedNumberHasASetOfGroups},
+		{"a shared package is listed under each group of its order", trackingSharedPackageIsListedPerGroup},
+		{"a delivery and an outcome reach every group of a shared number", trackingSharedDeliveryAndOutcomeReachEveryGroup},
+		{"the assignment link joins the group set and a package may name only its order", trackingAssignmentLinkJoinsTheGroupSet},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) { c.run(t, e) })
@@ -147,8 +151,8 @@ func trackingADeliveryWithOnlyTheAssignmentIsLinkedBy(t *testing.T, e Env) {
 }
 
 func trackingExceptionsAreRecordedAndLinked(t *testing.T, e Env) {
-	must(t, e.Tracking.ApplyException(bg(), readmodel.Exception{TrackingNumber: "TRK-G", OrderID: "o-g", Reason: "ADDRESS_NOT_FOUND", At: at(9)}))
-	if p := packageByTN(t, e, "o-g", "TRK-G"); p.ExceptionReason != "ADDRESS_NOT_FOUND" {
+	must(t, e.Tracking.ApplyException(bg(), readmodel.Exception{TrackingNumber: "TRK-G", OrderID: "o-g", Reason: reasonAddress, At: at(9)}))
+	if p := packageByTN(t, e, "o-g", "TRK-G"); p.ExceptionReason != reasonAddress {
 		t.Fatalf("package = %+v", p)
 	}
 }

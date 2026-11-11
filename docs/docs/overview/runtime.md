@@ -54,9 +54,9 @@ The routes of `apis/openapi.yaml` (wired in `cmd/api` `buildServer`; errors are 
 ## Shutdown order
 
 SIGINT/SIGTERM: (1) `/readyz` 503, (2) wait `SHUTDOWN_DRAIN_DELAY`, (3) drain HTTP (10 s), (4) stop and await the consumers (10 s), (5) stop and await the
-relay (10 s), (6) close the pool. A relay or consumer that returns on its own makes the process exit non-zero so the orchestrator restarts it.
-The consumers are awaited one after the other, each bounded to 10 s, so the worst case is 5 + 10 + 3 x 10 + 10 = 55 s: a pod's
-`terminationGracePeriodSeconds` must exceed `SHUTDOWN_DRAIN_DELAY` + 50 s (the chart default is 60 and the chart refuses less).
+compensation worker (10 s), (6) stop and await the relay (10 s), (7) close the pool. A relay, compensation worker or consumer that returns on its own makes the process exit non-zero so the orchestrator restarts it.
+The workers are awaited one after the other, each bounded to 10 s, so the worst case is 5 + 10 + 3 x 10 + 10 + 10 = 65 s. The chart refuses a
+`terminationGracePeriodSeconds` of `SHUTDOWN_DRAIN_DELAY` + 50 s or less (default 60) and does not count the compensation worker's 10 s.
 
 ## Transactional outbox runbook
 

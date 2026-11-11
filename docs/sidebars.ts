@@ -132,6 +132,21 @@ const sidebars: SidebarsConfig = {
           label: '0010 Adopt the fleet REST API guideline',
           href: '/docs/adr/0010-adopt-the-fleet-rest-api-guideline',
         },
+        {
+          type: 'link',
+          label: '0011 agent authority levels and complete MCP surface',
+          href: '/docs/adr/0011-agent-authority-levels-and-complete-mcp-surface',
+        },
+        {
+          type: 'link',
+          label: '0012 the consolidation key and shared tracking numbers',
+          href: '/docs/adr/0012-consolidation-key-and-shared-tracking-numbers',
+        },
+        {
+          type: 'link',
+          label: '0013 the CONSOLIDATED tier and the stored chosen delivery day',
+          href: '/docs/adr/0013-consolidated-tier-and-chosen-delivery-day',
+        },
       ],
     },
   ],
