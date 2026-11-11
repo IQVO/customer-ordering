@@ -143,6 +143,7 @@ authoritative; unknown fields are ignored).
 | `PackageDelivered` | same | `trackingNumber`, `assignmentId`, `orderId`, `deliveredAt` | `MarkGroupDelivered` for every group of the tracking number, once every package of the group is delivered (ADR 0012) |
 | `PackageLost` | same | `trackingNumber`, `orderId`, `declaredAt` (falls back to the event time) | `MarkGroupLost`: terminal |
 | `PackageReturned` | same | `trackingNumber`, `orderId`, `returnedAt` (falls back to the event time) | `MarkGroupReturned`: terminal |
+| `PackageEtaWindowAssigned` | same | `trackingNumber`, `assignmentId`, `orderId`, `etaStart`, `etaEnd`, `assignedAt` (falls back to the event time) | tracking package window only (latest `assignedAt` wins); no aggregate command, the promise is untouched (ADR 0014) |
 
 **Ordering.** Producers key by their own root ids, so there is no order
 guarantee across groups or topics. An event for an unknown order, an unknown

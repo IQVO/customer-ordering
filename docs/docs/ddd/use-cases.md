@@ -132,6 +132,7 @@ order, unknown group, a status regression, an illegal transition) are logged as
 | `PackageExceptionRaised` | `ApplyPackageException` | records the exception reason |
 | `PackageDelivered` | `ApplyPackageDelivered` | marks the package delivered; `MarkGroupDelivered` for every group that named the tracking number (a merged package is shared by several groups, ADR 0012) and for the group the event resolves, each closing when every package of it is; a delivery for a not yet known group is replayed when its shipment arrives |
 | `PackageLost`, `PackageReturned` | `ApplyPackageLost`, `ApplyPackageReturned` | `MarkGroupLost` / `MarkGroupReturned` for every group that named the tracking number: the groups close (terminal) |
+| `PackageEtaWindowAssigned` | `ApplyPackageEta` | stores the day-of window on the package row (latest `assignedAt` wins); read model only, no order or promise field is read or written (ADR 0014) |
 
 The order status is derived from the group states (`status.go`, `derive`):
 `CANCELLED` groups do not count; with no live group the order is `CANCELLED`;

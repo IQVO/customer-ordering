@@ -218,6 +218,12 @@
                     "deliveredAt": {
                       "type": "string"
                     },
+                    "etaEnd": {
+                      "type": "string"
+                    },
+                    "etaStart": {
+                      "type": "string"
+                    },
                     "exceptionReason": {
                       "type": "string"
                     },

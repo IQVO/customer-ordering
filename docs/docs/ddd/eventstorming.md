@@ -89,6 +89,7 @@ flowchart TB
       TE1["LabelIssued, LabelVoided,<br/>PackageScanned, ExceptionRaised"]:::event
       TE2["PackageDelivered"]:::event
       TE3["PackageLost, PackageReturned"]:::event
+      TE4["PackageEtaWindowAssigned"]:::event
     end
     P0["Consumer handler:<br/>claim event id, then apply"]:::policy
     G["CustomerOrder"]:::aggregate
@@ -104,6 +105,7 @@ flowchart TB
     TE1 --> P0
     TE2 --> P0
     TE3 --> P0
+    TE4 --> P0
     P0 -->|"UpdateGroupPromise, MarkInFulfillment,<br/>MarkGroupShipped, MarkGroupDelivered,<br/>MarkGroupLost, MarkGroupReturned"| G
     P0 -->|"signals, packages, links"| V
     V --> Q1

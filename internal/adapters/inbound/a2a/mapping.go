@@ -115,6 +115,8 @@ type packageDTO struct {
 	LastScanAt      string `json:"lastScanAt,omitempty"`
 	DeliveredAt     string `json:"deliveredAt,omitempty"`
 	ExceptionReason string `json:"exceptionReason,omitempty"`
+	EtaStart        string `json:"etaStart,omitempty"`
+	EtaEnd          string `json:"etaEnd,omitempty"`
 }
 
 type trackingGroupDTO struct {
@@ -186,6 +188,7 @@ func toPackageDTOs(in []views.TrackingPackage) []packageDTO {
 		out = append(out, packageDTO{
 			TrackingNumber: p.TrackingNumber, Carrier: p.Carrier, State: p.State, LastScanNodeID: p.LastScanNodeID,
 			LastScanAt: instant(p.LastScanAt), DeliveredAt: instant(p.DeliveredAt), ExceptionReason: p.ExceptionReason,
+			EtaStart: instant(p.EtaStart), EtaEnd: instant(p.EtaEnd),
 		})
 	}
 	return out
