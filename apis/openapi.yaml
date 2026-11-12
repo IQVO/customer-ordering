@@ -854,6 +854,18 @@ components:
           type: string
           format: date-time
           description: End of the day-of delivery window, present exactly when etaStart is.
+        deliveryPointAdvisory:
+          type: object
+          required: [reason, flaggedAt]
+          properties:
+            reason:
+              type: string
+              enum: [NOT_HOME, ACCESS_PROBLEM]
+              description: Why the delivery point was flagged (two counted failed attempts). A code for the storefront to word; never prose from the driver.
+            flaggedAt:
+              type: string
+              format: date-time
+          description: The delivery-point advisory (ADR 0015). Present while the package has not ended (not DELIVERED, RETURNED, LOST or VOIDED); absent means no flag arrived. It is an advisory only - not an address change, not instructions, not a notification.
     TrackingGroup:
       type: object
       required: [groupNo, promiseId, status, deliverByEarliest, deliverByLatest, packages]

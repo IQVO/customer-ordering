@@ -95,6 +95,8 @@ channels:
         $ref: '#/components/messages/ConsumedPackageReturned'
       PackageEtaWindowAssigned:
         $ref: '#/components/messages/ConsumedPackageEtaWindowAssigned'
+      PackageDeliveryPointFlagged:
+        $ref: '#/components/messages/ConsumedPackageDeliveryPointFlagged'
 operations:
   publishCustomerOrderingEvents:
     action: send
@@ -141,8 +143,8 @@ operations:
   receiveShippingAndTrackingEvents:
     action: receive
     title: Receive shipping-and-tracking events
-    summary: Consume LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned, PackageEtaWindowAssigned from shipping-and-tracking.
-    description: customer-ordering consumes LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned, PackageEtaWindowAssigned from `retailnetwork.shipping-and-tracking.events` (one consumer group, SHIPPING_CONSUMER_GROUP). See ADR 0003 for what each event does to the order and the OrderTrackingView read model.
+    summary: Consume LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned, PackageEtaWindowAssigned, PackageDeliveryPointFlagged from shipping-and-tracking.
+    description: customer-ordering consumes LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned, PackageEtaWindowAssigned, PackageDeliveryPointFlagged from `retailnetwork.shipping-and-tracking.events` (one consumer group, SHIPPING_CONSUMER_GROUP). See ADR 0003 for what each event does to the order and the OrderTrackingView read model.
     tags:
     - name: consumed
     channel:
@@ -156,6 +158,7 @@ operations:
     - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageLost'
     - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageReturned'
     - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageEtaWindowAssigned'
+    - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageDeliveryPointFlagged'
 components:
   messages:
     CustomerOrderPlaced:
@@ -737,6 +740,34 @@ components:
             etaStart: '2026-10-26T13:00:00Z'
             etaEnd: '2026-10-26T15:00:00Z'
             assignedAt: '2026-10-26T09:00:00Z'
+    ConsumedPackageDeliveryPointFlagged:
+      name: PackageDeliveryPointFlagged
+      title: PackageDeliveryPointFlagged (consumed)
+      summary: The delivery point of a package failed twice.
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDeliveryPointFlagged` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`; subject and key = the tracking number. Relayed from last-mile-delivery DeliveryPointFlagged per package. Consumed by customer-ordering (ADR 0015) - the advisory is stored on the package row and shown on the tracking view until the package ends.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PackageDeliveryPointFlaggedEvent'
+      examples:
+      - name: packageDeliveryPointFlagged
+        summary: The delivery point of a package failed twice.
+        payload:
+          specversion: '1.0'
+          id: 4a7d3b0f-9c2e-4f81-b3d6-1e8a5c9b7f31
+          source: /retailnetwork/shipping-and-tracking
+          type: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDeliveryPointFlagged
+          subject: TRK-1
+          time: '2026-10-26T16:30:00Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:shipping-and-tracking:events:PackageDeliveryPointFlagged:v1
+          data:
+            trackingNumber: TRK-1
+            assignmentId: a-77
+            orderId: 7a1e6c52
+            reason: NOT_HOME
+            flaggedAt: '2026-10-26T16:30:00Z'
   schemas:
     CustomerOrderPlacedData:
       type: object
@@ -1734,6 +1765,54 @@ components:
         etaStart: *id001
         etaEnd: *id001
         assignedAt: *id001
+    PackageDeliveryPointFlaggedData:
+      type: object
+      required:
+      - trackingNumber
+      - reason
+      - flaggedAt
+      properties:
+        trackingNumber:
+          type: string
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        reason:
+          type: string
+          enum:
+          - NOT_HOME
+          - ACCESS_PROBLEM
+        flaggedAt: *id001
+    PackageDeliveryPointFlaggedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDeliveryPointFlagged
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PackageDeliveryPointFlaggedData'
     PackageEtaWindowAssignedEvent:
       type: object
       required:

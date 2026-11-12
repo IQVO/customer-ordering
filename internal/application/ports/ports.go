@@ -84,6 +84,11 @@ type TrackingRepository interface {
 	// stored only when AssignedAt is not older than the stored one (the
 	// latest wins; an equal instant rewrites the same values).
 	ApplyEta(ctx context.Context, e readmodel.Eta) error
+	// ApplyPointFlag records the delivery-point flag of the package (ADR 0015),
+	// creating the row and tolerating any arrival order like ApplyEta. The flag
+	// is stored only when FlaggedAt is not older than the stored one (the
+	// newest wins; an equal instant rewrites).
+	ApplyPointFlag(ctx context.Context, f readmodel.PointFlag) error
 	// ApplyVoid marks a LABELLED (or unscanned) package VOIDED.
 	ApplyVoid(ctx context.Context, trackingNumber string) error
 	// ApplyOutcome records PackageLost or PackageReturned on the package row,
