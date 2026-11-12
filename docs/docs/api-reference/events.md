@@ -77,6 +77,7 @@ transaction as its effect, so an event is applied at most once.
 | same | `...journey.PackageDelivered` | package delivered; every group that named the tracking number (several, once order-sourcing merges groups into one package, ADR 0012) becomes `DELIVERED` when all its packages are |
 | same | `...journey.PackageLost`, `...journey.PackageReturned` | every group that named the tracking number becomes `LOST` / `RETURNED` (terminal) |
 | same | `...journey.PackageEtaWindowAssigned` | the package's day-of delivery window (`etaStart`, `etaEnd`, latest `assignedAt` wins) is stored; the tracking view shows it only while the package is `OUT_FOR_DELIVERY` and the window is not older than the last scan (ADR 0014). The group promise is untouched |
+| same | `...journey.PackageDeliveryPointFlagged` | the delivery-point advisory (`reason` `NOT_HOME` or `ACCESS_PROBLEM`, `flaggedAt`, newest wins) is stored on the package row; the tracking view carries it until the package ends - DELIVERED, RETURNED, LOST or VOIDED (ADR 0015). Codes only; the shopper wording is the storefront's |
 
 Eighteen types are consumed (five from delivery-promise, five from
 order-sourcing, eight from shipping-and-tracking), one `Consumer.Apply*` handler

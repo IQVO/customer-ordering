@@ -109,7 +109,7 @@ func TestTimeZoneMigrationGoesDownAndUpKeepingTheGroups(t *testing.T) {
 	// (group_consolidated_choice), 0007 (tracking_package_groups), 0006
 	// (order_consolidation_key), 0005 (compensation_cancels) AND 0004 to drop the
 	// time_zone column while the order rows survive.
-	stepMigrations(t, url, -6)
+	stepMigrations(t, url, -7)
 	if hasTimeZoneColumn(t, url) {
 		t.Fatal("after down past 0004: time_zone is still there")
 	}

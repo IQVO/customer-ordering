@@ -28,3 +28,4 @@ The *Status* column is copied from each ADR's own `## Status` section.
 | [0012](./0012-consolidation-key-and-shared-tracking-numbers.md) | the consolidation key and shared tracking numbers | Accepted (2026-11-10) |
 | [0013](./0013-consolidated-tier-and-chosen-delivery-day.md) | the CONSOLIDATED tier and the stored chosen delivery day | Accepted (2026-11-10) |
 | [0014](./0014-day-of-eta-window-on-the-tracking-view.md) | the day-of ETA window on the tracking view | Accepted (2026-11-11) |
+| [0015](./0015-delivery-point-advisory-on-the-tracking-view.md) | the delivery-point advisory on the tracking view | Accepted (2026-11-11) |

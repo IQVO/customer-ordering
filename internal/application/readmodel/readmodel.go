@@ -65,6 +65,23 @@ type Eta struct {
 	AssignedAt     time.Time
 }
 
+// The reasons of a delivery-point flag (ADR 0015).
+const (
+	PointFlagNotHome       = "NOT_HOME"
+	PointFlagAccessProblem = "ACCESS_PROBLEM"
+)
+
+// PointFlag is the effect of PackageDeliveryPointFlagged (ADR 0015): the
+// delivery point of the package failed twice. FlaggedAt orders flags (the
+// newest wins).
+type PointFlag struct {
+	TrackingNumber string
+	AssignmentID   string
+	OrderID        string
+	Reason         string
+	FlaggedAt      time.Time
+}
+
 // The terminal package outcomes (PackageLost, PackageReturned), also the state
 // the tracking view shows for the package.
 const (
@@ -104,6 +121,11 @@ type Package struct {
 	EtaStart      time.Time
 	EtaEnd        time.Time
 	EtaAssignedAt time.Time
+	// PointFlagReason and PointFlaggedAt are the stored delivery-point flag of
+	// the package (PackageDeliveryPointFlagged, ADR 0015); empty and zero when
+	// none arrived. Whether it is shown is the view's rule.
+	PointFlagReason string
+	PointFlaggedAt  time.Time
 }
 
 // GroupSignalPatch sets the signal fields that are non-nil for one group.

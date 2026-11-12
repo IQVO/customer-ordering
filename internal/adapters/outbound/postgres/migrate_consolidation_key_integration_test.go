@@ -60,7 +60,7 @@ func TestConsolidationKeyMigrationGoesDownAndUpKeepingTheOrders(t *testing.T) {
 
 	// 0009 (tracking_package_eta) is the top migration now: step past it, 0008
 	// (group_consolidated_choice), 0007 (tracking_package_groups) and 0006.
-	stepMigrations(t, url, -4)
+	stepMigrations(t, url, -5)
 	if hasConsolidationKeyColumn(t, url) {
 		t.Fatal("after down past 0006: consolidation_key is still there")
 	}

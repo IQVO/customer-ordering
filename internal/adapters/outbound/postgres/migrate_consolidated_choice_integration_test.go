@@ -76,7 +76,7 @@ func TestConsolidatedChoiceMigration(t *testing.T) {
 	if err := postgres.RunMigrations(url); err != nil {
 		t.Fatalf("up: %v", err)
 	}
-	stepMigrations(t, url, -2) // 0009 (tracking_package_eta) sits above 0008
+	stepMigrations(t, url, -3) // 0009 (tracking_package_eta) and 0010 (point flag) sit above 0008
 	var n int
 	pool2, err := postgres.NewPool(context.Background(), url)
 	if err != nil {

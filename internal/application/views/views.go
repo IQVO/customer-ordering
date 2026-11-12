@@ -156,6 +156,17 @@ type TrackingPackage struct {
 	// unless the window is current (see etaWindow).
 	EtaStart time.Time
 	EtaEnd   time.Time
+	// DeliveryPointAdvisory is the delivery-point flag (ADR 0015); nil unless
+	// the package has not ended (see pointAdvisory).
+	DeliveryPointAdvisory *DeliveryPointAdvisory
+}
+
+// DeliveryPointAdvisory tells the shopper that the delivery point of a package
+// that is still on its way failed twice. Codes only: the words belong to the
+// storefront.
+type DeliveryPointAdvisory struct {
+	Reason    string
+	FlaggedAt time.Time
 }
 
 // TrackingGroup is the tracking of one shipment group.
@@ -204,6 +215,21 @@ func etaWindow(p readmodel.Package) (start, end time.Time) {
 	return p.EtaStart, p.EtaEnd
 }
 
+// pointAdvisory is the ONE rule that decides whether a package carries the
+// delivery-point advisory (ADR 0015): a flag is stored and the package has not
+// ended (state not DELIVERED, RETURNED, LOST or VOIDED). The advisory ends when
+// the package ends; there is no "cleared" event.
+func pointAdvisory(p readmodel.Package) *DeliveryPointAdvisory {
+	if p.PointFlagReason == "" || p.PointFlaggedAt.IsZero() {
+		return nil
+	}
+	switch p.State {
+	case "DELIVERED", "RETURNED", "LOST", "VOIDED":
+		return nil
+	}
+	return &DeliveryPointAdvisory{Reason: p.PointFlagReason, FlaggedAt: p.PointFlaggedAt}
+}
+
 // TrackingFrom joins the aggregate with the read-model rows. Packages whose
 // group is unknown are not shown.
 func TrackingFrom(o *customerorder.CustomerOrder, signals []readmodel.GroupSignal, packages []readmodel.Package) Tracking {
@@ -214,10 +240,11 @@ func TrackingFrom(o *customerorder.CustomerOrder, signals []readmodel.GroupSigna
 	pkgs := make(map[int][]TrackingPackage)
 	for _, p := range packages {
 		start, end := etaWindow(p)
+		advisory := pointAdvisory(p)
 		pkgs[p.GroupNo] = append(pkgs[p.GroupNo], TrackingPackage{
 			TrackingNumber: p.TrackingNumber, Carrier: p.Carrier, State: p.State, LastScanNodeID: p.LastScanNodeID,
 			LastScanAt: p.LastScanAt, DeliveredAt: p.DeliveredAt, ExceptionReason: p.ExceptionReason,
-			EtaStart: start, EtaEnd: end,
+			EtaStart: start, EtaEnd: end, DeliveryPointAdvisory: advisory,
 		})
 	}
 	groups := make([]TrackingGroup, 0, len(o.Groups()))

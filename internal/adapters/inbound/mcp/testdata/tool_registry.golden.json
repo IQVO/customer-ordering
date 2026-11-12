@@ -218,6 +218,25 @@
                     "deliveredAt": {
                       "type": "string"
                     },
+                    "deliveryPointAdvisory": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "flaggedAt": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "reason",
+                        "flaggedAt"
+                      ],
+                      "type": [
+                        "null",
+                        "object"
+                      ]
+                    },
                     "etaEnd": {
                       "type": "string"
                     },
