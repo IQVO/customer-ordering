@@ -133,6 +133,8 @@ type trackingPackageDTO struct {
 	LastScanAt      string `json:"lastScanAt,omitempty"`
 	DeliveredAt     string `json:"deliveredAt,omitempty"`
 	ExceptionReason string `json:"exceptionReason,omitempty"`
+	EtaStart        string `json:"etaStart,omitempty"`
+	EtaEnd          string `json:"etaEnd,omitempty"`
 }
 
 type trackingGroupDTO struct {
@@ -169,6 +171,7 @@ func trackingView(t views.Tracking) trackingDTO {
 			pkgs[j] = trackingPackageDTO{
 				TrackingNumber: p.TrackingNumber, Carrier: p.Carrier, State: p.State, LastScanNodeID: p.LastScanNodeID,
 				LastScanAt: ts(p.LastScanAt), DeliveredAt: ts(p.DeliveredAt), ExceptionReason: p.ExceptionReason,
+				EtaStart: ts(p.EtaStart), EtaEnd: ts(p.EtaEnd),
 			}
 		}
 		groups[i] = trackingGroupDTO{

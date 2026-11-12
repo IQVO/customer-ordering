@@ -24,7 +24,7 @@ event-fed local read model; every consumer is idempotent on the CloudEvents id
 | delivery-promise | out (REST) | Customer/Supplier | QuoteDeliveryOffers `POST /delivery-quotes`, MakePromise `POST /promises`, ConfirmPromise `POST /promises/{promiseId}/confirmations` (E7), CancelPromise `POST /promises/{promiseId}/cancellations` (compensation of a failed checkout, A14) |
 | delivery-promise | in (events) | Customer/Supplier | PromiseAtRisk, PromiseRevised, PromiseKept, PromiseBroken, PromiseUnkeepable (E9) |
 | order-sourcing | in (events) | Conformist | FulfillmentLocked, FulfillmentShipped, FulfillmentUnsourceable, FulfillmentCancelled, FulfillmentCancelRefused (E11) |
-| shipping-and-tracking | in (events) | Conformist | LabelIssued, LabelVoided (E16), PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned (A19) |
+| shipping-and-tracking | in (events) | Conformist | LabelIssued, LabelVoided (E16), PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned (A19), PackageEtaWindowAssigned (ADR 0014) |
 | order-sourcing, delivery-promise | out (events) | published language | CustomerOrderPlaced, CustomerOrderCancelled |
 
 ### Consumed events and what each does
@@ -53,6 +53,7 @@ Topics: `retailnetwork.delivery-promise.events`, `retailnetwork.order-sourcing.e
 | `...journey.PackageExceptionRaised` | tracking package `exceptionReason` |
 | `...journey.PackageLost` | tracking package outcome LOST; `MarkGroupLost` for the group that announced the package (terminal LOST); an early loss is replayed when `FulfillmentShipped` arrives (A19) |
 | `...journey.PackageReturned` | tracking package outcome RETURNED; `MarkGroupReturned` (terminal RETURNED), same replay rule (A19) |
+| `...journey.PackageEtaWindowAssigned` | tracking package day-of window (`etaStart`, `etaEnd`, `etaAssignedAt`; the latest `assignedAt` wins); read model only, no order or promise field changes (ADR 0014) |
 
 Decoding is tolerant: only the fields listed in `apis/asyncapi.yaml` are read, unknown
 fields and unknown types are ignored. A message that is not a valid CloudEvents
@@ -67,7 +68,8 @@ that are recorded and skipped instead).
   - `promise_signals` (promiseId, orderId, atRiskReason, verdict, lateByMinutes,
     unsourceable reason), and
   - `tracking_packages` (trackingNumber primary key, assignmentId, orderId, groupNo,
-    carrier, state, lastScanNodeId, lastScanAt, deliveredAt, exceptionReason, outcome, outcomeAt).
+    carrier, state, lastScanNodeId, lastScanAt, deliveredAt, exceptionReason, outcome, outcomeAt,
+    etaStart, etaEnd, etaAssignedAt).
   Rows may be created before the order link is known (a scan can precede
   `FulfillmentLocked`); `FulfillmentLocked` fills `orderId` and `groupNo` of every row
   with the assignment id, `FulfillmentShipped` those of its tracking numbers.

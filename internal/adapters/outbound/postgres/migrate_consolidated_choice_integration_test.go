@@ -76,7 +76,7 @@ func TestConsolidatedChoiceMigration(t *testing.T) {
 	if err := postgres.RunMigrations(url); err != nil {
 		t.Fatalf("up: %v", err)
 	}
-	stepMigrations(t, url, -1)
+	stepMigrations(t, url, -2) // 0009 (tracking_package_eta) sits above 0008
 	var n int
 	pool2, err := postgres.NewPool(context.Background(), url)
 	if err != nil {
@@ -87,7 +87,7 @@ func TestConsolidatedChoiceMigration(t *testing.T) {
 		WHERE table_name = 'order_groups' AND column_name IN ('chosen_delivery_day', 'consolidation_eligible')`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("after down: %d choice columns remain (%v)", n, err)
 	}
-	stepMigrations(t, url, 1)
+	stepMigrations(t, url, 2)
 	if err := pool2.QueryRow(context.Background(), `SELECT count(*) FROM information_schema.columns
 		WHERE table_name = 'order_groups' AND column_name IN ('chosen_delivery_day', 'consolidation_eligible')`).Scan(&n); err != nil || n != 2 {
 		t.Fatalf("after up again: %d choice columns (%v)", n, err)

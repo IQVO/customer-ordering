@@ -79,6 +79,11 @@ type TrackingRepository interface {
 	ApplyDelivery(ctx context.Context, d readmodel.Delivery) error
 	// ApplyException records the exception reason.
 	ApplyException(ctx context.Context, e readmodel.Exception) error
+	// ApplyEta records the package's day-of window (ADR 0014), creating the
+	// row and tolerating any arrival order like ApplyException. The window is
+	// stored only when AssignedAt is not older than the stored one (the
+	// latest wins; an equal instant rewrites the same values).
+	ApplyEta(ctx context.Context, e readmodel.Eta) error
 	// ApplyVoid marks a LABELLED (or unscanned) package VOIDED.
 	ApplyVoid(ctx context.Context, trackingNumber string) error
 	// ApplyOutcome records PackageLost or PackageReturned on the package row,

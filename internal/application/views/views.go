@@ -152,6 +152,10 @@ type TrackingPackage struct {
 	LastScanAt      time.Time
 	DeliveredAt     time.Time
 	ExceptionReason string
+	// EtaStart and EtaEnd are the day-of delivery window (ADR 0014); zero
+	// unless the window is current (see etaWindow).
+	EtaStart time.Time
+	EtaEnd   time.Time
 }
 
 // TrackingGroup is the tracking of one shipment group.
@@ -184,6 +188,22 @@ type Tracking struct {
 	Groups  []TrackingGroup
 }
 
+// stateOutForDelivery is the journey state in which a day-of window is current.
+const stateOutForDelivery = "OUT_FOR_DELIVERY"
+
+// etaWindow is the ONE rule that decides whether a package shows its day-of
+// window (ADR 0014): the state is OUT_FOR_DELIVERY, a window was assigned, and
+// it was assigned at or after the last scan. Same definition as `EtaCurrent` in
+// shipping-and-tracking. A failed attempt (state back to AT_STATION), a newer
+// scan or any terminal state hides it. The window is never clipped to the
+// promise: it is shown as received.
+func etaWindow(p readmodel.Package) (start, end time.Time) {
+	if p.State != stateOutForDelivery || p.EtaAssignedAt.IsZero() || p.EtaAssignedAt.Before(p.LastScanAt) {
+		return time.Time{}, time.Time{}
+	}
+	return p.EtaStart, p.EtaEnd
+}
+
 // TrackingFrom joins the aggregate with the read-model rows. Packages whose
 // group is unknown are not shown.
 func TrackingFrom(o *customerorder.CustomerOrder, signals []readmodel.GroupSignal, packages []readmodel.Package) Tracking {
@@ -193,9 +213,11 @@ func TrackingFrom(o *customerorder.CustomerOrder, signals []readmodel.GroupSigna
 	}
 	pkgs := make(map[int][]TrackingPackage)
 	for _, p := range packages {
+		start, end := etaWindow(p)
 		pkgs[p.GroupNo] = append(pkgs[p.GroupNo], TrackingPackage{
 			TrackingNumber: p.TrackingNumber, Carrier: p.Carrier, State: p.State, LastScanNodeID: p.LastScanNodeID,
 			LastScanAt: p.LastScanAt, DeliveredAt: p.DeliveredAt, ExceptionReason: p.ExceptionReason,
+			EtaStart: start, EtaEnd: end,
 		})
 	}
 	groups := make([]TrackingGroup, 0, len(o.Groups()))

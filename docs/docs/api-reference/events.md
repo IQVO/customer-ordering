@@ -76,11 +76,12 @@ transaction as its effect, so an event is applied at most once.
 | same | `...journey.PackageScanned`, `...journey.PackageExceptionRaised` | newest scan / exception reason |
 | same | `...journey.PackageDelivered` | package delivered; every group that named the tracking number (several, once order-sourcing merges groups into one package, ADR 0012) becomes `DELIVERED` when all its packages are |
 | same | `...journey.PackageLost`, `...journey.PackageReturned` | every group that named the tracking number becomes `LOST` / `RETURNED` (terminal) |
+| same | `...journey.PackageEtaWindowAssigned` | the package's day-of delivery window (`etaStart`, `etaEnd`, latest `assignedAt` wins) is stored; the tracking view shows it only while the package is `OUT_FOR_DELIVERY` and the window is not older than the last scan (ADR 0014). The group promise is untouched |
 
-Seventeen types are consumed (five from delivery-promise, five from
-order-sourcing, seven from shipping-and-tracking), one `Consumer.Apply*` handler
+Eighteen types are consumed (five from delivery-promise, five from
+order-sourcing, eight from shipping-and-tracking), one `Consumer.Apply*` handler
 each; the code (`internal/adapters/inbound/kafka/handlers.go`), the channel and
-operation lists and the prose in `apis/asyncapi.yaml` all say seventeen. The
+operation lists and the prose in `apis/asyncapi.yaml` all say eighteen. The
 messages list only the fields this service relies on; unknown fields are ignored
 (tolerant reader).
 

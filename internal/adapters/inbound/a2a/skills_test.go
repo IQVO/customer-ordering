@@ -124,6 +124,8 @@ type wireTrackedGroup struct {
 		Carrier        string `json:"carrier"`
 		State          string `json:"state"`
 		LastScanNodeID string `json:"lastScanNodeId"`
+		EtaStart       string `json:"etaStart"`
+		EtaEnd         string `json:"etaEnd"`
 	} `json:"packages"`
 }
 

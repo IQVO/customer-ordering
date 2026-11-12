@@ -846,6 +846,14 @@ components:
         exceptionReason:
           type: string
           description: From PackageExceptionRaised.
+        etaStart:
+          type: string
+          format: date-time
+          description: Start of the day-of delivery window of the package. Present only while the package is OUT_FOR_DELIVERY and the window was assigned at or after the last scan; omitted otherwise (a failed attempt, a newer scan or any terminal state hides it). Shown as received, never clipped to the promised window.
+        etaEnd:
+          type: string
+          format: date-time
+          description: End of the day-of delivery window, present exactly when etaStart is.
     TrackingGroup:
       type: object
       required: [groupNo, promiseId, status, deliverByEarliest, deliverByLatest, packages]

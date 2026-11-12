@@ -61,4 +61,5 @@ their ids and values.
 - **"Account"**, **"user"**, **"login"**: there is no authentication; a shopper is identified by `shopperId` in the request.
 - **"Delivered"** for a kept promise: an order is `DELIVERED` on `PackageDelivered`; kept or broken is a separate verdict.
 - **"Cancelled"** for a pending cancellation: that is `CANCELLATION_REQUESTED`.
+- **"ETA window"** for the promise window: the promise (`deliverByEarliest` .. `deliverByLatest`) is the coarse commitment made at checkout; the ETA window (`etaStart`, `etaEnd`) is a finer, later, day-of estimate of at most two hours for one package, shown only while it is `OUT_FOR_DELIVERY` (ADR 0014). It never changes the promise or its verdict.
 - **"Return"** for `RETURNED`: the group state records that a package was returned to the sender (`PackageReturned`); there is no returns workflow in this context.
