@@ -100,6 +100,23 @@ type trackingPackageView struct {
 	LastScanAt      string `json:"lastScanAt,omitempty"`
 	DeliveredAt     string `json:"deliveredAt,omitempty"`
 	ExceptionReason string `json:"exceptionReason,omitempty"`
+	EtaStart        string `json:"etaStart,omitempty"`
+	EtaEnd          string `json:"etaEnd,omitempty"`
+
+	DeliveryPointAdvisory *deliveryPointAdvisoryView `json:"deliveryPointAdvisory,omitempty"`
+}
+
+// deliveryPointAdvisoryView is the code-only advisory of ADR 0015.
+type deliveryPointAdvisoryView struct {
+	Reason    string `json:"reason"`
+	FlaggedAt string `json:"flaggedAt"`
+}
+
+func advisoryView(a *views.DeliveryPointAdvisory) *deliveryPointAdvisoryView {
+	if a == nil {
+		return nil
+	}
+	return &deliveryPointAdvisoryView{Reason: a.Reason, FlaggedAt: instant(a.FlaggedAt)}
 }
 
 type trackingGroupView struct {
@@ -184,6 +201,7 @@ func toTracking(t views.Tracking) trackingView {
 			packages = append(packages, trackingPackageView{
 				TrackingNumber: p.TrackingNumber, Carrier: p.Carrier, State: p.State, LastScanNodeID: p.LastScanNodeID,
 				LastScanAt: instant(p.LastScanAt), DeliveredAt: instant(p.DeliveredAt), ExceptionReason: p.ExceptionReason,
+				EtaStart: instant(p.EtaStart), EtaEnd: instant(p.EtaEnd), DeliveryPointAdvisory: advisoryView(p.DeliveryPointAdvisory),
 			})
 		}
 		groups = append(groups, trackingGroupView{

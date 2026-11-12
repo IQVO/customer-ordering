@@ -20,7 +20,7 @@ info:
 
     **Published.** Two integration events, `CustomerOrderPlaced` and `CustomerOrderCancelled`, on `retailnetwork.customer-ordering.events` through a **transactional outbox** (the order row and its already-encoded events are written in ONE database transaction; an always-on relay drains them to Kafka, at-least-once, the CloudEvents `id` is stored with the outbox row). Both types are catalogued in ADR 0004. Nothing is published on `retailnetwork.customer-ordering.analytics`: the model names no analytics-only event for this context. No event carries the ship-to address (PII); `CustomerOrderPlaced` carries the destination postal prefix only.
 
-    **Consumed.** Seventeen events from delivery-promise, order-sourcing and shipping-and-tracking (see the `receive` operations and ADR 0003). The messages describe the producers' payloads for reference; the code decodes only the fields it stores (every `required` field below is checked non-empty, and a `groupNo` below 1 is refused) and ignores the rest, so the producers' own AsyncAPI files are authoritative. Each consumer group name comes from a mandatory environment variable.
+    **Consumed.** Eighteen events from delivery-promise, order-sourcing and shipping-and-tracking (see the `receive` operations and ADR 0003). The messages describe the producers' payloads for reference; the code decodes only the fields it stores (every `required` field below is checked non-empty, and a `groupNo` below 1 is refused) and ignores the rest, so the producers' own AsyncAPI files are authoritative. Each consumer group name comes from a mandatory environment variable.
 
     **Envelope (mandatory).** CloudEvents 1.0, structured content mode, Kafka header `content-type: application/cloudevents+json; charset=UTF-8`. `specversion`, `id`, `source` (`/retailnetwork/customer-ordering`), `type`, `subject` (the orderId), `time`, `datacontenttype` (`application/json`) and `dataschema` (`urn:retailnetwork:customer-ordering:events:<EventName>:v1`) are all required. Kafka key = the subject. Type = `com.retailnetwork.commerce.customer-ordering.customerorder.<EventName>`. A breaking payload change is a new `.v2` type, never a mutation. Dispatch on the full `type`, ignore unknown types, dedupe on `id`.
 
@@ -93,6 +93,10 @@ channels:
         $ref: '#/components/messages/ConsumedPackageLost'
       PackageReturned:
         $ref: '#/components/messages/ConsumedPackageReturned'
+      PackageEtaWindowAssigned:
+        $ref: '#/components/messages/ConsumedPackageEtaWindowAssigned'
+      PackageDeliveryPointFlagged:
+        $ref: '#/components/messages/ConsumedPackageDeliveryPointFlagged'
 operations:
   publishCustomerOrderingEvents:
     action: send
@@ -139,8 +143,8 @@ operations:
   receiveShippingAndTrackingEvents:
     action: receive
     title: Receive shipping-and-tracking events
-    summary: Consume LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned from shipping-and-tracking.
-    description: customer-ordering consumes LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned from `retailnetwork.shipping-and-tracking.events` (one consumer group, SHIPPING_CONSUMER_GROUP). See ADR 0003 for what each event does to the order and the OrderTrackingView read model.
+    summary: Consume LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned, PackageEtaWindowAssigned, PackageDeliveryPointFlagged from shipping-and-tracking.
+    description: customer-ordering consumes LabelIssued, LabelVoided, PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned, PackageEtaWindowAssigned, PackageDeliveryPointFlagged from `retailnetwork.shipping-and-tracking.events` (one consumer group, SHIPPING_CONSUMER_GROUP). See ADR 0003 for what each event does to the order and the OrderTrackingView read model.
     tags:
     - name: consumed
     channel:
@@ -153,6 +157,8 @@ operations:
     - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageExceptionRaised'
     - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageLost'
     - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageReturned'
+    - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageEtaWindowAssigned'
+    - $ref: '#/channels/shippingAndTrackingEvents/messages/PackageDeliveryPointFlagged'
 components:
   messages:
     CustomerOrderPlaced:
@@ -705,6 +711,63 @@ components:
             trackingNumber: TRK-1
             orderId: 7a1e6c52
             returnedAt: '2026-10-26T09:00:00Z'
+    ConsumedPackageEtaWindowAssigned:
+      name: PackageEtaWindowAssigned
+      title: PackageEtaWindowAssigned (consumed)
+      summary: A package was given a day-of delivery window.
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageEtaWindowAssigned` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events` (subject and key = the tracking number). The window is stored on the package row (the latest `assignedAt` wins) and the tracking view shows it only while the package is OUT_FOR_DELIVERY and the window is not older than the last scan (ADR 0014). A blank trackingNumber, or an etaStart that is not before etaEnd, is a payload that can never be applied and is dead-lettered. A missing assignedAt falls back to the event time. The group promise is never read or written. Dispatch on the full type; unknown fields are ignored.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PackageEtaWindowAssignedEvent'
+      examples:
+      - name: packageEtaWindowAssigned
+        summary: A package was given a two-hour delivery window.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c42
+          source: /retailnetwork/shipping-and-tracking
+          type: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageEtaWindowAssigned
+          subject: TRK-1
+          time: '2026-10-26T09:00:00Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:shipping-and-tracking:events:PackageEtaWindowAssigned:v1
+          data:
+            trackingNumber: TRK-1
+            assignmentId: a-77
+            orderId: 7a1e6c52
+            etaStart: '2026-10-26T13:00:00Z'
+            etaEnd: '2026-10-26T15:00:00Z'
+            assignedAt: '2026-10-26T09:00:00Z'
+    ConsumedPackageDeliveryPointFlagged:
+      name: PackageDeliveryPointFlagged
+      title: PackageDeliveryPointFlagged (consumed)
+      summary: The delivery point of a package failed twice.
+      description: '`type` = `com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDeliveryPointFlagged` produced by shipping-and-tracking on `retailnetwork.shipping-and-tracking.events`; subject and key = the tracking number. Relayed from last-mile-delivery DeliveryPointFlagged per package. Consumed by customer-ordering (ADR 0015) - the advisory is stored on the package row and shown on the tracking view until the package ends.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: consumed
+      payload:
+        $ref: '#/components/schemas/PackageDeliveryPointFlaggedEvent'
+      examples:
+      - name: packageDeliveryPointFlagged
+        summary: The delivery point of a package failed twice.
+        payload:
+          specversion: '1.0'
+          id: 4a7d3b0f-9c2e-4f81-b3d6-1e8a5c9b7f31
+          source: /retailnetwork/shipping-and-tracking
+          type: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDeliveryPointFlagged
+          subject: TRK-1
+          time: '2026-10-26T16:30:00Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:shipping-and-tracking:events:PackageDeliveryPointFlagged:v1
+          data:
+            trackingNumber: TRK-1
+            assignmentId: a-77
+            orderId: 7a1e6c52
+            reason: NOT_HOME
+            flaggedAt: '2026-10-26T16:30:00Z'
   schemas:
     CustomerOrderPlacedData:
       type: object
@@ -1685,3 +1748,97 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/PackageReturnedData'
+    PackageEtaWindowAssignedData:
+      type: object
+      description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader). A missing assignedAt falls back to the event time.
+      required:
+      - trackingNumber
+      - etaStart
+      - etaEnd
+      properties:
+        trackingNumber:
+          type: string
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        etaStart: *id001
+        etaEnd: *id001
+        assignedAt: *id001
+    PackageDeliveryPointFlaggedData:
+      type: object
+      required:
+      - trackingNumber
+      - reason
+      - flaggedAt
+      properties:
+        trackingNumber:
+          type: string
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        reason:
+          type: string
+          enum:
+          - NOT_HOME
+          - ACCESS_PROBLEM
+        flaggedAt: *id001
+    PackageDeliveryPointFlaggedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDeliveryPointFlagged
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PackageDeliveryPointFlaggedData'
+    PackageEtaWindowAssignedEvent:
+      type: object
+      required:
+      - id
+      - type
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+        type:
+          type: string
+          const: com.retailnetwork.logistics.shipping-and-tracking.journey.PackageEtaWindowAssigned
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+        data:
+          $ref: '#/components/schemas/PackageEtaWindowAssignedData'

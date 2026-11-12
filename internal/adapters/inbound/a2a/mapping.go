@@ -115,6 +115,23 @@ type packageDTO struct {
 	LastScanAt      string `json:"lastScanAt,omitempty"`
 	DeliveredAt     string `json:"deliveredAt,omitempty"`
 	ExceptionReason string `json:"exceptionReason,omitempty"`
+	EtaStart        string `json:"etaStart,omitempty"`
+	EtaEnd          string `json:"etaEnd,omitempty"`
+
+	DeliveryPointAdvisory *advisoryDTO `json:"deliveryPointAdvisory,omitempty"`
+}
+
+// advisoryDTO is the code-only delivery-point advisory of ADR 0015.
+type advisoryDTO struct {
+	Reason    string `json:"reason"`
+	FlaggedAt string `json:"flaggedAt"`
+}
+
+func toAdvisoryDTO(a *views.DeliveryPointAdvisory) *advisoryDTO {
+	if a == nil {
+		return nil
+	}
+	return &advisoryDTO{Reason: a.Reason, FlaggedAt: instant(a.FlaggedAt)}
 }
 
 type trackingGroupDTO struct {
@@ -186,6 +203,7 @@ func toPackageDTOs(in []views.TrackingPackage) []packageDTO {
 		out = append(out, packageDTO{
 			TrackingNumber: p.TrackingNumber, Carrier: p.Carrier, State: p.State, LastScanNodeID: p.LastScanNodeID,
 			LastScanAt: instant(p.LastScanAt), DeliveredAt: instant(p.DeliveredAt), ExceptionReason: p.ExceptionReason,
+			EtaStart: instant(p.EtaStart), EtaEnd: instant(p.EtaEnd), DeliveryPointAdvisory: toAdvisoryDTO(p.DeliveryPointAdvisory),
 		})
 	}
 	return out

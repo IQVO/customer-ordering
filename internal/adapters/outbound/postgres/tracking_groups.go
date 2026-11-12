@@ -125,15 +125,15 @@ func (r *TrackingRepository) DeliveredPackages(ctx context.Context, orderID stri
 // package's group set that belongs to the order, then, under group 0, the
 // packages that only name the order (no group of this order is known yet).
 const packagesOfOrder = `
-	SELECT tracking_number, assignment_id, group_no, carrier, state, last_scan_node_id, last_scan_at, delivered_at, exception_reason, outcome, outcome_at FROM (
+	SELECT tracking_number, assignment_id, group_no, carrier, state, last_scan_node_id, last_scan_at, delivered_at, exception_reason, outcome, outcome_at, eta_start, eta_end, eta_assigned_at, point_flag_reason, point_flagged_at FROM (
 		SELECT p.tracking_number, coalesce(p.assignment_id, '') AS assignment_id, g.group_no, coalesce(p.carrier, '') AS carrier, coalesce(p.state, '') AS state,
 			coalesce(p.last_scan_node_id, '') AS last_scan_node_id, p.last_scan_at, p.delivered_at, coalesce(p.exception_reason, '') AS exception_reason,
-			coalesce(p.outcome, '') AS outcome, p.outcome_at
+			coalesce(p.outcome, '') AS outcome, p.outcome_at, p.eta_start, p.eta_end, p.eta_assigned_at, coalesce(p.point_flag_reason, '') AS point_flag_reason, p.point_flagged_at
 		FROM tracking_package_groups g JOIN tracking_packages p ON p.tracking_number = g.tracking_number
 		WHERE g.order_id = $1
 		UNION ALL
 		SELECT p.tracking_number, coalesce(p.assignment_id, ''), coalesce(p.group_no, 0), coalesce(p.carrier, ''), coalesce(p.state, ''),
-			coalesce(p.last_scan_node_id, ''), p.last_scan_at, p.delivered_at, coalesce(p.exception_reason, ''), coalesce(p.outcome, ''), p.outcome_at
+			coalesce(p.last_scan_node_id, ''), p.last_scan_at, p.delivered_at, coalesce(p.exception_reason, ''), coalesce(p.outcome, ''), p.outcome_at, p.eta_start, p.eta_end, p.eta_assigned_at, coalesce(p.point_flag_reason, ''), p.point_flagged_at
 		FROM tracking_packages p
 		WHERE p.order_id = $1 AND NOT EXISTS (SELECT 1 FROM tracking_package_groups g WHERE g.tracking_number = p.tracking_number AND g.order_id = $1)
 	) u ORDER BY group_no, tracking_number`
@@ -148,11 +148,13 @@ func (r *TrackingRepository) Packages(ctx context.Context, orderID string) ([]re
 	out := []readmodel.Package{}
 	for rows.Next() {
 		p := readmodel.Package{OrderID: orderID}
-		var scan, delivered, outcomeAt *time.Time
-		if err := rows.Scan(&p.TrackingNumber, &p.AssignmentID, &p.GroupNo, &p.Carrier, &p.State, &p.LastScanNodeID, &scan, &delivered, &p.ExceptionReason, &p.Outcome, &outcomeAt); err != nil {
+		var scan, delivered, outcomeAt, etaStart, etaEnd, etaAssigned, flagged *time.Time
+		if err := rows.Scan(&p.TrackingNumber, &p.AssignmentID, &p.GroupNo, &p.Carrier, &p.State, &p.LastScanNodeID, &scan, &delivered, &p.ExceptionReason, &p.Outcome, &outcomeAt, &etaStart, &etaEnd, &etaAssigned, &p.PointFlagReason, &flagged); err != nil {
 			return nil, fmt.Errorf("scan package: %w", err)
 		}
 		p.LastScanAt, p.DeliveredAt, p.OutcomeAt = timeOrZero(scan), timeOrZero(delivered), timeOrZero(outcomeAt)
+		p.EtaStart, p.EtaEnd, p.EtaAssignedAt = timeOrZero(etaStart), timeOrZero(etaEnd), timeOrZero(etaAssigned)
+		p.PointFlaggedAt = timeOrZero(flagged)
 		out = append(out, p)
 	}
 	return out, rows.Err()
