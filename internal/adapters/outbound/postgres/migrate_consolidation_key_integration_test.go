@@ -60,11 +60,11 @@ func TestConsolidationKeyMigrationGoesDownAndUpKeepingTheOrders(t *testing.T) {
 
 	// 0009 (tracking_package_eta) is the top migration now: step past it, 0008
 	// (group_consolidated_choice), 0007 (tracking_package_groups) and 0006.
-	stepMigrations(t, url, -5)
+	stepMigrations(t, url, -7)
 	if hasConsolidationKeyColumn(t, url) {
 		t.Fatal("after down past 0006: consolidation_key is still there")
 	}
-	stepMigrations(t, url, 4)
+	stepMigrations(t, url, 6)
 	old, err := repo.Get(context.Background(), "order-key")
 	if err != nil {
 		t.Fatalf("an order stored before the column must still load: %v", err)
