@@ -78,11 +78,13 @@ transaction as its effect, so an event is applied at most once.
 | same | `...journey.PackageLost`, `...journey.PackageReturned` | every group that named the tracking number becomes `LOST` / `RETURNED` (terminal) |
 | same | `...journey.PackageEtaWindowAssigned` | the package's day-of delivery window (`etaStart`, `etaEnd`, latest `assignedAt` wins) is stored; the tracking view shows it only while the package is `OUT_FOR_DELIVERY` and the window is not older than the last scan (ADR 0014). The group promise is untouched |
 | same | `...journey.PackageDeliveryPointFlagged` | the delivery-point advisory (`reason` `NOT_HOME` or `ACCESS_PROBLEM`, `flaggedAt`, newest wins) is stored on the package row; the tracking view carries it until the package ends - DELIVERED, RETURNED, LOST or VOIDED (ADR 0015). Codes only; the shopper wording is the storefront's |
+| same | `...journey.PackageReadyForCollection` | a pickup package reached its point: `readyForCollectionAt` and `holdUntil` are stored on the package row and the tracking view shows them (ADR 0016). No aggregate changes |
+| same | `...journey.PackageCollected` | the shopper collected the package: `collectedAt` and the optional `proofCode` are stored on the package row (ADR 0016). No aggregate changes |
 
-Eighteen types are consumed (five from delivery-promise, five from
-order-sourcing, eight from shipping-and-tracking), one `Consumer.Apply*` handler
+Twenty-one types are consumed (five from delivery-promise, five from
+order-sourcing, eleven from shipping-and-tracking), one `Consumer.Apply*` handler
 each; the code (`internal/adapters/inbound/kafka/handlers.go`), the channel and
-operation lists and the prose in `apis/asyncapi.yaml` all say eighteen. The
+operation lists and the prose in `apis/asyncapi.yaml` all say twenty-one. The
 messages list only the fields this service relies on; unknown fields are ignored
 (tolerant reader).
 

@@ -108,7 +108,7 @@ Contract: [`apis/asyncapi.yaml`](apis/asyncapi.yaml), catalogue in [ADR 0004](do
   `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderCancelled`.
 - **Consumed**: delivery-promise `PromiseAtRisk`, `PromiseRevised`, `PromiseKept`, `PromiseBroken`, `PromiseUnkeepable`; order-sourcing `FulfillmentLocked`,
   `FulfillmentShipped`, `FulfillmentUnsourceable`, `FulfillmentCancelled`, `FulfillmentCancelRefused`; shipping-and-tracking `LabelIssued`, `LabelVoided`,
-  `PackageScanned`, `PackageDelivered`, `PackageExceptionRaised`, `PackageLost`, `PackageReturned` (the last two close the group: LOST / RETURNED, ADR 0002 A19), `PackageEtaWindowAssigned` (the day-of delivery window shown on the tracking view, ADR 0014). Idempotent on the CloudEvents id, dispatched on the full type, bad messages go to `<topic>.dlq`.
+  `PackageScanned`, `PackageDelivered`, `PackageExceptionRaised`, `PackageLost`, `PackageReturned` (the last two close the group: LOST / RETURNED, ADR 0002 A19), `PackageEtaWindowAssigned` (the day-of delivery window shown on the tracking view, ADR 0014), `PackageDeliveryPointFlagged` (the delivery-point advisory on the tracking view, ADR 0015), `PackageReadyForCollection` and `PackageCollected` (pickup collection facts on the tracking view, ADR 0016). Idempotent on the CloudEvents id, dispatched on the full type, bad messages go to `<topic>.dlq`.
 - **Synchronous calls**: delivery-promise `POST /delivery-quotes`, `POST /promises`, `POST /promises/{promiseId}/confirmations`, and the compensating `POST /promises/{promiseId}/cancellations` (only after a later confirm failed).
 
 ## Running it
