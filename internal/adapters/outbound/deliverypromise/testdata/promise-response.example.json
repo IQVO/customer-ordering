@@ -1,0 +1,24 @@
+{
+  "promiseId": "pr-1",
+  "offerId": "of-1",
+  "state": "PROVISIONAL",
+  "destinationPostalPrefix": "787",
+  "orderId": "o-1",
+  "groupNo": 2,
+  "lines": [{"catalogItemId": "sku-1", "quantity": 2, "ownerRef": "seller-9"}],
+  "terms": {
+    "tier": "CONSOLIDATED",
+    "shipBy": "2026-10-23T20:00:00Z",
+    "deliverByEarliest": "2026-10-24T12:00:00Z",
+    "deliverByLatest": "2026-10-27T20:00:00Z",
+    "timeZone": "America/Chicago",
+    "basis": "SCHEDULED",
+    "confidence": 0.938,
+    "policyVersion": "v3",
+    "consolidationEligible": true
+  },
+  "witnessPath": {"nodeId": "fc-aus-1", "pickupDepartureId": "d1", "legs": ["dep-1"], "deliveryWaveId": "w1"},
+  "holdExpiresAt": "2026-10-23T11:00:00Z",
+  "revisions": [],
+  "version": 1
+}

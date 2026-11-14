@@ -8,8 +8,8 @@ sidebar_position: 9
 # Entity-relationship diagram
 
 The Postgres schema as the embedded migrations create it
-(`internal/adapters/outbound/postgres/migrations/0001` to `0005`, applied at boot
-by golang-migrate). Twelve tables of the context plus golang-migrate's own
+(`internal/adapters/outbound/postgres/migrations/0001` to `0011`, applied at boot
+by golang-migrate). Thirteen tables of the context plus golang-migrate's own
 `schema_migrations`. Foreign keys exist only where the diagram draws a
 relationship; the tracking read model and the infrastructure tables are keyed by
 ids copied from events and carry no foreign key.
@@ -48,7 +48,9 @@ erDiagram
   customer_orders {
     text order_id PK
     text shopper_id "index with placed_at DESC"
-    jsonb ship_to "synthetic PII"
+    jsonb ship_to "synthetic PII, NULL for a pickup order"
+    text pickup_point_id "set exactly when ship_to is NULL, ADR 0016"
+    text consolidation_key "nullable keyed hash, ADR 0012"
     text destination_postal_prefix
     text status "9 order states"
     timestamptz placed_at
@@ -65,7 +67,9 @@ erDiagram
     text order_id PK
     int group_no PK
     text promise_id
-    text tier
+    text tier "5 tiers, CONSOLIDATED is ADR 0013"
+    date chosen_delivery_day "nullable, ADR 0013"
+    boolean consolidation_eligible "nullable, ADR 0013"
     text witness_node_id
     timestamptz ship_by
     timestamptz deliver_by_earliest
@@ -99,6 +103,16 @@ erDiagram
     timestamptz delivered_at
     text exception_reason
     text outcome "LOST or RETURNED"
+    timestamptz eta_start "day-of window, ADR 0014"
+    timestamptz eta_end "set with eta_start"
+    timestamptz eta_assigned_at "set with eta_start"
+    text point_flag_reason "NOT_HOME or ACCESS_PROBLEM, ADR 0015"
+    timestamptz point_flagged_at "set with the reason"
+    text pickup_point_id "pickup packages, ADR 0016"
+    timestamptz ready_for_collection_at "set with hold_until"
+    timestamptz hold_until "collection deadline"
+    timestamptz collected_at
+    text proof_code "only once collected"
   }
   tracking_package_groups {
     text tracking_number PK
@@ -152,7 +166,11 @@ Source: `internal/adapters/outbound/postgres/migrations/0001_customer_ordering_s
 `0002_package_lost_and_returned.up.sql`, `0003_shopper_addresses_and_order_history.up.sql`,
 `0004_group_window_time_zone.up.sql`, `0005_compensation_cancels.up.sql`,
 `0006_order_consolidation_key.up.sql` (adds `customer_orders.consolidation_key`),
-`0007_tracking_package_groups.up.sql`. Columns not drawn: `order_groups` also holds
+`0007_tracking_package_groups.up.sql`,
+`0008_group_consolidated_choice.up.sql` (the CONSOLIDATED tier and the shopper's choice on `order_groups`),
+`0009_tracking_package_eta.up.sql`, `0010_tracking_package_point_flag.up.sql`,
+`0011_order_pickup_destination.up.sql` (the pickup destination of an order and the collection columns
+of `tracking_packages`). Columns not drawn: `order_groups` also holds
 `node_id`, `locked_at`, `shipped_at`, `delivered_at`, `cancel_requested_at`,
 `cancelled_at`, `cancel_refused_reason`, `lost_at`, `returned_at`;
 `tracking_packages` also holds `last_scan_node_id`, `outcome_at`, and keeps `order_id`/`group_no` as "the first group that named the package" (ADR 0012: the set of groups of a package is `tracking_package_groups`, rows only added, so merged groups can share one tracking number); `outbox_events`
@@ -187,6 +205,6 @@ also holds `subject`, `dataschema`, `created_at`.
   failure. Rows past `COMPENSATION_MAX_ATTEMPTS` failures are excluded from claims
   (see the [Runbook](/docs/operations/runbook#compensation-queue)). Like the
   infrastructure tables it carries no foreign key.
-- **Down migrations** exist for all five steps; there is no cross-service
+- **Down migrations** exist for all eleven steps; there is no cross-service
   database access (`MIGRATIONS_DATABASE_URL` is the direct DSN, `DATABASE_URL`
   goes through PgBouncer).

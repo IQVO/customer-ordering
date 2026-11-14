@@ -86,7 +86,7 @@ To turn a shopper's cart into a customer order. The context:
 | AI agents, `warehouse-ops-agent` | `get_order`, `get_order_tracking`, `get_ship_to` | Query | MCP `/mcp`; A2A skills `get_order`, `get_order_tracking` | read-only |
 | `delivery-promise` | `PromiseAtRisk`, `PromiseRevised`, `PromiseKept`, `PromiseBroken`, `PromiseUnkeepable` | Event | Kafka `retailnetwork.delivery-promise.events` | Customer/Supplier |
 | `order-sourcing` | `FulfillmentLocked`, `FulfillmentShipped`, `FulfillmentUnsourceable`, `FulfillmentCancelled`, `FulfillmentCancelRefused` | Event | Kafka `retailnetwork.order-sourcing.events` | Conformist |
-| `shipping-and-tracking` | `LabelIssued`, `LabelVoided`, `PackageScanned`, `PackageDelivered`, `PackageExceptionRaised`, `PackageLost`, `PackageReturned`, `PackageEtaWindowAssigned` | Event | Kafka `retailnetwork.shipping-and-tracking.events` | Conformist |
+| `shipping-and-tracking` | `LabelIssued`, `LabelVoided`, `PackageScanned`, `PackageDelivered`, `PackageExceptionRaised`, `PackageLost`, `PackageReturned`, `PackageEtaWindowAssigned`, `PackageDeliveryPointFlagged`, `PackageReadyForCollection`, `PackageCollected` | Event | Kafka `retailnetwork.shipping-and-tracking.events` | Conformist |
 
 Full types: [Event catalogue](/docs/api-reference/events).
 
