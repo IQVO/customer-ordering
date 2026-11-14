@@ -37,9 +37,10 @@ func TestMigrationsGoUpDownUp(t *testing.T) {
 	// 0005 adds compensation_cancels (durable CancelPromise retries), 0006 a column (ADR 0012),
 	// 0007 adds tracking_package_groups (ADR 0012), 0008 a tier and two columns (ADR 0013),
 	// 0009 three columns on tracking_packages (ADR 0014), 0010 two more (ADR 0015),
-	// 0011 the pickup destination columns on customer_orders and tracking_packages (ADR 0016).
-	if up != 13 {
-		t.Fatalf("after up: %d tables, want 13", up)
+	// 0011 the pickup destination columns on customer_orders and tracking_packages (ADR 0016),
+	// 0012 adds notification_policies (ADR 0017).
+	if up != 14 {
+		t.Fatalf("after up: %d tables, want 14", up)
 	}
 	if !hasTimeZoneColumn(t, url) {
 		t.Fatal("after up: order_groups has no time_zone column")
