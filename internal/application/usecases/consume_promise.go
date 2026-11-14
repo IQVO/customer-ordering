@@ -7,6 +7,7 @@ import (
 
 	"github.com/claudioed/customer-ordering/internal/application/readmodel"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
+	"github.com/claudioed/customer-ordering/internal/domain/notice"
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
 )
 
@@ -62,18 +63,30 @@ type PromiseRevised struct {
 	NodeID            string
 }
 
-// ApplyPromiseRevised runs UpdateGroupPromise.
+// ApplyPromiseRevised runs UpdateGroupPromise and decides the DELAY_EXPECTED
+// notice of the new window (ADR 0017).
 func (c Consumer) ApplyPromiseRevised(ctx context.Context, m Meta, in PromiseRevised) error {
 	return c.handle(ctx, m, func(ctx context.Context) error {
-		return c.mutate(ctx, in.OrderID, quiet(func(o *customerorder.CustomerOrder) error {
+		return c.mutate(ctx, in.OrderID, func(o *customerorder.CustomerOrder) ([]shared.Event, error) {
 			shipBy := in.ShipBy
 			if shipBy.IsZero() { // the producer omitted it: keep the group's own
 				if n, ok := o.GroupNoByPromise(in.PromiseID); ok {
 					shipBy = groupShipBy(o, n)
 				}
 			}
-			return o.UpdateGroupPromise(in.PromiseID, in.RevisionNo, in.DeliverByEarliest, in.DeliverByLatest, shipBy, in.NodeID, in.TimeZone)
-		}))
+			before := o.Version()
+			if err := o.UpdateGroupPromise(in.PromiseID, in.RevisionNo, in.DeliverByEarliest, in.DeliverByLatest, shipBy, in.NodeID, in.TimeZone); err != nil {
+				return nil, err
+			}
+			if o.Version() == before {
+				return nil, nil // a revision no newer than the stored one is not a new fact
+			}
+			n, err := groupOfPromise(o, in.PromiseID)
+			if err != nil {
+				return nil, err
+			}
+			return c.decideNotices(ctx, c.when(m), notice.FamilyDelayExpected, notice.DelayFact(in.DeliverByLatest), []groupTarget{{orderID: in.OrderID, groupNo: n}})
+		})
 	})
 }
 

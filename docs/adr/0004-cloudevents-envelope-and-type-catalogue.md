@@ -30,23 +30,27 @@ in ADR 0003, not here.
   RFC 3339 UTC.
 - Built and decoded only through `internal/adapters/kafka/cloudevents`.
 - `<entity>` is the raising aggregate, lowercase, no separators: `customerorder`.
-  Tier is `commerce`.
+  Tier is `commerce`. One exception: `ShopperNoticeDecided` carries the entity
+  `order`, the shopper-facing view of the aggregate (ADR 0017); every other
+  published type keeps `customerorder`.
 
 ### Published types
 
-Both types go to the topic `retailnetwork.customer-ordering.events`. The model
+All types go to the topic `retailnetwork.customer-ordering.events`. The model
 declares no analytics-only event for this context, so nothing is written to
 `retailnetwork.customer-ordering.analytics`.
 
 ```text
 type: com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced stream: events
 type: com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderCancelled stream: events
+type: com.retailnetwork.commerce.customer-ordering.order.ShopperNoticeDecided stream: events
 ```
 
 | Event | Subject / key | Raised when | `data` |
 |---|---|---|---|
 | `CustomerOrderPlaced` | `orderId` | PlaceOrder is saved (state PLACED) | `{orderId, shopperId, pickupPointId?, destinationPostalPrefix, placedAt, groups[{groupNo, promiseId, tier, witnessNodeId, shipBy, deliverByEarliest, deliverByLatest, lines[{lineNo, catalogItemId, quantity}]}]}` (`pickupPointId` only on a pickup order, ADR 0016; `consolidationKey` and the group optionals as in ADRs 0012-0013) |
 | `CustomerOrderCancelled` | `orderId` | CancelOrder (shopper) or the CancelOnUnfulfillable policy is saved | `{orderId, reason, cancelledAt, groupNos[]}` |
+| `ShopperNoticeDecided` | `orderId` | A consumer use case records a fact of a notice family (ADR 0017: promise revision, ETA window, delivery-point flag, group status transition), in the same transaction | `{orderId, groupNo, family, notifier, policyVersion, noticeKey, decidedAt, fact{...}}` — `fact` carries only the family's codes, already public on the CO/DP/ST events; `noticeKey` is the consumer dedupe key |
 
 Payload rules:
 
