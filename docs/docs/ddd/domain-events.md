@@ -144,6 +144,9 @@ authoritative; unknown fields are ignored).
 | `PackageLost` | same | `trackingNumber`, `orderId`, `declaredAt` (falls back to the event time) | `MarkGroupLost`: terminal |
 | `PackageReturned` | same | `trackingNumber`, `orderId`, `returnedAt` (falls back to the event time) | `MarkGroupReturned`: terminal |
 | `PackageEtaWindowAssigned` | same | `trackingNumber`, `assignmentId`, `orderId`, `etaStart`, `etaEnd`, `assignedAt` (falls back to the event time) | tracking package window only (latest `assignedAt` wins); no aggregate command, the promise is untouched (ADR 0014) |
+| `PackageDeliveryPointFlagged` | same | `trackingNumber`, `assignmentId`, `orderId`, `reason` (`NOT_HOME` or `ACCESS_PROBLEM`, anything else is a bad payload), `flaggedAt` (falls back to the event time) | delivery-point advisory on the tracking package row (newest `flaggedAt` wins); read model only, no order, group, promise or ETA window is read or written (ADR 0015) |
+| `PackageReadyForCollection` | same | `trackingNumber`, `assignmentId`, `orderId`, `pickupPointId`, `readyForCollectionAt`, `holdUntil` (`pickupPointId`, `readyForCollectionAt` and `holdUntil` are required, else a bad payload) | records the deposit at the pickup point on the tracking package row; no aggregate changes (ADR 0016) |
+| `PackageCollected` | same | `trackingNumber`, `assignmentId`, `orderId`, `pickupPointId`, `collectedAt`, `proofCode?` (`pickupPointId` and `collectedAt` are required, else a bad payload) | records the collection on the tracking package row; no aggregate changes (ADR 0016) |
 
 **Ordering.** Producers key by their own root ids, so there is no order
 guarantee across groups or topics. An event for an unknown order, an unknown

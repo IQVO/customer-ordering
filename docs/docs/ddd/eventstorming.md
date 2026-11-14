@@ -90,6 +90,8 @@ flowchart TB
       TE2["PackageDelivered"]:::event
       TE3["PackageLost, PackageReturned"]:::event
       TE4["PackageEtaWindowAssigned"]:::event
+      TE5["PackageDeliveryPointFlagged"]:::event
+      TE6["PackageReadyForCollection,<br/>PackageCollected"]:::event
     end
     P0["Consumer handler:<br/>claim event id, then apply"]:::policy
     G["CustomerOrder"]:::aggregate
@@ -106,6 +108,8 @@ flowchart TB
     TE2 --> P0
     TE3 --> P0
     TE4 --> P0
+    TE5 --> P0
+    TE6 --> P0
     P0 -->|"UpdateGroupPromise, MarkInFulfillment,<br/>MarkGroupShipped, MarkGroupDelivered,<br/>MarkGroupLost, MarkGroupReturned"| G
     P0 -->|"signals, packages, links"| V
     V --> Q1
@@ -119,9 +123,14 @@ flowchart TB
     classDef hotspot fill:#ff8787,stroke:#c92a2a,color:#000
 ```
 
+`PackageEtaWindowAssigned`, `PackageDeliveryPointFlagged` (ADR 0015),
+`PackageReadyForCollection` and `PackageCollected` (ADR 0016) only update the
+tracking view; they change no `CustomerOrder`.
+
 Source: `internal/adapters/inbound/kafka/handlers.go`,
 `internal/application/usecases/consume_promise.go`, `consume_sourcing.go`,
-`consume_tracking.go`, `internal/domain/customerorder/commands.go`.
+`consume_tracking.go`, `consume_eta.go`, `consume_point_flag.go`,
+`consume_pickup.go`, `internal/domain/customerorder/commands.go`.
 
 ## 3. Cancellation
 
@@ -178,4 +187,4 @@ Source: `internal/application/usecases/cancel.go`,
 | H3 | Producers key by their own ids, so a delivery or outcome can arrive before `FulfillmentShipped`; the code stores and replays it, an unknown order is skipped, not retried. | `consume_tracking.go`, ADR 0002 A7 |
 | H4 | `ErrCancelAfterLock` is advisory: a lock this service has not consumed yet cannot be seen, and order-sourcing's answer decides. | `customerorder/cancel.go` |
 | H5 | If publishing to a `.dlq` topic fails, the consumer keeps retrying and the partition is blocked. | [Runbook](/docs/operations/runbook#consumers-and-the-dlq) |
-| H6 | Resolved: the `apis/asyncapi.yaml` description once said "Fifteen events" while listing seventeen; it now says seventeen, matching the code. | `apis/asyncapi.yaml` info description |
+| H6 | Resolved: the `apis/asyncapi.yaml` description counted the consumed events wrong more than once ("Fifteen events" while listing seventeen, "Eighteen" while listing nineteen, "Twenty" while listing twenty-one). It now says twenty-one, matching the 21 messages of its `receive` operations and the 21 handlers in `kafka/handlers.go`. | `apis/asyncapi.yaml` info description, `kafka/handlers.go` |
