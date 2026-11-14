@@ -52,6 +52,8 @@ const (
 	TypeLabelVoided                 = typePrefixShippingLabel + "LabelVoided"
 	TypePackageScanned              = typePrefixShippingJourney + "PackageScanned"
 	TypePackageDelivered            = typePrefixShippingJourney + "PackageDelivered"
+	TypePackageReadyForCollection   = typePrefixShippingJourney + "PackageReadyForCollection"
+	TypePackageCollected            = typePrefixShippingJourney + "PackageCollected"
 	TypePackageException            = typePrefixShippingJourney + "PackageExceptionRaised"
 	TypePackageLost                 = typePrefixShippingJourney + "PackageLost"
 	TypePackageReturned             = typePrefixShippingJourney + "PackageReturned"
@@ -205,7 +207,7 @@ func ShippingAndTrackingHandlers(c usecases.Consumer) map[string]HandlerFunc {
 		TypeLabelIssued: handler("LabelIssued", func(d labelIssuedData) error {
 			return tracking("LabelIssued")(d.TrackingNumber)
 		}, func(ctx context.Context, m usecases.Meta, d labelIssuedData) error {
-			return c.ApplyLabelIssued(ctx, m, usecases.LabelIssued{TrackingNumber: d.TrackingNumber, AssignmentID: d.AssignmentID, Carrier: d.Carrier})
+			return c.ApplyLabelIssued(ctx, m, usecases.LabelIssued{TrackingNumber: d.TrackingNumber, AssignmentID: d.AssignmentID, Carrier: d.Carrier, PickupPointID: d.PickupPointID})
 		}),
 		TypeLabelVoided: handler("LabelVoided", func(d labelVoidedData) error {
 			return tracking("LabelVoided")(d.TrackingNumber)
@@ -236,6 +238,34 @@ func ShippingAndTrackingHandlers(c usecases.Consumer) map[string]HandlerFunc {
 		}),
 		TypePackageEtaWindowAssigned:    etaHandler(c),
 		TypePackageDeliveryPointFlagged: pointFlagHandler(c),
+		TypePackageReadyForCollection: handler("PackageReadyForCollection", func(d packageReadyForCollectionData) error {
+			if err := need("PackageReadyForCollection", "trackingNumber", d.TrackingNumber, "pickupPointId", d.PickupPointID); err != nil {
+				return err
+			}
+			if d.ReadyForCollectionAt.IsZero() || d.HoldUntil.IsZero() {
+				return fmt.Errorf("%w: PackageReadyForCollection needs readyForCollectionAt and holdUntil", errBadPayload)
+			}
+			return nil
+		}, func(ctx context.Context, m usecases.Meta, d packageReadyForCollectionData) error {
+			return c.ApplyPackageReadyForCollection(ctx, m, usecases.PackageReadyForCollection{
+				TrackingNumber: d.TrackingNumber, AssignmentID: d.AssignmentID, OrderID: d.OrderID, PickupPointID: d.PickupPointID,
+				ReadyAt: d.ReadyForCollectionAt, HoldUntil: d.HoldUntil,
+			})
+		}),
+		TypePackageCollected: handler("PackageCollected", func(d packageCollectedData) error {
+			if err := need("PackageCollected", "trackingNumber", d.TrackingNumber, "pickupPointId", d.PickupPointID); err != nil {
+				return err
+			}
+			if d.CollectedAt.IsZero() {
+				return fmt.Errorf("%w: PackageCollected needs collectedAt", errBadPayload)
+			}
+			return nil
+		}, func(ctx context.Context, m usecases.Meta, d packageCollectedData) error {
+			return c.ApplyPackageCollected(ctx, m, usecases.PackageCollected{
+				TrackingNumber: d.TrackingNumber, AssignmentID: d.AssignmentID, OrderID: d.OrderID, PickupPointID: d.PickupPointID,
+				CollectedAt: d.CollectedAt, ProofCode: d.ProofCode,
+			})
+		}),
 		TypePackageException: handler("PackageExceptionRaised", func(d packageExceptionData) error {
 			return tracking("PackageExceptionRaised")(d.TrackingNumber)
 		}, func(ctx context.Context, m usecases.Meta, d packageExceptionData) error {

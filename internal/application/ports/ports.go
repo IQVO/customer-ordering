@@ -89,6 +89,18 @@ type TrackingRepository interface {
 	// is stored only when FlaggedAt is not older than the stored one (the
 	// newest wins; an equal instant rewrites).
 	ApplyPointFlag(ctx context.Context, f readmodel.PointFlag) error
+	// ApplyReadyForCollection records the deposit of a pickup package at its
+	// point (ADR 0016): the state becomes READY_FOR_COLLECTION unless the
+	// package already ended (collected, delivered, lost, returned) and the
+	// point, readyForCollectionAt and holdUntil columns are facts of the
+	// event. It creates the row and tolerates any arrival order like
+	// ApplyEta.
+	ApplyReadyForCollection(ctx context.Context, r readmodel.ReadyForCollection) error
+	// ApplyCollected records the collection of a pickup package (ADR 0016):
+	// the state becomes COLLECTED unless the package already ended in an
+	// outcome, collectedAt, proofCode and the point are facts of the event.
+	// It creates the row and tolerates any arrival order like ApplyEta.
+	ApplyCollected(ctx context.Context, c readmodel.Collected) error
 	// ApplyVoid marks a LABELLED (or unscanned) package VOIDED.
 	ApplyVoid(ctx context.Context, trackingNumber string) error
 	// ApplyOutcome records PackageLost or PackageReturned on the package row,

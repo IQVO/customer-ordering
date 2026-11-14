@@ -48,6 +48,7 @@ func Run(t *testing.T, newEnv func(t *testing.T) Env) {
 		"tracking":            testTracking,
 		"tracking-eta":        testTrackingEta,
 		"tracking-point-flag": testTrackingPointFlag,
+		"tracking-pickup":     testTrackingPickup,
 		"inbox":               testInbox,
 		"unitofwork":          testUnitOfWork,
 		"idempotency":         testIdempotency,

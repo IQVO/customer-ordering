@@ -11,6 +11,13 @@ import (
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
 )
 
+// The package states the memory double writes (the producer's journey states
+// as the read model stores them).
+const (
+	stateLabelled  = "LABELLED"
+	stateDelivered = "DELIVERED"
+)
+
 // TrackingRepository is the in-memory ports.TrackingRepository.
 type TrackingRepository struct{ s *Store }
 
@@ -86,11 +93,48 @@ func (r *TrackingRepository) ApplyLabel(ctx context.Context, l readmodel.Label) 
 	if l.Carrier != "" {
 		p.Carrier = l.Carrier
 	}
+	if l.PickupPointID != "" {
+		p.PickupPointID = l.PickupPointID
+	}
 	if p.State == "" {
-		p.State = "LABELLED"
+		p.State = stateLabelled
 	}
 	r.s.packages[l.TrackingNumber] = r.identify(p, "", "")
 	r.linkGroup(l.TrackingNumber)
+	return nil
+}
+
+// ApplyReadyForCollection implements ports.TrackingRepository (ADR 0016).
+func (r *TrackingRepository) ApplyReadyForCollection(ctx context.Context, e readmodel.ReadyForCollection) error {
+	defer r.s.enter(ctx)()
+	p := r.row(e.TrackingNumber)
+	if p.PickupPointID == "" {
+		p.PickupPointID = e.PickupPointID
+	}
+	p.ReadyForCollectionAt, p.HoldUntil = shared.UTC(e.ReadyAt), shared.UTC(e.HoldUntil)
+	if p.State != "COLLECTED" && p.State != stateDelivered && p.Outcome == "" {
+		p.State = "READY_FOR_COLLECTION"
+	}
+	r.s.packages[e.TrackingNumber] = r.identify(p, e.AssignmentID, e.OrderID)
+	r.linkGroup(e.TrackingNumber)
+	return nil
+}
+
+// ApplyCollected implements ports.TrackingRepository (ADR 0016).
+func (r *TrackingRepository) ApplyCollected(ctx context.Context, e readmodel.Collected) error {
+	defer r.s.enter(ctx)()
+	p := r.row(e.TrackingNumber)
+	if p.PickupPointID == "" {
+		p.PickupPointID = e.PickupPointID
+	}
+	if !shared.UTC(e.CollectedAt).Before(p.CollectedAt) {
+		p.CollectedAt, p.ProofCode = shared.UTC(e.CollectedAt), e.ProofCode
+	}
+	if p.Outcome == "" {
+		p.State = "COLLECTED"
+	}
+	r.s.packages[e.TrackingNumber] = r.identify(p, e.AssignmentID, e.OrderID)
+	r.linkGroup(e.TrackingNumber)
 	return nil
 }
 
@@ -114,7 +158,7 @@ func (r *TrackingRepository) ApplyDelivery(ctx context.Context, d readmodel.Deli
 	defer r.s.enter(ctx)()
 	p := r.row(d.TrackingNumber)
 	at := shared.UTC(d.At)
-	p.DeliveredAt, p.LastScanAt, p.State = later(p.DeliveredAt, at), later(p.LastScanAt, at), "DELIVERED"
+	p.DeliveredAt, p.LastScanAt, p.State = later(p.DeliveredAt, at), later(p.LastScanAt, at), stateDelivered
 	r.s.packages[d.TrackingNumber] = r.identify(p, d.AssignmentID, d.OrderID)
 	r.linkGroup(d.TrackingNumber)
 	return nil
@@ -126,7 +170,7 @@ func (r *TrackingRepository) ApplyOutcome(ctx context.Context, o readmodel.Outco
 	p := r.row(o.TrackingNumber)
 	at := shared.UTC(o.At)
 	if p.Outcome == "" {
-		if p.State != "DELIVERED" {
+		if p.State != stateDelivered {
 			p.State = o.Kind
 		}
 		p.Outcome, p.OutcomeAt = o.Kind, at
@@ -150,7 +194,7 @@ func (r *TrackingRepository) ApplyException(ctx context.Context, e readmodel.Exc
 func (r *TrackingRepository) ApplyVoid(ctx context.Context, tn string) error {
 	defer r.s.enter(ctx)()
 	p := r.row(tn)
-	if p.State == "" || p.State == "LABELLED" {
+	if p.State == "" || p.State == stateLabelled {
 		p.State = "VOIDED"
 	}
 	r.s.packages[tn] = p

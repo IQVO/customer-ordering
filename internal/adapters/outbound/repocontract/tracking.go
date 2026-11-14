@@ -86,7 +86,7 @@ func trackingALabelBeforeTheLinkIsLinkedWhenTheLockAr(t *testing.T, e Env) {
 	}
 	must(t, e.Tracking.LinkAssignment(bg(), readmodel.AssignmentLink{AssignmentID: assignLabelA, OrderID: "o-a", GroupNo: 3}))
 	p := packageByTN(t, e, "o-a", "TRK-A")
-	if p.GroupNo != 3 || p.Carrier != "NETWORK" || p.State != "LABELLED" || p.AssignmentID != assignLabelA {
+	if p.GroupNo != 3 || p.Carrier != "NETWORK" || p.State != stateLabelled || p.AssignmentID != assignLabelA {
 		t.Fatalf("package = %+v", p)
 	}
 }
@@ -94,7 +94,7 @@ func trackingALabelBeforeTheLinkIsLinkedWhenTheLockAr(t *testing.T, e Env) {
 func trackingALabelAfterTheLinkIsLinkedAtOnce(t *testing.T, e Env) {
 	must(t, e.Tracking.LinkAssignment(bg(), readmodel.AssignmentLink{AssignmentID: "as-b", OrderID: "o-b", GroupNo: 1}))
 	must(t, e.Tracking.ApplyLabel(bg(), readmodel.Label{TrackingNumber: "TRK-B", AssignmentID: "as-b", At: at(1)}))
-	if p := packageByTN(t, e, "o-b", "TRK-B"); p.GroupNo != 1 || p.Carrier != "" || p.State != "LABELLED" {
+	if p := packageByTN(t, e, "o-b", "TRK-B"); p.GroupNo != 1 || p.Carrier != "" || p.State != stateLabelled {
 		t.Fatalf("package = %+v", p)
 	}
 }

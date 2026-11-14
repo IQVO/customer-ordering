@@ -61,6 +61,9 @@ type (
 		TrackingNumber string `json:"trackingNumber"`
 		AssignmentID   string `json:"assignmentId"`
 		Carrier        string `json:"carrier"`
+		// PickupPointID names the point of a pickup label; omitted on a
+		// ship-to label (ADR 0016).
+		PickupPointID string `json:"pickupPointId"`
 	}
 	labelVoidedData struct {
 		TrackingNumber string `json:"trackingNumber"`
@@ -93,5 +96,21 @@ type (
 		OrderID        string    `json:"orderId"`
 		Reason         string    `json:"reason"`
 		At             time.Time `json:"at"`
+	}
+	packageReadyForCollectionData struct {
+		TrackingNumber       string    `json:"trackingNumber"`
+		AssignmentID         string    `json:"assignmentId"`
+		OrderID              string    `json:"orderId"`
+		PickupPointID        string    `json:"pickupPointId"`
+		ReadyForCollectionAt time.Time `json:"readyForCollectionAt"`
+		HoldUntil            time.Time `json:"holdUntil"`
+	}
+	packageCollectedData struct {
+		TrackingNumber string    `json:"trackingNumber"`
+		AssignmentID   string    `json:"assignmentId"`
+		OrderID        string    `json:"orderId"`
+		PickupPointID  string    `json:"pickupPointId"`
+		CollectedAt    time.Time `json:"collectedAt"`
+		ProofCode      string    `json:"proofCode"`
 	}
 )
