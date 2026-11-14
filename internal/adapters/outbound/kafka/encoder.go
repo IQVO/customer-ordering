@@ -11,6 +11,7 @@ import (
 	"github.com/claudioed/customer-ordering/internal/adapters/kafka/cloudevents"
 	"github.com/claudioed/customer-ordering/internal/application/outbox"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
+	"github.com/claudioed/customer-ordering/internal/domain/notice"
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
 )
 
@@ -64,7 +65,36 @@ type cancelledData struct {
 	GroupNos    []int  `json:"groupNos"`
 }
 
+// noticeFactData is the `fact` of ShopperNoticeDecided: only the codes of the
+// family, already public on the CO/DP/ST events (ADR 0017).
+type noticeFactData struct {
+	DeliverByLatest string `json:"deliverByLatest,omitempty"`
+	EtaStart        string `json:"etaStart,omitempty"`
+	EtaEnd          string `json:"etaEnd,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+	Status          string `json:"status,omitempty"`
+}
+
+type shopperNoticeDecidedData struct {
+	OrderID       string         `json:"orderId"`
+	GroupNo       int            `json:"groupNo"`
+	Family        string         `json:"family"`
+	Notifier      string         `json:"notifier"`
+	PolicyVersion int            `json:"policyVersion"`
+	NoticeKey     string         `json:"noticeKey"`
+	DecidedAt     string         `json:"decidedAt"`
+	Fact          noticeFactData `json:"fact"`
+}
+
 func ts(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+
+// tsIfSet renders an optional fact instant, "" when the fact does not carry it.
+func tsIfSet(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return ts(t)
+}
 
 // Encoder implements outbox.Encoder: each domain event becomes one outbox
 // message holding the CloudEvents bytes, the Kafka key (the orderId) and the
@@ -134,6 +164,14 @@ func payloadFor(ev shared.Event) (any, error) {
 		return placedPayload(e), nil
 	case customerorder.CustomerOrderCancelled:
 		return cancelledData{OrderID: string(e.OrderID), Reason: e.Reason, CancelledAt: ts(e.CancelledAt), GroupNos: append([]int{}, e.GroupNos...)}, nil
+	case notice.ShopperNoticeDecided:
+		return shopperNoticeDecidedData{
+			OrderID: e.OrderID, GroupNo: e.GroupNo, Family: string(e.Family), Notifier: string(e.Notifier),
+			PolicyVersion: e.PolicyVersion, NoticeKey: e.NoticeKey, DecidedAt: ts(e.DecidedAt), Fact: noticeFactData{
+				DeliverByLatest: tsIfSet(e.Fact.DeliverByLatest), EtaStart: tsIfSet(e.Fact.EtaStart), EtaEnd: tsIfSet(e.Fact.EtaEnd),
+				Reason: e.Fact.Reason, Status: e.Fact.Status,
+			},
+		}, nil
 	}
 	return nil, fmt.Errorf("kafka encoder: %T is not a published event", ev)
 }

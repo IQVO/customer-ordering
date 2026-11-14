@@ -22,6 +22,7 @@ type Env struct {
 	Orders      ports.OrderRepository
 	Shoppers    ports.ShopperRepository
 	Tracking    ports.TrackingRepository
+	Policies    ports.NotificationPolicyRepository
 	Inbox       ports.Inbox
 	Outbox      ports.EventOutbox
 	UoW         ports.UnitOfWork
@@ -49,6 +50,7 @@ func Run(t *testing.T, newEnv func(t *testing.T) Env) {
 		"tracking-eta":        testTrackingEta,
 		"tracking-point-flag": testTrackingPointFlag,
 		"tracking-pickup":     testTrackingPickup,
+		"policies":            testPolicies,
 		"inbox":               testInbox,
 		"unitofwork":          testUnitOfWork,
 		"idempotency":         testIdempotency,

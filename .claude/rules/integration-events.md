@@ -7,7 +7,7 @@ paths:
 
 # Cross-service integration events (Kafka)
 
-customer-ordering PUBLISHES two integration events to
+customer-ordering PUBLISHES three integration events to
 `retailnetwork.customer-ordering.events` and CONSUMES fourteen events from three
 topics (ADR 0003): `retailnetwork.delivery-promise.events`,
 `retailnetwork.order-sourcing.events`, `retailnetwork.shipping-and-tracking.events`.
@@ -60,6 +60,7 @@ All on `retailnetwork.customer-ordering.events`; `subject` and Kafka key = order
 | --- | --- |
 | `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderPlaced` | orderId |
 | `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderCancelled` | orderId |
+| `com.retailnetwork.commerce.customer-ordering.order.ShopperNoticeDecided` | orderId |
 
 ### Consumed types
 

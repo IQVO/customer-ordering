@@ -22,6 +22,7 @@ import (
 	"github.com/claudioed/customer-ordering/internal/application/promising"
 	"github.com/claudioed/customer-ordering/internal/application/readmodel"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
+	"github.com/claudioed/customer-ordering/internal/domain/notice"
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
 	"github.com/claudioed/customer-ordering/internal/domain/shopper"
 )
@@ -123,6 +124,16 @@ type TrackingRepository interface {
 	// tracking number; a package shared by several groups is listed once per
 	// group, and a package that only names the order is listed under group 0.
 	Packages(ctx context.Context, orderID string) ([]readmodel.Package, error)
+}
+
+// NotificationPolicyRepository persists the NotificationPolicy document (ADR
+// 0017): one row per published version, the current policy is the highest
+// version and version 0 (no row) is the built-in default.
+type NotificationPolicyRepository interface {
+	// Current returns the highest published policy, or ErrNotFound.
+	Current(ctx context.Context) (*notice.Policy, error)
+	// Save stores a new version; an existing version is ErrConcurrentUpdate.
+	Save(ctx context.Context, p *notice.Policy) error
 }
 
 // Inbox makes consumers idempotent on the CloudEvents id.

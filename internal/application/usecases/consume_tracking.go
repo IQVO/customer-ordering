@@ -10,6 +10,7 @@ import (
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/readmodel"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
+	"github.com/claudioed/customer-ordering/internal/domain/shared"
 )
 
 // LabelIssued is the consumed shipping-and-tracking event of the same name.
@@ -100,15 +101,19 @@ func (c Consumer) ApplyPackageDelivered(ctx context.Context, m Meta, in PackageD
 		if err != nil {
 			return err
 		}
-		return c.eachGroup(ctx, targets, func(o *customerorder.CustomerOrder, groupNo int) error {
+		return c.eachGroup(ctx, targets, func(o *customerorder.CustomerOrder, groupNo int) ([]shared.Event, error) {
 			n := groupNo
 			if n == 0 {
 				var ok bool
 				if n, ok = groupOf(o, in); !ok {
-					return nil
+					return nil, nil
 				}
 			}
-			return o.MarkGroupDelivered(n, in.TrackingNumber, at)
+			before := statusOf(o, n)
+			if err := o.MarkGroupDelivered(n, in.TrackingNumber, at); err != nil {
+				return nil, err
+			}
+			return c.groupNotices(ctx, at, string(o.ID()), n, before, statusOf(o, n))
 		})
 	})
 }
@@ -162,12 +167,16 @@ func withTarget(targets []groupTarget, t groupTarget) []groupTarget {
 }
 
 // eachGroup applies one command to every target, each in its own mutate inside
-// the event's unit of work. A target the order cannot take (unknown order,
-// illegal for the group's state) is recorded and skipped without stopping the
-// others: one shared package must still reach every group that can take it (A7).
-func (c Consumer) eachGroup(ctx context.Context, targets []groupTarget, apply func(o *customerorder.CustomerOrder, groupNo int) error) error {
+// the event's unit of work, publishing the events the command raised (the
+// ShopperNoticeDecided facts included, ADR 0017). A target the order cannot
+// take (unknown order, illegal for the group's state) is recorded and skipped
+// without stopping the others: one shared package must still reach every group
+// that can take it (A7).
+func (c Consumer) eachGroup(ctx context.Context, targets []groupTarget, apply func(o *customerorder.CustomerOrder, groupNo int) ([]shared.Event, error)) error {
 	for _, t := range targets {
-		err := c.mutate(ctx, t.orderID, quiet(func(o *customerorder.CustomerOrder) error { return apply(o, t.groupNo) }))
+		err := c.mutate(ctx, t.orderID, func(o *customerorder.CustomerOrder) ([]shared.Event, error) {
+			return apply(o, t.groupNo)
+		})
 		if err == nil {
 			continue
 		}
@@ -254,15 +263,19 @@ func (c Consumer) applyOutcome(ctx context.Context, out readmodel.Outcome) error
 	if !slices.ContainsFunc(targets, func(t groupTarget) bool { return t.orderID == out.OrderID }) {
 		targets = append(targets, groupTarget{orderID: out.OrderID})
 	}
-	return c.eachGroup(ctx, targets, func(o *customerorder.CustomerOrder, groupNo int) error {
+	return c.eachGroup(ctx, targets, func(o *customerorder.CustomerOrder, groupNo int) ([]shared.Event, error) {
 		n := groupNo
 		if n == 0 {
 			var ok bool
 			if n, ok = o.GroupNoByTrackingNumber(out.TrackingNumber); !ok {
-				return nil // the shipment is not known yet: replayed by reconcile
+				return nil, nil // the shipment is not known yet: replayed by reconcile
 			}
 		}
-		return markOutcome(o, n, out)
+		before := statusOf(o, n)
+		if err := markOutcome(o, n, out); err != nil {
+			return nil, err
+		}
+		return c.groupNotices(ctx, out.At, string(o.ID()), n, before, statusOf(o, n))
 	})
 }
 

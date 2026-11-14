@@ -44,6 +44,8 @@ channels:
         $ref: '#/components/messages/CustomerOrderPlaced'
       CustomerOrderCancelled:
         $ref: '#/components/messages/CustomerOrderCancelled'
+      ShopperNoticeDecided:
+        $ref: '#/components/messages/ShopperNoticeDecided'
   deliveryPromiseEvents:
     address: retailnetwork.delivery-promise.events
     title: delivery-promise integration topic (consumed)
@@ -105,8 +107,8 @@ operations:
   publishCustomerOrderingEvents:
     action: send
     title: Publish customer-ordering events
-    summary: Publish CustomerOrderPlaced and CustomerOrderCancelled through the transactional outbox.
-    description: The service sends the two events of the CustomerOrder aggregate to `retailnetwork.customer-ordering.events`. Consumers route on the full `type`.
+    summary: Publish CustomerOrderPlaced, CustomerOrderCancelled and ShopperNoticeDecided through the transactional outbox.
+    description: The service sends the two events of the CustomerOrder aggregate and the decided notice facts of the notification policy (ADR 0017) to `retailnetwork.customer-ordering.events`. Consumers route on the full `type`.
     tags:
     - name: customer-ordering
     channel:
@@ -114,6 +116,7 @@ operations:
     messages:
     - $ref: '#/channels/customerOrderingEvents/messages/CustomerOrderPlaced'
     - $ref: '#/channels/customerOrderingEvents/messages/CustomerOrderCancelled'
+    - $ref: '#/channels/customerOrderingEvents/messages/ShopperNoticeDecided'
   receiveDeliveryPromiseEvents:
     action: receive
     title: Receive delivery-promise events
@@ -236,6 +239,39 @@ components:
             cancelledAt: '2026-10-23T10:20:00Z'
             groupNos:
             - 1
+    ShopperNoticeDecided:
+      name: ShopperNoticeDecided
+      title: ShopperNoticeDecided
+      summary: The notification policy decided a notice for one family occurrence (ADR 0017).
+      description: '`type` = `com.retailnetwork.commerce.customer-ordering.order.ShopperNoticeDecided` (the `order` entity, the shopper-facing view); subject and key = the orderId. Raised from the consumer use cases that already record the fact (promise revision, ETA window, delivery-point flag, the group status transitions), in the same transaction, one per family occurrence REGARDLESS of the notifier: `notifier` is the instruction to the marketplace side (MARKETPLACE: the storefront delivers; SELLER: deferred, no seller consumer exists; NOBODY: drop the notice). The notice itself is delivered outside the network; no context in the network consumes the event today. Consumers dedupe on `noticeKey` = sha256(orderId|groupNo|family|factDigest): a re-assigned window is a new fact, a replay is not.'
+      contentType: application/cloudevents+json
+      tags:
+      - name: order
+      payload:
+        $ref: '#/components/schemas/ShopperNoticeDecidedEvent'
+      examples:
+      - name: shopperNoticeDecided
+        summary: The day-of ETA window was assigned to the package of group 2.
+        payload:
+          specversion: '1.0'
+          id: 3f6c2a9e-8b1d-4c7a-9e55-0d2f6b7a1c40
+          source: /retailnetwork/customer-ordering
+          type: com.retailnetwork.commerce.customer-ordering.order.ShopperNoticeDecided
+          subject: 7a1e6c52-0d2b-4f0e-9d6a-5c6f1b8e2a10
+          time: '2026-10-23T12:15:30Z'
+          datacontenttype: application/json
+          dataschema: urn:retailnetwork:customer-ordering:events:ShopperNoticeDecided:v1
+          data:
+            orderId: 7a1e6c52-0d2b-4f0e-9d6a-5c6f1b8e2a10
+            groupNo: 2
+            family: ETA_WINDOW_ASSIGNED
+            notifier: NOBODY
+            policyVersion: 0
+            noticeKey: e17a743b013e6726bd9b0dcb238ce8a8909bc9e18237878d103b54b7edba7e76
+            decidedAt: '2026-10-23T12:15:30Z'
+            fact:
+              etaStart: '2026-10-24T16:15:30Z'
+              etaEnd: '2026-10-24T17:15:30Z'
     ConsumedPromiseAtRisk:
       name: PromiseAtRisk
       title: PromiseAtRisk (consumed)
@@ -1018,6 +1054,103 @@ components:
           const: urn:retailnetwork:customer-ordering:events:CustomerOrderCancelled:v1
         data:
           $ref: '#/components/schemas/CustomerOrderCancelledData'
+    ShopperNoticeDecidedEvent:
+      type: object
+      required:
+      - specversion
+      - id
+      - source
+      - type
+      - subject
+      - time
+      - datacontenttype
+      - dataschema
+      - data
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+          description: CloudEvents id (UUID); stable across relay retries. Consumers dedupe on it (inbox).
+        source:
+          type: string
+          const: /retailnetwork/customer-ordering
+        type:
+          type: string
+          const: com.retailnetwork.commerce.customer-ordering.order.ShopperNoticeDecided
+        subject:
+          type: string
+          description: Aggregate root id; also the Kafka message key.
+        time: *id001
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+          const: urn:retailnetwork:customer-ordering:events:ShopperNoticeDecided:v1
+        data:
+          $ref: '#/components/schemas/ShopperNoticeDecidedData'
+    ShopperNoticeDecidedData:
+      type: object
+      description: The decided notice fact of one family occurrence (ADR 0017).
+      required:
+      - orderId
+      - groupNo
+      - family
+      - notifier
+      - policyVersion
+      - noticeKey
+      - decidedAt
+      - fact
+      properties:
+        orderId:
+          type: string
+        groupNo:
+          type: integer
+          minimum: 1
+        family:
+          type: string
+          enum: [DELAY_EXPECTED, ETA_WINDOW_ASSIGNED, DELIVERY_POINT_ADVISORY, GROUP_SHIPPED, GROUP_DELIVERED, GROUP_LOST, GROUP_RETURNED]
+        notifier:
+          type: string
+          enum: [MARKETPLACE, SELLER, NOBODY]
+          description: The policy's instruction to the marketplace side; NOBODY means drop the notice (the fact still flows).
+        policyVersion:
+          type: integer
+          minimum: 0
+          description: The version of the policy that decided; 0 is the built-in default (every family NOBODY).
+        noticeKey:
+          type: string
+          description: sha256(orderId|groupNo|family|factDigest), the consumer dedupe key.
+        decidedAt: *id001
+        fact:
+          $ref: '#/components/schemas/ShopperNoticeFact'
+    ShopperNoticeFact:
+      type: object
+      description: >-
+        Only the codes of the family, already public on the customer-ordering,
+        delivery-promise and shipping-and-tracking events (ADR 0017): every
+        field is optional and omitted when the family does not carry it.
+      properties:
+        deliverByLatest:
+          type: string
+          format: date-time
+          description: 'DELAY_EXPECTED: the revised deliverByLatest.'
+        etaStart:
+          type: string
+          format: date-time
+          description: 'ETA_WINDOW_ASSIGNED: the window start.'
+        etaEnd:
+          type: string
+          format: date-time
+          description: 'ETA_WINDOW_ASSIGNED: the window end.'
+        reason:
+          type: string
+          description: 'DELIVERY_POINT_ADVISORY: the flag reason.'
+        status:
+          type: string
+          description: 'The terminal families: the group status.'
     PromiseAtRiskData:
       type: object
       description: Only the fields customer-ordering relies on; unknown fields are ignored (tolerant reader).
