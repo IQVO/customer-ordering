@@ -284,3 +284,18 @@ and up to 20 saved addresses (`ShipTo`). No events (the model lists none).
   the network model's customer-ordering REST section needs the four routes
   (POST/GET on shoppers, GET /orders) with `SavedAddress`, `Shopper.savedAddresses`,
   `CustomerOrderList` and the `too-many-addresses` problem.
+
+## Addendum 2026-11-13: current state
+
+A14's final decision, "no compensation record is kept", no longer describes the code. Since the
+"durable promise compensation (A14)" change (PR #44, merged 2026-11-02, commit `9c4fd5d`), a
+compensating cancel that fails is enqueued, not only logged: `PlaceOrder.compensate` collects
+the failed cancels and `enqueueFailedCancels` writes them to the `compensation_cancels` table
+(migration `0005_compensation_cancels`; `internal/application/usecases/checkout.go`). The
+always-on worker in `internal/adapters/outbound/compensation/worker.go` (started by `cmd/api`)
+retries each row every `COMPENSATION_RETRY_INTERVAL` (default 5s) until delivery-promise
+releases the hold or answers that the promise is no longer cancellable, and stops claiming a
+row after `COMPENSATION_MAX_ATTEMPTS` failures (default 20, `0` = unlimited). Two residual
+cases remain: a cancel is only logged when the enqueue itself fails, and nothing is queued when
+the order cannot be stored after every confirm succeeded (only a failed confirm calls
+`compensate`). The rest of A14 is unchanged. Operations: the Runbook's "Compensation queue".

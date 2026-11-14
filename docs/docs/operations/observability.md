@@ -107,7 +107,7 @@ Messages by binary (all in the code, searchable in Loki as `{app="customer-order
 | `event processed` (`type`, `event_id`, `what`) | DEBUG | consumers |
 | `readiness: dependency is not ready` (`dependency`, `error`) | WARN | `/readyz`; the cause of a 503 lives here, never in the response |
 | `compensation worker running` (`interval`, `max_attempts`), `compensation worker: row reached the attempt cap and is excluded from future claims; re-arm it with attempts = 0, released_at = NULL after fixing the cause`, `invalid COMPENSATION_RETRY_INTERVAL; using the default`, `invalid COMPENSATION_MAX_ATTEMPTS; using the default` | INFO, ERROR, WARN | compensation worker (boot and drain) |
-| `compensating cancel refused by delivery-promise; nothing to release`, `compensating cancel of a confirmed promise failed; the hold stays at delivery-promise`, `cancelled a confirmed promise of a failed checkout` | WARN, ERROR, INFO | checkout compensation |
+| `compensating cancel refused by delivery-promise; nothing to release`, `compensating cancel of a confirmed promise failed; the hold stays at delivery-promise`, `cancelled a confirmed promise of a failed checkout`, `enqueued failed compensating cancels for retry`, `enqueueing failed compensating cancels for retry failed; the holds stay at delivery-promise` | WARN, ERROR, INFO | checkout compensation |
 | `mcp tool failed with an unexpected error`, `a2a skill failed` | ERROR | agent adapters |
 
 ## Dashboards and alerts
