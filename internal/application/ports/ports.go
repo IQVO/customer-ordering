@@ -150,9 +150,9 @@ type UnitOfWork interface {
 // delivery-promise (sync_calls QuoteDeliveryOffers and MakePromise, and
 // ConfirmPromise, E7, and CancelPromise for its compensation). Failures are the ErrPromise... sentinels.
 type PromiseGateway interface {
-	// QuoteOffers quotes the offers (all tiers) for a destination prefix and a
-	// group's lines.
-	QuoteOffers(ctx context.Context, destinationPostalPrefix string, lines []promising.Line) ([]promising.Offer, error)
+	// QuoteOffers quotes the offers (all tiers) for one destination — a postal
+	// prefix or a pickup point (ADR 0016) — and a group's lines.
+	QuoteOffers(ctx context.Context, destination promising.Destination, lines []promising.Line) ([]promising.Offer, error)
 	// MakePromise makes a provisional promise for one group (idempotent per
 	// order and group).
 	MakePromise(ctx context.Context, req promising.MakeRequest) (promising.Terms, error)

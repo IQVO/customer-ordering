@@ -91,8 +91,9 @@ type CancelCall = ConfirmCall
 
 // QuoteCall records one QuoteOffers call.
 type QuoteCall struct {
-	Prefix string
-	Lines  []promising.Line
+	Prefix        string
+	PickupPointID string
+	Lines         []promising.Line
 }
 
 // PromiseGateway is a scripted ports.PromiseGateway. An offer id with no
@@ -131,10 +132,10 @@ func NewPromiseGateway() *PromiseGateway {
 }
 
 // QuoteOffers implements ports.PromiseGateway.
-func (g *PromiseGateway) QuoteOffers(_ context.Context, prefix string, lines []promising.Line) ([]promising.Offer, error) {
+func (g *PromiseGateway) QuoteOffers(_ context.Context, destination promising.Destination, lines []promising.Line) ([]promising.Offer, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.quoted = append(g.quoted, QuoteCall{Prefix: prefix, Lines: append([]promising.Line(nil), lines...)})
+	g.quoted = append(g.quoted, QuoteCall{Prefix: destination.PostalPrefix, PickupPointID: destination.PickupPointID, Lines: append([]promising.Line(nil), lines...)})
 	if g.QuoteErr != nil {
 		return nil, g.QuoteErr
 	}

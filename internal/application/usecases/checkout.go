@@ -25,13 +25,15 @@ type CheckoutGroup struct {
 
 // PlaceOrderInput is the command PlaceOrder. OrderID is derived from the
 // Idempotency-Key by the caller (ADR 0002, A13). Exactly one of ShipTo /
-// ShipToAddressID is required (NG1): a saved address is resolved against the
-// shopper and COPIED into the order at placement (A25).
+// ShipToAddressID / PickupPointID is required (NG1, ADR 0016): a saved address
+// is resolved against the shopper and COPIED into the order at placement
+// (A25); a pickup point replaces the address entirely.
 type PlaceOrderInput struct {
 	OrderID         customerorder.ID
 	ShopperID       string
 	ShipTo          shipto.ShipTo
 	ShipToAddressID string
+	PickupPointID   string
 	Lines           []customerorder.OrderLine
 	Groups          []CheckoutGroup
 }
@@ -106,22 +108,36 @@ func (u PlaceOrder) execute(ctx context.Context, in PlaceOrderInput) (_ views.Or
 }
 
 // newOrder builds the Place input. The consolidation key is derived from the
-// shopper and the ship-to AFTER resolveAddress copied a saved address into in
-// (ADR 0012); without a keyer it stays empty.
+// shopper and the destination AFTER resolveAddress copied a saved address into
+// in (ADR 0012); a pickup order keys the shopper and the point in the keyer's
+// own point space, so it never merges with an address order (ADR 0016);
+// without a keyer it stays empty.
 func (u PlaceOrder) newOrder(in PlaceOrderInput, groups []customerorder.GroupInput) customerorder.NewOrder {
 	key := ""
 	if u.ConsolidationKeys != nil {
-		key = u.ConsolidationKeys.KeyFor(in.ShopperID, in.ShipTo.NormalizedAddress())
+		if in.PickupPointID != "" {
+			key = u.ConsolidationKeys.KeyFor(in.ShopperID, "point:"+in.PickupPointID)
+		} else {
+			key = u.ConsolidationKeys.KeyFor(in.ShopperID, in.ShipTo.NormalizedAddress())
+		}
 	}
-	return customerorder.NewOrder{ID: in.OrderID, ShopperID: in.ShopperID, ShipTo: in.ShipTo, Lines: in.Lines, Groups: groups, ConsolidationKey: key}
+	return customerorder.NewOrder{ID: in.OrderID, ShopperID: in.ShopperID, ShipTo: in.ShipTo, PickupPointID: in.PickupPointID, Lines: in.Lines, Groups: groups, ConsolidationKey: key}
 }
 
-// checkAddressChoice enforces NG1: exactly one of shipTo / shipToAddressId.
+// checkAddressChoice enforces NG1 and ADR 0016: exactly one of shipTo /
+// shipToAddressId / pickupPointId.
 func checkAddressChoice(in PlaceOrderInput) error {
 	inline := in.ShipTo != (shipto.ShipTo{})
 	byID := in.ShipToAddressID != ""
-	if inline == byID {
-		return shared.Invalid("exactly one of shipTo and shipToAddressId is required")
+	pickup := in.PickupPointID != ""
+	set := 0
+	for _, on := range []bool{inline, byID, pickup} {
+		if on {
+			set++
+		}
+	}
+	if set != 1 {
+		return shared.Invalid("exactly one of shipTo, shipToAddressId and pickupPointId is required")
 	}
 	return nil
 }
@@ -148,9 +164,15 @@ func (u PlaceOrder) resolveAddress(ctx context.Context, in *PlaceOrderInput) err
 	return nil
 }
 
+// preflightPlaceholder stands in for what a promise carries before one exists
+// (the promise id, the witness node and, for a pickup order, the destination
+// prefix the promise will bring).
+const preflightPlaceholder = "pending"
+
 // preflight runs every check that needs no promise by placing a throw-away
 // order with placeholder promises, so a bad request never reaches
-// delivery-promise.
+// delivery-promise. A pickup order has no local prefix: the placeholder group
+// carries a placeholder prefix, exactly like its placeholder promise id.
 func (u PlaceOrder) preflight(in PlaceOrderInput) error {
 	now := u.now()
 	groups := make([]customerorder.GroupInput, len(in.Groups))
@@ -158,9 +180,13 @@ func (u PlaceOrder) preflight(in PlaceOrderInput) error {
 		if !shared.ValidID(g.OfferID) {
 			return shared.Invalid("group %d: offerId %q is not a valid id", g.GroupNo, g.OfferID)
 		}
+		prefix := in.ShipTo.DestinationPrefix()
+		if in.PickupPointID != "" {
+			prefix = preflightPlaceholder
+		}
 		groups[i] = customerorder.GroupInput{
-			GroupNo: g.GroupNo, PromiseID: "pending", Tier: customerorder.TierStandard, WitnessNodeID: "pending", ShipBy: now,
-			DeliverByEarliest: now, DeliverByLatest: now, LineNos: g.LineNos, DestinationPostalPrefix: in.ShipTo.DestinationPrefix(),
+			GroupNo: g.GroupNo, PromiseID: preflightPlaceholder, Tier: customerorder.TierStandard, WitnessNodeID: preflightPlaceholder, ShipBy: now,
+			DeliverByEarliest: now, DeliverByLatest: now, LineNos: g.LineNos, DestinationPostalPrefix: prefix,
 		}
 	}
 	_, _, err := customerorder.Place(u.newOrder(in, groups), now)
@@ -291,15 +317,21 @@ func groupInput(g CheckoutGroup, t promising.Terms) customerorder.GroupInput {
 	return customerorder.GroupInput{
 		GroupNo: g.GroupNo, PromiseID: t.PromiseID, Tier: customerorder.Tier(t.Tier), WitnessNodeID: t.WitnessNodeID,
 		ShipBy: t.ShipBy, DeliverByEarliest: t.DeliverByEarliest, DeliverByLatest: t.DeliverByLatest, TimeZone: t.TimeZone, LineNos: g.LineNos,
-		DestinationPostalPrefix: t.DestinationPostalPrefix, ChosenDeliveryDay: chosenDeliveryDay(t), ConsolidationEligible: consolidationEligible(t),
+		DestinationPostalPrefix: t.DestinationPostalPrefix, PickupPointID: t.PickupPointID,
+		ChosenDeliveryDay: chosenDeliveryDay(t), ConsolidationEligible: consolidationEligible(t),
 	}
 }
 
-// requote quotes fresh offers for every group and reports them.
+// requote quotes fresh offers for every group and reports them. A pickup
+// checkout requotes to its point (ADR 0016).
 func (u PlaceOrder) requote(ctx context.Context, in PlaceOrderInput) error {
+	destination := promising.Destination{PostalPrefix: in.ShipTo.DestinationPrefix(), PickupPointID: in.PickupPointID}
+	if destination.Pickup() {
+		destination.PostalPrefix = ""
+	}
 	var all []views.RequotedOffer
 	for _, g := range in.Groups {
-		offers, err := u.Promises.QuoteOffers(ctx, in.ShipTo.DestinationPrefix(), groupLines(in, g))
+		offers, err := u.Promises.QuoteOffers(ctx, destination, groupLines(in, g))
 		if err != nil {
 			return err
 		}
