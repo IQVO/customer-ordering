@@ -1,0 +1,1788 @@
+openapi: 3.0.3
+info:
+  title: Delivery Promise API
+  version: 0.3.0
+  description: 'REST contract of the delivery-promise bounded context (Core, commerce tier) of the retail network,
+    derived from retail-network-docs model/model.yaml (contexts[delivery-promise].rest) and the FINAL cross-context
+    decisions (contracts-delta E7, E8, E9; gap register G8, G9, G19, G21, G22). The quote route is an Open Host
+    Service for the storefront and an in-organization Customer/Supplier contract for customer-ordering; POST /promises,
+    POST /promises/{promiseId}/confirmations and POST /promises/{promiseId}/cancellations (checkout compensation) are called only
+    by customer-ordering inside checkout. The promise hot
+    path makes no synchronous call to any other context: every input is an event-fed local read model. No authentication,
+    consistent with the fleet. No personal data appears in any schema: the destination is a postal prefix, never
+    an address. Errors are RFC 9457 application/problem+json whose `type` is https://retailnetwork.example/problems/<slug>.
+    Shared slugs: not-found (404), illegal-transition (409), concurrent-update (409), validation-failed (422). Model
+    slugs (kebab-case of the Err name): offer-not-quotable, promise-capacity-exhausted, book-closed, promise-hold-expired,
+    promise-closed, revision-moves-earlier (409); group-spans-nodes, invalid-promise-terms, nominal-basis-not-allowed-for-tier
+    (422). Infrastructure slugs: malformed-request, idempotency-key-required, idempotency-key-invalid (400), idempotency-key-reused (409), resource-not-found (404), internal-error (500). Every
+    POST requires Idempotency-Key (fleet REST API guideline); a repeat with the same key, method, path and body
+    replays the first response for 24 hours with the Idempotency-Replayed header. The one exception is the safe
+    POST /delivery-estimates, which stores nothing: it needs no key and ignores one that is sent (ADR 0019). The
+    read-only analytics reports (tag reports, ADR 0018) are served by cmd/dp-reports on its own port (per-path server)
+    from the separate analytical database; their range errors are invalid-report-range (400).'
+  contact:
+    name: delivery-promise maintainers
+    url: https://github.com/IQVO/delivery-promise
+servers:
+- url: http://localhost:8080
+tags:
+- name: DeliveryOffers
+  description: Short-lived quotes backed by a feasible witness path (aggregate DeliveryOffer).
+- name: DeliveryEstimates
+  description: Advisory, non-persisted delivery estimates for product listing pages (ADR 0019).
+- name: Promises
+  description: Commitments per shipment group (aggregate Promise).
+- name: PromiseBooks
+  description: Capacity ledgers per node pickup cutoff (aggregate PromiseBook).
+- name: PromisePolicy
+  description: 'Versioned promise policy: offer TTL, hold TTL, packages per order, capacity share and per-tier order
+    deadlines (aggregate PromisePolicy, G19).'
+- name: reports
+  description: Read-only analytics reports (ADR 0018), served by cmd/dp-reports from the separate analytical database
+    the projector feeds from this context's own events. Days are UTC calendar days; from and to are inclusive dates.
+paths:
+  /delivery-quotes:
+    post:
+      tags:
+      - DeliveryOffers
+      operationId: quoteDeliveryOffers
+      summary: Quote delivery offers per tier for a destination and a set of lines
+      description: 'Runs the PromisePolicy search over local read models. The cart is first split into shipment
+        groups (ShipmentGrouping: one node for the whole cart when one can cover every line, otherwise the fewest
+        groups). Returns one QUOTED offer per (group, requested tier) that has a feasible witness path, and an OfferConstraint
+        for every (group, tier) that has none. "No offer" is a normal 200 answer. A tier whose order deadline in
+        the destination region has passed is reported PAST_ORDER_DEADLINE. Each offer is persisted with a TTL so
+        checkout can honour it. The Idempotency-Key is required; a repeat inside the offers'' TTL returns the same offers.
+        Makes no synchronous call.'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+      responses:
+        '200':
+          description: Offers for the feasible tiers and constraints for the others.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /delivery-estimates:
+    post:
+      tags:
+      - DeliveryEstimates
+      operationId: estimateDeliveries
+      summary: Estimate delivery options for up to 50 items of a listing page (nothing is stored)
+      description: 'A computation over the request body for product listing pages (search results, many items per
+        view). Each item is searched as a single-line group with exactly the quote search of POST /delivery-quotes
+        (the same local read models, OwnerChoice of ADR 0017, netting, scorecard handicap and the SCHEDULED, MEASURED
+        or NOMINAL basis), and each estimate lists the best option per requested tier that a one-line quote would
+        offer, or the OfferConstraint that blocks the tier. The shared inputs are loaded once per request, not per
+        item. The operation is SAFE: it stores nothing (no offer, no outbox event, no hold, no Idempotency-Key row)
+        and an estimate is ADVISORY: it carries no offer id, cannot back POST /promises and never reserves capacity;
+        a quote on the product page or at checkout is what the shopper promises against. An unknown catalogItemId
+        is not an error: it is the ITEM_QUANTITY_NOT_AVAILABLE constraint. The Idempotency-Key is not required and,
+        if sent, it is ignored (a safe request is idempotent by effect, as the guideline treats PUT and DELETE).
+        Makes no synchronous call.'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        description: Not required. This operation stores nothing, so a key that is sent is ignored; it is never
+          read, stored or replayed (ADR 0019).
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EstimateRequest'
+      responses:
+        '200':
+          description: 'One advisory estimate per requested item, in request order. Nothing was stored and no capacity
+            is reserved: the options can change before the shopper quotes.'
+          headers:
+            Idempotency-Replayed:
+              description: Never set on this operation. The Idempotency-Key is ignored, so no answer is ever a replay;
+                declared because the fleet REST lint requires the header on every POST 2xx.
+              schema:
+                type: string
+                enum:
+                - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstimateResponse'
+        '400':
+          description: The request body is malformed (malformed-request, for bad JSON, an unknown field, trailing data,
+            an empty body, a body over 64 KiB or a NUL character). A missing or odd Idempotency-Key is never a 400
+            here.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Never answered by this operation. The Idempotency-Key is ignored, so it is never
+            idempotency-key-reused; declared because the fleet REST lint requires a 409 on every POST.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: Validation failure (validation-failed) - a bad destinationPostalPrefix, no item or more than 50,
+            a duplicate catalogItemId, a quantity outside 1-999 or a tier that is not a tier.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /delivery-offers/{offerId}:
+    get:
+      tags:
+      - DeliveryOffers
+      operationId: getDeliveryOffer
+      summary: Get one delivery offer
+      parameters:
+      - $ref: '#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: The offer, in any state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryOffer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      description: Returns the offer in any state (QUOTED, EXPIRED or CONSUMED) with its witness path, basis and
+        policy version. Offers are kept for a retention period after they expire.
+  /promises:
+    post:
+      tags:
+      - Promises
+      operationId: makePromise
+      summary: Make a provisional promise for one shipment group from a quoted offer
+      description: 'MakePromise. Consumes the offer (CONSUMED), creates the promise in PROVISIONAL with holdExpiresAt,
+        and holds capacity on the witness PromiseBook (nodeId:pickupDepartureId), opening the book lazily on the
+        first hold, in ONE transaction (documented exception to one aggregate per transaction, G22). A retry with
+        the same Idempotency-Key and body replays the first response (200). Errors: not-found (404); offer-not-quotable,
+        promise-capacity-exhausted, book-closed, concurrent-update (409); group-spans-nodes, invalid-promise-terms,
+        nominal-basis-not-allowed-for-tier, validation-failed (422); idempotency-key-required (400); idempotency-key-reused
+        (409).'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MakePromiseRequest'
+      responses:
+        '201':
+          description: Promise made (PROVISIONAL) and capacity held.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Promise'
+        '200':
+          description: Idempotent replay; the promise made by the first request.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Promise'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+      - Promises
+      operationId: listPromisesByOrder
+      summary: List the promises of one customer order
+      description: Returns every promise confirmed for the order, one per shipment group.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      - name: orderId
+        in: query
+        required: true
+        description: The customer order id (from CustomerOrderPlaced).
+        schema:
+          type: string
+      responses:
+        '200':
+          description: One page of the order's promises, ordered by groupNo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromisePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /promises/{promiseId}:
+    get:
+      tags:
+      - Promises
+      operationId: getPromise
+      summary: Get one promise with its terms, witness path, revisions and judgement
+      parameters:
+      - $ref: '#/components/parameters/PromiseId'
+      responses:
+        '200':
+          description: The promise.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Promise'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      description: Returns the promise with its terms, witness path, revisions and judgement. A promise is never
+        deleted; terminal states stay readable.
+  /promise-books:
+    get:
+      tags:
+      - PromiseBooks
+      operationId: listPromiseBooks
+      summary: List the promise books of one node for one date
+      description: One book per pickup cutoff of the node whose cutoff falls on the date (node local time).
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      - name: nodeId
+        in: query
+        required: true
+        description: The fulfillment node id.
+        schema:
+          type: string
+      - name: date
+        in: query
+        required: true
+        description: The cutoff date, YYYY-MM-DD, in the node's time zone.
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: One page of the node's books for that date, ordered by cutoffAt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromiseBookPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /promises/{promiseId}/confirmations:
+    post:
+      tags:
+      - Promises
+      operationId: confirmPromise
+      summary: Confirm a provisional promise for a placed order (ConfirmPromise)
+      description: 'Called by customer-ordering inside checkout, before the order is placed (E7). PROVISIONAL becomes
+        CONFIRMED and the book hold moves from provisional to confirmed, in one transaction; PromiseConfirmed goes
+        to the analytics topic. Idempotent: confirming an already CONFIRMED promise with the same orderId and groupNo
+        is a no-op returning 200. A hold past holdExpiresAt is refused with promise-hold-expired (409), and a RELEASED
+        or otherwise closed promise with promise-closed (409): checkout then re-quotes and no order is placed.'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/PromiseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmPromiseRequest'
+      responses:
+        '200':
+          description: The CONFIRMED promise (also the replay).
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Promise'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /promises/{promiseId}/cancellations:
+    post:
+      tags:
+      - Promises
+      operationId: cancelPromise
+      summary: Cancel a confirmed promise on request (CancelPromise)
+      description: 'Called by customer-ordering to compensate a checkout whose later group failed to confirm: the
+        promises already CONFIRMED are cancelled so their capacity is given back. No request body. A CONFIRMED or
+        AT_RISK promise becomes CANCELLED (cancelReason CANCELLED_ON_REQUEST), the confirmed hold goes back to its
+        PromiseBook and PromiseCancelled goes to the analytics topic, in one transaction. Idempotent: cancelling an
+        already CANCELLED promise is a no-op returning 200 with the same view. A PROVISIONAL, KEPT, BROKEN or RELEASED
+        promise is refused with illegal-transition (409); a provisional hold is never cancelled, it lapses by itself
+        (ReleaseExpiredHolds).'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/PromiseId'
+      responses:
+        '200':
+          description: The CANCELLED promise (also the replay and the repeat on an already cancelled promise).
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Promise'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /promise-policies:
+    post:
+      tags:
+      - PromisePolicy
+      operationId: publishPromisePolicy
+      summary: Publish a new promise policy version (PublishPromisePolicy)
+      description: Stores the next policy version (strictly increasing) and publishes PromisePolicyPublished on
+        the analytics topic. Offers and promises made afterwards record the new policyVersion.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishPolicyRequest'
+      responses:
+        '201':
+          description: Policy published.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromisePolicy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /promise-policies/current:
+    get:
+      tags:
+      - PromisePolicy
+      operationId: getCurrentPromisePolicy
+      summary: Get the current promise policy
+      description: Returns the highest published version, or the built-in default (policyVersion v0) when none has
+        been published.
+      responses:
+        '200':
+          description: The current policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromisePolicy'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /reports/promise-reliability:
+    servers:
+    - url: http://localhost:8092
+    get:
+      tags:
+      - reports
+      operationId: getPromiseReliabilityReport
+      x-pagination-exempt: report
+      summary: Kept rate of the judged promises, per day, tier and basis
+      description: Per UTC day of judgement (the CloudEvents time of PromiseKept / PromiseBroken), per tier and per basis
+        of the promise AS MADE (UNKNOWN while its PromiseMade is not projected). judged = kept + broken; keptRate = kept
+        / judged; brokenByCause splits broken by the PromiseBroken cause (LATE, LOST, RETURNED); lateByMinutes is the
+        continuous p50 / p90 of lateByMinutes over the broken LATE promises, null when there is none. Days without a
+        judgement are omitted. Served by cmd/dp-reports (ADR 0018).
+      parameters:
+      - $ref: '#/components/parameters/ReportFrom'
+      - $ref: '#/components/parameters/ReportTo'
+      responses:
+        '200':
+          description: The report for the range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromiseReliabilityReport'
+        '400':
+          $ref: '#/components/responses/InvalidReportRange'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /reports/promise-precision:
+    servers:
+    - url: http://localhost:8092
+    get:
+      tags:
+      - reports
+      operationId: getPromisePrecisionReport
+      x-pagination-exempt: report
+      summary: Window width, exact-day, revision and unkeepable figures of the promises made, per day and tier
+      description: Per UTC day of PromiseMade (its CloudEvents time) and per tier. windowMinutes is the mean / p50 / p90
+        of deliverByLatest - deliverByEarliest in minutes; exactDayShare is the share of promises whose window starts
+        and ends on the same LOCAL calendar day in the window's timeZone (ADR 0011); a window without a loadable zone is
+        read in UTC and also counted in zoneUnknown. revisedShare is the share with at least one PromiseRevised;
+        unkeepableCount counts those with a PromiseUnkeepable (both at any time). Days without a promise are omitted.
+        Served by cmd/dp-reports (ADR 0018).
+      parameters:
+      - $ref: '#/components/parameters/ReportFrom'
+      - $ref: '#/components/parameters/ReportTo'
+      responses:
+        '200':
+          description: The report for the range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromisePrecisionReport'
+        '400':
+          $ref: '#/components/responses/InvalidReportRange'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /reports/quote-conversion:
+    servers:
+    - url: http://localhost:8092
+    get:
+      tags:
+      - reports
+      operationId: getQuoteConversionReport
+      x-pagination-exempt: report
+      summary: Offers quoted against promises made, per day and tier
+      description: Per UTC day and tier, offersQuoted counts DeliveryOfferQuoted and promisesMade counts PromiseMade of
+        that day (each by its own CloudEvents time); conversion = promisesMade / offersQuoted, null when no offer was
+        quoted that day and tier. Same-day counts, not an offer-to-promise cohort. Days with neither are omitted. Served
+        by cmd/dp-reports (ADR 0018).
+      parameters:
+      - $ref: '#/components/parameters/ReportFrom'
+      - $ref: '#/components/parameters/ReportTo'
+      responses:
+        '200':
+          description: The report for the range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteConversionReport'
+        '400':
+          $ref: '#/components/responses/InvalidReportRange'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /reports/freshness:
+    servers:
+    - url: http://localhost:8092
+    get:
+      tags:
+      - reports
+      operationId: getReportFreshness
+      summary: How far the analytics projection is behind
+      description: asOf is the CloudEvents time of the newest event the projector applied; lagSeconds is now minus asOf,
+        never negative. Both are null until the first event. One endpoint for every report, which all read the same
+        projection. Served by cmd/dp-reports (ADR 0018).
+      responses:
+        '200':
+          description: The projection's freshness.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportFreshness'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-generated key (a UUID per logical submit; a retry reuses it), 1-128 printable ASCII
+        characters. The key is global, not per route. A repeat with the same key, method, path and body replays
+        the first answer with the Idempotency-Replayed header set to "true"; a different request under the same key is a 409
+        idempotency-key-reused.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size, 1-500 (default 100). Anything else is 400 invalid-limit.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from the previous page's nextCursor; filters are repeated on every page request.
+        An undecodable cursor is 400 invalid-cursor, any undeclared query parameter 400 unknown-query-parameter.
+      schema:
+        type: string
+    OfferId:
+      name: offerId
+      in: path
+      required: true
+      description: The DeliveryOffer id.
+      schema:
+        type: string
+    PromiseId:
+      name: promiseId
+      in: path
+      required: true
+      description: The Promise id.
+      schema:
+        type: string
+    ReportFrom:
+      name: from
+      in: query
+      required: false
+      description: First UTC day of the range, inclusive. Omitted = 29 days before `to` (a 30-day range).
+      schema:
+        type: string
+        format: date
+    ReportTo:
+      name: to
+      in: query
+      required: false
+      description: Last UTC day of the range, inclusive. Omitted = today. At most 366 days from `from`.
+      schema:
+        type: string
+        format: date
+  responses:
+    NotFound:
+      description: 'Not found (not-found): the offer or promise does not exist; an identifier carrying a NUL character is resource-not-found.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: State, capacity, closed or concurrency conflict (illegal-transition, concurrent-update, offer-not-quotable,
+        promise-capacity-exhausted, book-closed, promise-hold-expired, promise-closed, revision-moves-earlier), or
+        idempotency-key-reused when the Idempotency-Key was already used with a different method, path or body.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            idempotency-key-reused:
+              value:
+                type: https://retailnetwork.example/problems/idempotency-key-reused
+                title: Idempotency-Key was already used with a different request
+                status: 409
+                detail: the Idempotency-Key was already used with a different method, path or body
+                instance: /promises
+    BadRequest:
+      description: The Idempotency-Key header is missing (idempotency-key-required) or malformed (idempotency-key-invalid),
+        the request body is malformed (malformed-request, for bad JSON, an unknown field, trailing data, an empty body, a body over
+        64 KiB or a NUL character in the query or body), or a collection GET sent an undeclared query parameter (unknown-query-parameter),
+        a bad limit (invalid-limit) or an undecodable cursor (invalid-cursor).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            idempotency-key-required:
+              value:
+                type: https://retailnetwork.example/problems/idempotency-key-required
+                title: Idempotency-Key header is required
+                status: 400
+                detail: send an Idempotency-Key header with a unique value per logical request
+                instance: /promises
+    InternalError:
+      description: Unexpected failure (internal-error); the detail never leaks the internal message. A 5xx is never
+        stored for an Idempotency-Key, so the same key can retry.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unprocessable:
+      description: Validation failure (validation-failed, group-spans-nodes, invalid-promise-terms, nominal-basis-not-allowed-for-tier).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InvalidReportRange:
+      description: invalid-report-range. from or to is not a date (YYYY-MM-DD), from is after to, or the range exceeds
+        366 days.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  headers:
+    IdempotencyReplayed:
+      description: Present, with the value "true", only when the response is the stored answer replayed for the same
+        Idempotency-Key, method, path and body. The first execution never carries it.
+      schema:
+        type: string
+        enum:
+        - 'true'
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      required:
+      - type
+      - title
+      - status
+      - detail
+      - instance
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Problem type, https://retailnetwork.example/problems/<slug>.
+          example: https://retailnetwork.example/problems/promise-capacity-exhausted
+        title:
+          type: string
+          example: Promise capacity exhausted
+        status:
+          type: integer
+          example: 409
+        detail:
+          type: string
+          example: Book AUS3:dep-pickup-0418 has no room left (share 2500).
+        instance:
+          type: string
+          description: The escaped request path.
+    Tier:
+      type: string
+      description: 'Service tier (promise.Tier). CONSOLIDATED is the opt-in tier of a customer-chosen delivery day (ADR 0024):
+        a quote returns it only when its request lists it or names consolidatedDeliveryDay, so a caller that never asks
+        never sees it.'
+      enum:
+      - SAME_DAY
+      - NEXT_DAY
+      - TWO_DAY
+      - STANDARD
+      - CONSOLIDATED
+    Basis:
+      type: string
+      description: 'Promise basis: SCHEDULED from the timetable, MEASURED when a leg''s measured transit pushed the
+        arrival later (ADR 0014), NOMINAL from lane times (STANDARD and CONSOLIDATED only).'
+      enum:
+      - SCHEDULED
+      - MEASURED
+      - NOMINAL
+    Confidence:
+      type: number
+      minimum: 0
+      maximum: 1
+      multipleOf: 0.001
+      description: 'The calibrated probability, rounded to three decimals, that a quote is kept on time (ADR 0020):
+        the share of the judged promises of its segment (tier, basis, node grade) whose lateness was within the
+        buffer the quote carries. It is present only when the segment has at least minCalibrationObservations
+        judgements in the window; absent means UNKNOWN, never zero, and consumers must read absence that way.'
+    ConsolidationEligible:
+      type: boolean
+      description: 'Present only for the tier CONSOLIDATED (ADR 0024): true when the chosen delivery day leaves the network
+        at least one local day after the fastest feasible window to merge the order with others, false when the day is
+        that window itself. It is computed from this service''s own candidate set and never asserts that another order
+        exists. Omitted for every other tier, and never false by default.'
+    CapacityBand:
+      type: string
+      description: 'The capacity pressure on the PromiseBook that the offer''s chosen window would charge, read when the
+        offer was quoted (ADR 0023): utilisation u = (provisional + confirmed holds) / capacity share. AMPLE: u < 0.60.
+        TIGHT: 0.60 <= u < 0.85. SCARCE: u >= 0.85. The thresholds are constants of the service, not policy fields. A
+        signal only: the network never computes a fee, and it reserves nothing (only POST /promises holds capacity).'
+      enum:
+      - AMPLE
+      - TIGHT
+      - SCARCE
+    OfferConstraint:
+      type: string
+      description: 'Why a tier has no offer. PAST_ORDER_DEADLINE: the tier''s order deadline in the destination
+        region has passed (G19).'
+      enum:
+      - DESTINATION_NOT_SERVED
+      - ITEM_QUANTITY_NOT_AVAILABLE
+      - DELIVERY_SLA_UNAVAILABLE
+      - NODE_CAPACITY_EXHAUSTED
+      - PAST_ORDER_DEADLINE
+    GroupLine:
+      type: object
+      required:
+      - catalogItemId
+      - quantity
+      properties:
+        catalogItemId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          description: Unique within the group.
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+    PromisedLine:
+      type: object
+      description: A line of a delivery offer or a promise, with the owner whose stock at the witness node covers it
+        (ADR 0017). One owner covers the whole line; the units of several owners never add up.
+      required:
+      - catalogItemId
+      - quantity
+      properties:
+        catalogItemId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          description: Unique within the group.
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        ownerRef:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          description: The seller (sellerId) whose listing covers the line, chosen by the OwnerChoice rule. Optional and
+            additive; omitted when the line is operator-owned.
+    DeliveryWindow:
+      type: object
+      description: 'The delivery window as two instants (RFC 3339 UTC) and the local calendar they belong to. A delivery
+        date is a day of the destination''s calendar: convert earliest and latest into timeZone before taking their date
+        (e.g. 2026-10-31T14:00:00Z..2026-11-01T02:00:00Z in America/Chicago is the single day 2026-10-31).'
+      required:
+      - earliest
+      - latest
+      properties:
+        earliest:
+          type: string
+          format: date-time
+        latest:
+          type: string
+          format: date-time
+        timeZone:
+          type: string
+          maxLength: 64
+          example: America/Chicago
+          description: IANA time zone of the delivery station serving the destination. Always set on a new offer;
+            omitted only for an offer stored before it was carried (ADR 0011), in which case read the window in UTC.
+    WitnessPath:
+      type: object
+      description: 'The node, pickup departure, departure legs and delivery wave that prove feasibility. A NOMINAL
+        path (STANDARD and CONSOLIDATED only) carries no departure or wave ids: pickupDepartureId and deliveryWaveId are omitted
+        and legs is empty (E8). A carrier path of a CARRIER_HANDOFF area names carrierId and handoffNodeId instead of
+        deliveryWaveId (ADR 0026).'
+      required:
+      - nodeId
+      - legs
+      properties:
+        nodeId:
+          type: string
+        pickupDepartureId:
+          type: string
+        legs:
+          type: array
+          items:
+            type: string
+            description: departureId
+        deliveryWaveId:
+          type: string
+        carrierId:
+          type: string
+          description: The carrier that delivers a CARRIER_HANDOFF area, named instead of a delivery wave (ADR 0026);
+            omitted when the path ends on a wave.
+        handoffNodeId:
+          type: string
+          description: The node the carrier collects at (ADR 0026); omitted when the path ends on a wave.
+    QuoteRequest:
+      type: object
+      description: Exactly one of destinationPostalPrefix or pickupPointId is required (ADR 0027).
+      required:
+      - lines
+      properties:
+        destinationPostalPrefix:
+          type: string
+          minLength: 1
+          maxLength: 10
+          pattern: ^[A-Za-z0-9]+$
+          description: Destination postal prefix (never a full address).
+          example: '787'
+        pickupPointId:
+          type: string
+          description: The pickup point to quote to; the point's own prefix becomes the destination prefix and its serving station the wave's station (ADR 0027).
+          example: node-pnt-7
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: One line on a product page, the cart's lines at checkout.
+          items:
+            $ref: '#/components/schemas/GroupLine'
+        tiers:
+          type: array
+          description: 'Tiers to quote; the four classic tiers (SAME_DAY, NEXT_DAY, TWO_DAY, STANDARD) when omitted. CONSOLIDATED
+            is returned only when it is listed here or consolidatedDeliveryDay is present (ADR 0024).'
+          items:
+            $ref: '#/components/schemas/Tier'
+        consolidatedDeliveryDay:
+          type: string
+          format: date
+          pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$
+          example: '2026-10-26'
+          description: 'The calendar date the shopper wants the order delivered on, as a local date of the destination
+            delivery station''s time zone (ADR 0024). Naming it adds the CONSOLIDATED tier to the quote. A day earlier than
+            the fastest feasible window is moved up to that window (the offer then has consolidationEligible false); with
+            tiers listing CONSOLIDATED and no day, the day is two local days after the fastest window. A day more than 14
+            local days from now, or without a wave, has no CONSOLIDATED offer: the tier is reported in unavailable.'
+    TierUnavailable:
+      type: object
+      required:
+      - tier
+      - constraint
+      properties:
+        tier:
+          $ref: '#/components/schemas/Tier'
+        constraint:
+          $ref: '#/components/schemas/OfferConstraint'
+        groupNo:
+          type: integer
+          minimum: 1
+          description: The quote-relative shipment group the constraint applies to; omitted when it applies to the
+            whole quote (DESTINATION_NOT_SERVED, ITEM_QUANTITY_NOT_AVAILABLE).
+    QuoteResponse:
+      type: object
+      required:
+      - offers
+      - unavailable
+      properties:
+        offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeliveryOffer'
+          description: One offer per (group, tier) with a feasible path, ordered by groupNo then tier.
+        unavailable:
+          type: array
+          items:
+            $ref: '#/components/schemas/TierUnavailable'
+    DeliveryOffer:
+      type: object
+      description: 'One delivery offer. capacityBand (ADR 0023) is optional: it is omitted when the book of the offer''s
+        window has no finite capacity, and on an offer read back with GET /delivery-quotes/{quoteId}, because the band is
+        a quote-time reading that is not stored. It changes no offer, window or order. consolidationEligible (ADR 0024)
+        is present only for the tier CONSOLIDATED.'
+      required:
+      - offerId
+      - state
+      - groupNo
+      - destinationPostalPrefix
+      - tier
+      - lines
+      - window
+      - witnessPath
+      - basis
+      - policyVersion
+      - quotedAt
+      - expiresAt
+      - orderByAt
+      properties:
+        offerId:
+          type: string
+        state:
+          type: string
+          enum:
+          - QUOTED
+          - EXPIRED
+          - CONSUMED
+        destinationPostalPrefix:
+          type: string
+        tier:
+          $ref: '#/components/schemas/Tier'
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromisedLine'
+        window:
+          $ref: '#/components/schemas/DeliveryWindow'
+        witnessPath:
+          $ref: '#/components/schemas/WitnessPath'
+        quotedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: min(quotedAt + offerTtl, the latest instant the witness pickup cutoff can still be met).
+        orderByAt:
+          type: string
+          format: date-time
+          description: The latest instant the order can be placed and still make the quoted window's witness pickup cutoff (cutoff minus the effective handling, in business time). Unlike expiresAt it is not capped by the offer TTL; ordering before it keeps the quoted window even after a re-quote. Snapshots quoted before the field existed expose the zero time.
+        groupNo:
+          type: integer
+          minimum: 1
+          description: Quote-relative shipment group number (1 for a single-node cart).
+        basis:
+          $ref: '#/components/schemas/Basis'
+        confidence:
+          $ref: '#/components/schemas/Confidence'
+        policyVersion:
+          type: string
+          description: The promise policy version the quote used (G8).
+        capacityBand:
+          $ref: '#/components/schemas/CapacityBand'
+        consolidationEligible:
+          $ref: '#/components/schemas/ConsolidationEligible'
+        carrierArea:
+          type: boolean
+          description: True when the offer's final leg is the chosen carrier of a CARRIER_HANDOFF area instead of a
+            delivery wave (ADR 0026); omitted otherwise.
+    EstimateItem:
+      type: object
+      required:
+      - catalogItemId
+      - quantity
+      properties:
+        catalogItemId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          description: Unique within the request.
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 999
+    EstimateRequest:
+      type: object
+      description: Exactly one of destinationPostalPrefix or pickupPointId is required (ADR 0027).
+      required:
+      - items
+      properties:
+        pickupPointId:
+          type: string
+          description: The pickup point to estimate to (ADR 0027).
+        destinationPostalPrefix:
+          type: string
+          minLength: 1
+          maxLength: 10
+          pattern: ^[A-Za-z0-9]+$
+          description: Destination postal prefix (never a full address); the same validation as the quote.
+          example: '787'
+        tiers:
+          type: array
+          description: 'Tiers to estimate; the four classic tiers when omitted. CONSOLIDATED is refused with 422
+            validation-failed: it is a persistent-offer tier, quoted on POST /delivery-quotes (ADR 0024).'
+          items:
+            type: string
+            enum:
+            - SAME_DAY
+            - NEXT_DAY
+            - TWO_DAY
+            - STANDARD
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: The items of one listing view, each catalogItemId once; each is estimated on its own.
+          items:
+            $ref: '#/components/schemas/EstimateItem'
+    EstimateWindow:
+      type: object
+      description: 'The option''s delivery window as two instants (RFC 3339 UTC) and the local calendar they belong to:
+        start and end are what a quote''s offer calls window.earliest and window.latest (ADR 0011). Convert both into
+        timeZone before taking their date.'
+      required:
+      - start
+      - end
+      - timeZone
+      properties:
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        timeZone:
+          type: string
+          maxLength: 64
+          example: America/Chicago
+          description: IANA time zone of the delivery station serving the destination.
+    EstimateOption:
+      type: object
+      description: The best option of one tier, with the same fields and semantics as the quote's best offer of that
+        tier for the same single line. capacityBand (ADR 0023) is optional and omitted when unknown.
+      required:
+      - tier
+      - window
+      - basis
+      properties:
+        tier:
+          $ref: '#/components/schemas/Tier'
+        window:
+          $ref: '#/components/schemas/EstimateWindow'
+        basis:
+          $ref: '#/components/schemas/Basis'
+        confidence:
+          $ref: '#/components/schemas/Confidence'
+        orderByAt:
+          type: string
+          format: date-time
+          description: The latest instant an order can be placed and still make this window's witness pickup cutoff, as
+            on a quote's offer; omitted when unknown.
+        capacityBand:
+          $ref: '#/components/schemas/CapacityBand'
+        carrierArea:
+          type: boolean
+          description: True when the option's final leg is the chosen carrier of a CARRIER_HANDOFF area instead of a
+            delivery wave (ADR 0026); omitted otherwise.
+    EstimateConstraint:
+      type: object
+      description: Why a tier has no option, in the quote's OfferConstraint vocabulary. tier is omitted when the
+        constraint holds for the item on every tier alike (DESTINATION_NOT_SERVED, ITEM_QUANTITY_NOT_AVAILABLE, the
+        two a quote reports without a groupNo); every other constraint names its tier.
+      required:
+      - code
+      properties:
+        tier:
+          $ref: '#/components/schemas/Tier'
+        code:
+          $ref: '#/components/schemas/OfferConstraint'
+    DeliveryEstimate:
+      type: object
+      description: The advisory estimate of one requested item.
+      required:
+      - catalogItemId
+      - quantity
+      - options
+      - constraints
+      properties:
+        catalogItemId:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 999
+        options:
+          type: array
+          description: The best option per requested tier that has one, ordered by tier.
+          items:
+            $ref: '#/components/schemas/EstimateOption'
+        constraints:
+          type: array
+          description: The item-wide constraints first (no tier), then one per blocked tier, ordered by tier.
+          items:
+            $ref: '#/components/schemas/EstimateConstraint'
+    EstimateResponse:
+      type: object
+      description: Advisory estimates; nothing was stored and no capacity is reserved.
+      required:
+      - computedAt
+      - destinationPostalPrefix
+      - estimates
+      properties:
+        computedAt:
+          type: string
+          format: date-time
+          description: The instant every estimate of the response was computed at.
+        destinationPostalPrefix:
+          type: string
+        estimates:
+          type: array
+          description: One per requested item, in request order.
+          items:
+            $ref: '#/components/schemas/DeliveryEstimate'
+    MakePromiseRequest:
+      type: object
+      required:
+      - offerId
+      - lines
+      properties:
+        offerId:
+          type: string
+          description: The offer the shopper saw.
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: The shipment group's lines; all shippable from the offer's witness node. They must equal
+            the offer's lines.
+          items:
+            $ref: '#/components/schemas/GroupLine'
+    PromiseTerms:
+      type: object
+      required:
+      - tier
+      - shipBy
+      - deliverByEarliest
+      - deliverByLatest
+      - basis
+      - policyVersion
+      properties:
+        tier:
+          $ref: '#/components/schemas/Tier'
+        shipBy:
+          type: string
+          format: date-time
+          description: Pickup cutoff at the witness node.
+        deliverByEarliest:
+          type: string
+          format: date-time
+        deliverByLatest:
+          type: string
+          format: date-time
+        timeZone:
+          type: string
+          maxLength: 64
+          example: America/Chicago
+          description: IANA time zone of the delivery station serving the destination, the local calendar
+            deliverByEarliest and deliverByLatest belong to. Always set on a new promise; omitted only for a promise
+            stored before it was carried (ADR 0011), in which case read the window in UTC.
+        basis:
+          $ref: '#/components/schemas/Basis'
+        confidence:
+          $ref: '#/components/schemas/Confidence'
+        policyVersion:
+          type: string
+        consolidationEligible:
+          $ref: '#/components/schemas/ConsolidationEligible'
+    Revision:
+      type: object
+      required:
+      - revisionNo
+      - previousTerms
+      - reason
+      - revisedAt
+      properties:
+        revisionNo:
+          type: integer
+          minimum: 1
+        previousTerms:
+          $ref: '#/components/schemas/PromiseTerms'
+        reason:
+          type: string
+        revisedAt:
+          type: string
+          format: date-time
+    Judgement:
+      type: object
+      required:
+      - outcome
+      properties:
+        outcome:
+          type: string
+          enum:
+          - KEPT
+          - BROKEN
+        deliveredAt:
+          type: string
+          format: date-time
+          description: Present when the package was delivered; omitted for cause LOST or RETURNED.
+        lateByMinutes:
+          type: integer
+          description: Present when BROKEN.
+        cause:
+          type: string
+          enum:
+          - LATE
+          - LOST
+          - RETURNED
+          description: Present when BROKEN.
+    Promise:
+      type: object
+      required:
+      - promiseId
+      - offerId
+      - state
+      - destinationPostalPrefix
+      - lines
+      - terms
+      - witnessPath
+      - holdExpiresAt
+      - revisions
+      - version
+      properties:
+        promiseId:
+          type: string
+        offerId:
+          type: string
+        orderId:
+          type: string
+          description: Set when the order is placed (CONFIRMED).
+        groupNo:
+          type: integer
+          minimum: 1
+          description: Set when the order is placed (CONFIRMED).
+        state:
+          type: string
+          enum:
+          - PROVISIONAL
+          - CONFIRMED
+          - AT_RISK
+          - KEPT
+          - BROKEN
+          - RELEASED
+          - CANCELLED
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromisedLine'
+        terms:
+          $ref: '#/components/schemas/PromiseTerms'
+        witnessPath:
+          $ref: '#/components/schemas/WitnessPath'
+        holdExpiresAt:
+          type: string
+          format: date-time
+        revisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Revision'
+        judgement:
+          $ref: '#/components/schemas/Judgement'
+        destinationPostalPrefix:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+          description: Optimistic-concurrency version of the aggregate.
+        cancelReason:
+          type: string
+          description: Present when CANCELLED.
+        releaseReason:
+          type: string
+          description: Present when RELEASED.
+        atRiskReason:
+          type: string
+          description: 'Present while AT_RISK. One of NODE_UNSOURCEABLE, PACKAGE_EXCEPTION, INDUCTION_DEFERRED, DEPARTURE_CANCELLED,
+            WAVE_CANCELLED, BOOKING_FAILED, BOOKING_MOVED or PREDICTED_LATE (a departure of the witness path is past its expected
+            arrival with no arrival seen). A PREDICTED_LATE promise stays AT_RISK until it is judged, even if the load arrives later.'
+    PromisePage:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Promise'
+        nextCursor:
+          type: string
+          description: Opaque cursor of the next page; absent on the last page.
+    Capacity:
+      type: object
+      required:
+      - share
+      - provisional
+      - confirmed
+      properties:
+        share:
+          type: integer
+          minimum: 0
+          description: Orders the promise side may hold on this cutoff (G9).
+        provisional:
+          type: integer
+          minimum: 0
+        confirmed:
+          type: integer
+          minimum: 0
+    PromiseBook:
+      type: object
+      required:
+      - bookId
+      - nodeId
+      - pickupDepartureId
+      - cutoffAt
+      - state
+      - capacity
+      - version
+      properties:
+        bookId:
+          type: string
+          description: nodeId + ':' + pickupDepartureId
+        nodeId:
+          type: string
+        pickupDepartureId:
+          type: string
+        cutoffAt:
+          type: string
+          format: date-time
+          description: The pickup departure's cutoff (from DepartureView).
+        state:
+          type: string
+          enum:
+          - OPEN
+          - CLOSED
+        capacity:
+          $ref: '#/components/schemas/Capacity'
+        version:
+          type: integer
+          minimum: 1
+    PromiseBookPage:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromiseBook'
+        nextCursor:
+          type: string
+          description: Opaque cursor of the next page; absent on the last page.
+    ConfirmPromiseRequest:
+      type: object
+      required:
+      - orderId
+      - groupNo
+      properties:
+        orderId:
+          type: string
+          description: The customer order id (1-64 characters, letters, digits and the symbols dot, underscore, colon and hyphen, starting with a letter or digit).
+          minLength: 1
+          maxLength: 64
+        groupNo:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: The shipment group number within the order.
+    PublishPolicyRequest:
+      type: object
+      description: Every field is optional; an omitted (or 0) numeric field takes the built-in default policy value
+        (v0). A value outside the range below is 422 validation-failed.
+      properties:
+        offerTtlMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          description: How long a quote stays QUOTED (also capped by the pickup cutoff).
+        holdTtlMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          description: How long a PROVISIONAL promise holds capacity before ReleaseExpiredHolds.
+        packagesPerOrder:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Declared packages per order; converts orders to departure packages (G9). Default 1 when omitted or 0.
+        capacitySharePercent:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Proportional share of the node cutoff capacity the promise side may use (G9 "D4"). Default
+            100 when omitted or 0.
+        transitWindowDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: Days of observed load transits the measured-transit read model keeps (ADR 0014). Default 28
+            when omitted or 0.
+        transitServiceLevelPercent:
+          type: integer
+          minimum: 50
+          maximum: 99
+          description: Service-level percentile quoted against a lane's measured transit (ADR 0014). Default 90 when
+            omitted or 0.
+        minTransitObservations:
+          type: integer
+          minimum: 5
+          maximum: 1000
+          description: Observations a lane needs inside the window before its measured transit can push a promise
+            later than the timetable (ADR 0014). Default 20 when omitted or 0.
+        carrierWindowHours:
+          type: integer
+          minimum: 1
+          maximum: 96
+          description: Width in hours of the delivery window promised for a CARRIER_HANDOFF service area; the Latest
+            is the carrier Earliest plus this width (ADR 0026). Default 24 only when the field is omitted.
+        targetOnTimeProbabilityPercent:
+          type: integer
+          minimum: 50
+          maximum: 99
+          description: Share of the promises of a calibration segment the buffer aims to deliver on time; ONE value
+            for every tier (ADR 0020). Default 95 when omitted or 0.
+        minCalibrationObservations:
+          type: integer
+          minimum: 10
+          maximum: 10000
+          description: Judgements a segment (tier, basis, node grade) needs inside the window before its buffer
+            applies and its quotes carry a confidence (ADR 0020). Default 50 when omitted or 0.
+        calibrationWindowDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: Days of judgements a calibration segment keeps (ADR 0020). Default 28 when omitted or 0.
+        maxCalibrationBufferMinutes:
+          type: integer
+          minimum: 0
+          maximum: 2880
+          description: Cap of a segment's buffer in minutes; 0 switches the buffer off and keeps the confidence
+            (ADR 0020). Default 720 only when the field is omitted.
+        orderDeadlines:
+          type: array
+          maxItems: 200
+          description: At most one deadline per (tier, regionId); a duplicate is 422 validation-failed.
+          items:
+            $ref: '#/components/schemas/OrderDeadline'
+    OrderDeadline:
+      type: object
+      required:
+      - tier
+      - localTime
+      properties:
+        tier:
+          $ref: '#/components/schemas/Tier'
+        regionId:
+          type: string
+          description: The destination region; absent means every region.
+        localTime:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+          description: Order deadline HH:mm in the destination delivery station's time zone.
+    PromisePolicy:
+      type: object
+      required:
+      - policyVersion
+      - version
+      - offerTtlMinutes
+      - holdTtlMinutes
+      - packagesPerOrder
+      - capacitySharePercent
+      - transitWindowDays
+      - transitServiceLevelPercent
+      - minTransitObservations
+      - carrierWindowHours
+      - targetOnTimeProbabilityPercent
+      - minCalibrationObservations
+      - calibrationWindowDays
+      - maxCalibrationBufferMinutes
+      - orderDeadlines
+      - publishedAt
+      properties:
+        policyVersion:
+          type: string
+          description: '''v'' + version.'
+          example: v3
+        version:
+          type: integer
+          minimum: 0
+        offerTtlMinutes:
+          type: integer
+        holdTtlMinutes:
+          type: integer
+        packagesPerOrder:
+          type: integer
+        capacitySharePercent:
+          type: integer
+        transitWindowDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: Days of observed load transits the measured-transit read model keeps (ADR 0014).
+        transitServiceLevelPercent:
+          type: integer
+          minimum: 50
+          maximum: 99
+          description: Service-level percentile quoted against a lane's measured transit (ADR 0014).
+        minTransitObservations:
+          type: integer
+          minimum: 5
+          maximum: 1000
+          description: Observations a lane needs inside the window before its measured transit can push a promise
+            later than the timetable (ADR 0014).
+        carrierWindowHours:
+          type: integer
+          minimum: 1
+          maximum: 96
+          description: Width in hours of the delivery window promised for a CARRIER_HANDOFF service area (ADR 0026);
+            always resolved, 24 by default.
+        targetOnTimeProbabilityPercent:
+          type: integer
+          minimum: 50
+          maximum: 99
+          description: Share of the promises of a calibration segment the buffer aims to deliver on time; ONE value
+            for every tier (ADR 0020).
+        minCalibrationObservations:
+          type: integer
+          minimum: 10
+          maximum: 10000
+          description: Judgements a segment (tier, basis, node grade) needs inside the window before its buffer
+            applies and its quotes carry a confidence (ADR 0020).
+        calibrationWindowDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: Days of judgements a calibration segment keeps (ADR 0020).
+        maxCalibrationBufferMinutes:
+          type: integer
+          minimum: 0
+          maximum: 2880
+          description: Cap of a segment's buffer in minutes; 0 switches the buffer off and keeps the confidence
+            (ADR 0020).
+        orderDeadlines:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderDeadline'
+        publishedAt:
+          type: string
+          format: date-time
+    PromiseReliabilityReport:
+      type: object
+      required:
+      - from
+      - to
+      - days
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromiseReliabilityDay'
+    PromiseReliabilityDay:
+      type: object
+      required:
+      - day
+      - tier
+      - basis
+      - judged
+      - kept
+      - broken
+      - keptRate
+      - brokenByCause
+      - lateByMinutes
+      properties:
+        day:
+          type: string
+          format: date
+        tier:
+          type: string
+          description: The promise's tier as made (a Tier value), or UNKNOWN while its PromiseMade is not projected.
+        basis:
+          type: string
+          description: The promise's basis as made (SCHEDULED, MEASURED, NOMINAL), or UNKNOWN while its PromiseMade is not
+            projected.
+        judged:
+          type: integer
+          minimum: 1
+        kept:
+          type: integer
+          minimum: 0
+        broken:
+          type: integer
+          minimum: 0
+        keptRate:
+          type: number
+          minimum: 0
+          maximum: 1
+        brokenByCause:
+          $ref: '#/components/schemas/BrokenByCause'
+        lateByMinutes:
+          $ref: '#/components/schemas/LatenessMinutes'
+    BrokenByCause:
+      type: object
+      description: The broken promises per PromiseBroken cause.
+      required:
+      - late
+      - lost
+      - returned
+      properties:
+        late:
+          type: integer
+          minimum: 0
+        lost:
+          type: integer
+          minimum: 0
+        returned:
+          type: integer
+          minimum: 0
+    LatenessMinutes:
+      type: object
+      description: Continuous percentiles of lateByMinutes over the broken LATE promises; null when there is none.
+      required:
+      - p50
+      - p90
+      properties:
+        p50:
+          type: number
+          minimum: 0
+          nullable: true
+        p90:
+          type: number
+          minimum: 0
+          nullable: true
+    PromisePrecisionReport:
+      type: object
+      required:
+      - from
+      - to
+      - days
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromisePrecisionDay'
+    PromisePrecisionDay:
+      type: object
+      required:
+      - day
+      - tier
+      - promisesMade
+      - windowMinutes
+      - exactDayShare
+      - zoneUnknown
+      - revisedShare
+      - unkeepableCount
+      properties:
+        day:
+          type: string
+          format: date
+        tier:
+          type: string
+          description: The tier of the promise as made.
+        promisesMade:
+          type: integer
+          minimum: 1
+        windowMinutes:
+          $ref: '#/components/schemas/WindowMinutes'
+        exactDayShare:
+          type: number
+          minimum: 0
+          maximum: 1
+        zoneUnknown:
+          type: integer
+          minimum: 0
+          description: Promises whose window named no loadable time zone and was read in UTC.
+        revisedShare:
+          type: number
+          minimum: 0
+          maximum: 1
+        unkeepableCount:
+          type: integer
+          minimum: 0
+    WindowMinutes:
+      type: object
+      description: The delivery window width deliverByLatest - deliverByEarliest, in minutes.
+      required:
+      - mean
+      - p50
+      - p90
+      properties:
+        mean:
+          type: number
+          minimum: 0
+        p50:
+          type: number
+          minimum: 0
+        p90:
+          type: number
+          minimum: 0
+    QuoteConversionReport:
+      type: object
+      required:
+      - from
+      - to
+      - days
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuoteConversionDay'
+    QuoteConversionDay:
+      type: object
+      required:
+      - day
+      - tier
+      - offersQuoted
+      - promisesMade
+      - conversion
+      properties:
+        day:
+          type: string
+          format: date
+        tier:
+          type: string
+        offersQuoted:
+          type: integer
+          minimum: 0
+        promisesMade:
+          type: integer
+          minimum: 0
+        conversion:
+          type: number
+          minimum: 0
+          nullable: true
+    ReportFreshness:
+      type: object
+      required:
+      - asOf
+      - lagSeconds
+      properties:
+        asOf:
+          type: string
+          format: date-time
+          nullable: true
+        lagSeconds:
+          type: number
+          minimum: 0
+          nullable: true

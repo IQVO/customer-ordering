@@ -44,7 +44,7 @@ flowchart TB
     OS["order-sourcing<br/>queues one assignment per group"]:::external
     DP2["delivery-promise<br/>reconciling ConfirmPromise"]:::external
     H1["H1 delivery-promise down:<br/>503, nothing placed"]:::hotspot
-    H2["H2 failed confirm:<br/>compensating cancels, may fail"]:::hotspot
+    H2["H2 failed confirm:<br/>compensating cancels, queued when they fail"]:::hotspot
 
     SH --> C0 --> G0
     SH --> C0b --> G0
@@ -90,6 +90,8 @@ flowchart TB
       TE2["PackageDelivered"]:::event
       TE3["PackageLost, PackageReturned"]:::event
       TE4["PackageEtaWindowAssigned"]:::event
+      TE5["PackageDeliveryPointFlagged"]:::event
+      TE6["PackageReadyForCollection,<br/>PackageCollected"]:::event
     end
     P0["Consumer handler:<br/>claim event id, then apply"]:::policy
     G["CustomerOrder"]:::aggregate
@@ -106,6 +108,8 @@ flowchart TB
     TE2 --> P0
     TE3 --> P0
     TE4 --> P0
+    TE5 --> P0
+    TE6 --> P0
     P0 -->|"UpdateGroupPromise, MarkInFulfillment,<br/>MarkGroupShipped, MarkGroupDelivered,<br/>MarkGroupLost, MarkGroupReturned"| G
     P0 -->|"signals, packages, links"| V
     V --> Q1
@@ -119,9 +123,14 @@ flowchart TB
     classDef hotspot fill:#ff8787,stroke:#c92a2a,color:#000
 ```
 
+`PackageEtaWindowAssigned`, `PackageDeliveryPointFlagged` (ADR 0015),
+`PackageReadyForCollection` and `PackageCollected` (ADR 0016) only update the
+tracking view; they change no `CustomerOrder`.
+
 Source: `internal/adapters/inbound/kafka/handlers.go`,
 `internal/application/usecases/consume_promise.go`, `consume_sourcing.go`,
-`consume_tracking.go`, `internal/domain/customerorder/commands.go`.
+`consume_tracking.go`, `consume_eta.go`, `consume_point_flag.go`,
+`consume_pickup.go`, `internal/domain/customerorder/commands.go`.
 
 ## 3. Cancellation
 
@@ -174,8 +183,8 @@ Source: `internal/application/usecases/cancel.go`,
 | # | Hotspot | Source |
 | --- | --- | --- |
 | H1 | If delivery-promise is slow or down the checkout answers `503 delivery-promise-unavailable` after `DELIVERY_PROMISE_TIMEOUT`; there is no fallback promise and the caller must retry with the same `Idempotency-Key`. | `deliverypromise/gateway.go`, `http/errors.go` |
-| H2 | A confirm that fails after earlier groups were confirmed triggers compensating `CancelPromise` calls; one that fails is only logged (`compensating cancel of a confirmed promise failed; the hold stays at delivery-promise`) and skipped, so a capacity hold can outlive a failed checkout. When the failed confirm's own answer is unknown its group is cancelled too. | `usecases/checkout.go` (`compensate`), ADR 0002 A14 |
+| H2 | A confirm that fails after earlier groups were confirmed triggers compensating `CancelPromise` calls. One that fails is logged (`compensating cancel of a confirmed promise failed; the hold stays at delivery-promise`) and written to the `compensation_cancels` queue; the compensation worker retries it until delivery-promise releases the hold or refuses it as not cancellable, and a row that reaches `COMPENSATION_MAX_ATTEMPTS` is left for an operator to re-arm. The hold can still outlive the checkout when the enqueue itself fails, when a row reaches the cap, or when the order cannot be stored after every confirm succeeded (nothing is queued then). When the failed confirm's own answer is unknown its group is cancelled too. | `usecases/checkout.go` (`compensate`, `enqueueFailedCancels`), `outbound/compensation/worker.go`, migration `0005_compensation_cancels`, ADR 0002 A14 and its addendum |
 | H3 | Producers key by their own ids, so a delivery or outcome can arrive before `FulfillmentShipped`; the code stores and replays it, an unknown order is skipped, not retried. | `consume_tracking.go`, ADR 0002 A7 |
 | H4 | `ErrCancelAfterLock` is advisory: a lock this service has not consumed yet cannot be seen, and order-sourcing's answer decides. | `customerorder/cancel.go` |
 | H5 | If publishing to a `.dlq` topic fails, the consumer keeps retrying and the partition is blocked. | [Runbook](/docs/operations/runbook#consumers-and-the-dlq) |
-| H6 | Resolved: the `apis/asyncapi.yaml` description once said "Fifteen events" while listing seventeen; it now says seventeen, matching the code. | `apis/asyncapi.yaml` info description |
+| H6 | Resolved: the `apis/asyncapi.yaml` description counted the consumed events wrong more than once ("Fifteen events" while listing seventeen, "Eighteen" while listing nineteen, "Twenty" while listing twenty-one). It now says twenty-one, matching the 21 messages of its `receive` operations and the 21 handlers in `kafka/handlers.go`. | `apis/asyncapi.yaml` info description, `kafka/handlers.go` |

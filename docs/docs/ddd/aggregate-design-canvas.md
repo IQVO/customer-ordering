@@ -27,7 +27,7 @@ ADR [0002](/docs/adr/0002-aggregates-and-invariants).
 | **Corrective policies** | `CancelOnUnfulfillable`: `PromiseUnkeepable` cancels the `PROMISED` group; stale or impossible events are skipped, not retried (ADR 0002 A7) |
 | **Handled commands** | `Place`, `CancelOrder`, `CancelUnkeepableGroup`, `ConfirmGroupCancelled`, `RefuseGroupCancellation`, `MarkInFulfillment`, `MarkGroupShipped`, `MarkGroupDelivered`, `MarkGroupLost`, `MarkGroupReturned`, `UpdateGroupPromise` |
 | **Created events** | `CustomerOrderPlaced`, `CustomerOrderCancelled` |
-| **Handled events** | the 17 consumed types, through `usecases.Consumer` ([Domain events](/docs/ddd/domain-events)) |
+| **Handled events** | the 21 consumed types, through `usecases.Consumer` ([Domain events](/docs/ddd/domain-events)) |
 | **Throughput / size** | at most 100 lines, 50 groups, 50 tracking numbers per group (`MaxLines`, `MaxGroups`, `MaxTrackingNumbers`); one order is a few rows |
 
 ### Group lifecycle
