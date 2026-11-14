@@ -64,7 +64,7 @@ func TestConsolidationKeyMigrationGoesDownAndUpKeepingTheOrders(t *testing.T) {
 	if hasConsolidationKeyColumn(t, url) {
 		t.Fatal("after down past 0006: consolidation_key is still there")
 	}
-	stepMigrations(t, url, 6)
+	stepMigrations(t, url, 7)
 	old, err := repo.Get(context.Background(), "order-key")
 	if err != nil {
 		t.Fatalf("an order stored before the column must still load: %v", err)
