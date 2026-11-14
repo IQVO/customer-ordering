@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
+	"github.com/claudioed/customer-ordering/internal/domain/shipto"
 )
 
 // Restore rebuilds a persisted order, validating every invariant.
@@ -23,7 +24,7 @@ func Restore(s Snapshot) (*CustomerOrder, error) {
 		groups[i] = g
 	}
 	return &CustomerOrder{
-		id: s.ID, shopperID: s.ShopperID, shipTo: s.ShipTo, prefix: s.DestinationPostalPrefix, status: s.Status,
+		id: s.ID, shopperID: s.ShopperID, shipTo: s.ShipTo, pickupPointID: s.PickupPointID, prefix: s.DestinationPostalPrefix, status: s.Status,
 		placedAt: shared.UTC(s.PlacedAt), cancelledAt: shared.UTC(s.CancelledAt), lines: append([]OrderLine{}, s.Lines...),
 		groups: groups, version: s.Version, loaded: s.Version, consolidationKey: s.ConsolidationKey,
 	}, nil
@@ -33,11 +34,8 @@ func checkSnapshot(s Snapshot) error {
 	if !shared.ValidID(string(s.ID)) || !shared.ValidID(s.ShopperID) {
 		return errors.New("orderId and shopperId must be valid ids")
 	}
-	if err := s.ShipTo.Validate(); err != nil {
+	if err := checkSnapshotDestination(s); err != nil {
 		return err
-	}
-	if s.DestinationPostalPrefix != s.ShipTo.DestinationPrefix() {
-		return errors.New("destinationPostalPrefix does not match the ship-to")
 	}
 	if !ValidConsolidationKey(s.ConsolidationKey) {
 		return errors.New("consolidationKey must be empty or 64 lower-case hex characters")
@@ -56,6 +54,32 @@ func checkSnapshot(s Snapshot) error {
 	}
 	if (s.Status == StatusCancelled) == s.CancelledAt.IsZero() {
 		return errors.New("cancelledAt is set exactly when the order is CANCELLED")
+	}
+	return nil
+}
+
+// checkSnapshotDestination is the persisted form of the destination invariant
+// (ADR 0016): exactly one of ShipTo and PickupPointID, and the prefix from the
+// destination — the ship-to's for a ship-to order, the promise's (the point's
+// own prefix) for a pickup order, where no local cross-check exists.
+func checkSnapshotDestination(s Snapshot) error {
+	if s.PickupPointID != "" {
+		if s.ShipTo != (shipto.ShipTo{}) {
+			return errors.New("a pickup order carries no ship-to")
+		}
+		if !shared.ValidID(s.PickupPointID) {
+			return errors.New("pickupPointId must be a valid id")
+		}
+		if s.DestinationPostalPrefix == "" {
+			return errors.New("a pickup order needs the promise's destination prefix")
+		}
+		return nil
+	}
+	if err := s.ShipTo.Validate(); err != nil {
+		return err
+	}
+	if s.DestinationPostalPrefix != s.ShipTo.DestinationPrefix() {
+		return errors.New("destinationPostalPrefix does not match the ship-to")
 	}
 	return nil
 }

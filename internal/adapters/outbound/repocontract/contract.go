@@ -77,6 +77,14 @@ func groupInput(no int, promise string, lineNos ...int) customerorder.GroupInput
 	}
 }
 
+// pickupGroupInput is groupInput quoted against the pickup point node-pnt-7
+// (the point's own prefix 070, ADR 0016).
+func pickupGroupInput(no int, promise string, lineNos ...int) customerorder.GroupInput {
+	g := groupInput(no, promise, lineNos...)
+	g.DestinationPostalPrefix = "070"
+	return g
+}
+
 // newOrder builds a PLACED order of three lines in two groups. Group 1 carries
 // the window's time zone, group 2 none (a group stored before it, ADR 0009).
 // contractKey is the consolidation key of every order newOrder places (ADR

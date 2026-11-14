@@ -20,18 +20,24 @@ type GroupInput struct {
 	TimeZone                string // optional IANA zone of the window (ADR 0009)
 	LineNos                 []int
 	DestinationPostalPrefix string
+	// PickupPointID is the promise's own point when it names one (ADR 0016):
+	// an optional answer field, empty when the promise carries none. A pickup
+	// order refuses a group whose promise names another point.
+	PickupPointID string
 	// ChosenDeliveryDay and ConsolidationEligible: CONSOLIDATED groups only (ADR 0013).
 	ChosenDeliveryDay     string
 	ConsolidationEligible *bool
 }
 
-// NewOrder is the input of Place.
+// NewOrder is the input of Place. Exactly one destination is set: ShipTo for a
+// ship-to order, PickupPointID for a pickup order (ADR 0016).
 type NewOrder struct {
-	ID        ID
-	ShopperID string
-	ShipTo    shipto.ShipTo
-	Lines     []OrderLine
-	Groups    []GroupInput
+	ID            ID
+	ShopperID     string
+	ShipTo        shipto.ShipTo
+	PickupPointID string
+	Lines         []OrderLine
+	Groups        []GroupInput
 	// ConsolidationKey is "" (feature off: the event omits it) or the 64 hex
 	// characters of the keyed hash of shopper and address (ADR 0012).
 	ConsolidationKey string
@@ -47,7 +53,7 @@ func Place(in NewOrder, now time.Time) (*CustomerOrder, []shared.Event, error) {
 	if !shared.ValidID(in.ShopperID) {
 		return nil, nil, shared.Invalid("shopperId %q is not a valid id", in.ShopperID)
 	}
-	if err := in.ShipTo.Validate(); err != nil {
+	if err := checkDestination(in); err != nil {
 		return nil, nil, err
 	}
 	if !ValidConsolidationKey(in.ConsolidationKey) {
@@ -56,21 +62,38 @@ func Place(in NewOrder, now time.Time) (*CustomerOrder, []shared.Event, error) {
 	if err := validateLines(in.Lines); err != nil {
 		return nil, nil, err
 	}
-	groups, err := buildGroups(in)
+	groups, prefix, err := buildGroups(in)
 	if err != nil {
 		return nil, nil, err
 	}
 	o := &CustomerOrder{
-		id: in.ID, shopperID: in.ShopperID, shipTo: in.ShipTo, prefix: in.ShipTo.DestinationPrefix(),
+		id: in.ID, shopperID: in.ShopperID, shipTo: in.ShipTo, pickupPointID: in.PickupPointID, prefix: prefix,
 		status: StatusPlaced, placedAt: shared.UTC(now), lines: append([]OrderLine{}, in.Lines...), groups: groups, version: 1,
 		consolidationKey: in.ConsolidationKey,
 	}
 	ev := CustomerOrderPlaced{
 		Header: shared.Header{Version: o.version, At: o.placedAt}, OrderID: o.id, ShopperID: o.shopperID,
-		DestinationPostalPrefix: o.prefix, PlacedAt: o.placedAt, Groups: placedGroups(o),
+		PickupPointID: in.PickupPointID, DestinationPostalPrefix: o.prefix, PlacedAt: o.placedAt, Groups: placedGroups(o),
 		ConsolidationKey: o.consolidationKey,
 	}
 	return o, []shared.Event{ev}, nil
+}
+
+// checkDestination enforces the destination invariant of ADR 0016: exactly one
+// of ShipTo and PickupPointID, the address valid when it is the destination,
+// the point a valid id when it is.
+func checkDestination(in NewOrder) error {
+	pickup := in.PickupPointID != ""
+	if pickup == (in.ShipTo != (shipto.ShipTo{})) {
+		return shared.Invalid("exactly one of shipTo and pickupPointId is required")
+	}
+	if pickup {
+		if !shared.ValidID(in.PickupPointID) {
+			return shared.Invalid("pickupPointId %q is not a valid id", in.PickupPointID)
+		}
+		return nil
+	}
+	return in.ShipTo.Validate()
 }
 
 func placedGroups(o *CustomerOrder) []PlacedGroup {
@@ -113,41 +136,51 @@ func validateLines(lines []OrderLine) error {
 	return nil
 }
 
-func buildGroups(in NewOrder) ([]GroupPromise, error) {
+func buildGroups(in NewOrder) ([]GroupPromise, string, error) {
 	if len(in.Groups) == 0 {
-		return nil, wrapLine("the order has lines but no shipment group with a promise")
+		return nil, "", wrapLine("the order has lines but no shipment group with a promise")
 	}
 	if len(in.Groups) > MaxGroups {
-		return nil, shared.Invalid("an order holds at most %d shipment groups", MaxGroups)
+		return nil, "", shared.Invalid("an order holds at most %d shipment groups", MaxGroups)
 	}
 	known := make(map[int]bool, len(in.Lines))
 	for _, l := range in.Lines {
 		known[l.LineNo] = false
 	}
+	// prefix is the order's destination prefix: the ship-to's, or for a pickup
+	// order the FIRST promise's (every promise of the order was quoted against
+	// the same point, so they must agree; ADR 0016).
+	prefix := ""
+	if in.PickupPointID == "" {
+		prefix = in.ShipTo.DestinationPrefix()
+	}
 	seen := make(map[int]bool, len(in.Groups))
 	out := make([]GroupPromise, 0, len(in.Groups))
 	for _, g := range in.Groups {
 		if g.GroupNo < 1 || g.GroupNo > MaxNumber || seen[g.GroupNo] {
-			return nil, shared.Invalid("groupNo %d must be unique and between 1 and %d", g.GroupNo, MaxNumber)
+			return nil, "", shared.Invalid("groupNo %d must be unique and between 1 and %d", g.GroupNo, MaxNumber)
 		}
 		seen[g.GroupNo] = true
-		if err := checkGroup(g, in.ShipTo); err != nil {
-			return nil, err
+		if err := checkGroup(g, in, &prefix); err != nil {
+			return nil, "", err
 		}
 		if err := assignLines(g, known); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = append(out, newGroup(g))
 	}
 	for no, assigned := range known {
 		if !assigned {
-			return nil, wrapLine("line %d is in no shipment group", no)
+			return nil, "", wrapLine("line %d is in no shipment group", no)
 		}
 	}
-	return out, nil
+	return out, prefix, nil
 }
 
-func checkGroup(g GroupInput, to shipto.ShipTo) error {
+// checkGroup verifies one group's promise against the order's destination
+// (ADR 0016). prefix is in-out: for a pickup order the first group's promise
+// sets it and every later group must agree.
+func checkGroup(g GroupInput, in NewOrder, prefix *string) error {
 	if g.PromiseID == "" {
 		return wrapLine("group %d has no promise", g.GroupNo)
 	}
@@ -160,11 +193,39 @@ func checkGroup(g GroupInput, to shipto.ShipTo) error {
 	if g.TimeZone != "" && !shared.ValidTimeZone(g.TimeZone) {
 		return shared.Invalid("group %d: timeZone %q is not an IANA time-zone name", g.GroupNo, g.TimeZone)
 	}
-	if !to.PrefixMatches(g.DestinationPostalPrefix) {
-		return wrapDestination(g.GroupNo, g.DestinationPostalPrefix)
+	if err := checkDestinationMatch(g, in, prefix); err != nil {
+		return err
 	}
 	if err := checkChoice(g.Tier, g.ChosenDeliveryDay, g.ConsolidationEligible); err != nil {
 		return shared.Invalid("group %d: %v", g.GroupNo, err)
+	}
+	return nil
+}
+
+// checkDestinationMatch is the ErrPromiseDestinationMismatch rule: the promise
+// must serve the order's own destination. A ship-to order takes a promise
+// quoted to the ship-to prefix and one that names no point; a pickup order
+// takes a promise quoted to the point's prefix (the first promise fixes it)
+// and, when the promise names a point at all, the very same point.
+func checkDestinationMatch(g GroupInput, in NewOrder, prefix *string) error {
+	if g.PickupPointID != "" && g.PickupPointID != in.PickupPointID {
+		return wrapDestination(g.GroupNo, g.DestinationPostalPrefix)
+	}
+	if in.PickupPointID == "" {
+		if !in.ShipTo.PrefixMatches(g.DestinationPostalPrefix) {
+			return wrapDestination(g.GroupNo, g.DestinationPostalPrefix)
+		}
+		return nil
+	}
+	if g.DestinationPostalPrefix == "" {
+		return shared.Invalid("group %d: the promise names no destination prefix", g.GroupNo)
+	}
+	if *prefix == "" {
+		*prefix = g.DestinationPostalPrefix
+		return nil
+	}
+	if g.DestinationPostalPrefix != *prefix {
+		return wrapDestination(g.GroupNo, g.DestinationPostalPrefix)
 	}
 	return nil
 }
