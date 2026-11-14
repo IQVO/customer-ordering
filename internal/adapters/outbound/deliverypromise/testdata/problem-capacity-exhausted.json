@@ -1,0 +1,1 @@
+{"type": "https://retailnetwork.example/problems/promise-capacity-exhausted", "title": "Promise capacity exhausted", "status": 409, "detail": "Book AUS3:dep-pickup-0418 has no room left (share 2500).", "instance": "/promises"}

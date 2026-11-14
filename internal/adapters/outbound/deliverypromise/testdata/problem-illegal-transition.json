@@ -1,0 +1,1 @@
+{"type": "https://retailnetwork.example/problems/illegal-transition", "title": "Illegal state transition", "status": 409, "detail": "promise pr-1 is PROVISIONAL: only a CONFIRMED or AT_RISK promise can be cancelled", "instance": "/promises/pr-1/cancellations"}
