@@ -89,6 +89,18 @@ type TrackingRepository interface {
 	// is stored only when FlaggedAt is not older than the stored one (the
 	// newest wins; an equal instant rewrites).
 	ApplyPointFlag(ctx context.Context, f readmodel.PointFlag) error
+	// ApplyReadyForCollection records the deposit of a pickup package at its
+	// point (ADR 0016): the state becomes READY_FOR_COLLECTION unless the
+	// package already ended (collected, delivered, lost, returned) and the
+	// point, readyForCollectionAt and holdUntil columns are facts of the
+	// event. It creates the row and tolerates any arrival order like
+	// ApplyEta.
+	ApplyReadyForCollection(ctx context.Context, r readmodel.ReadyForCollection) error
+	// ApplyCollected records the collection of a pickup package (ADR 0016):
+	// the state becomes COLLECTED unless the package already ended in an
+	// outcome, collectedAt, proofCode and the point are facts of the event.
+	// It creates the row and tolerates any arrival order like ApplyEta.
+	ApplyCollected(ctx context.Context, c readmodel.Collected) error
 	// ApplyVoid marks a LABELLED (or unscanned) package VOIDED.
 	ApplyVoid(ctx context.Context, trackingNumber string) error
 	// ApplyOutcome records PackageLost or PackageReturned on the package row,
@@ -150,9 +162,9 @@ type UnitOfWork interface {
 // delivery-promise (sync_calls QuoteDeliveryOffers and MakePromise, and
 // ConfirmPromise, E7, and CancelPromise for its compensation). Failures are the ErrPromise... sentinels.
 type PromiseGateway interface {
-	// QuoteOffers quotes the offers (all tiers) for a destination prefix and a
-	// group's lines.
-	QuoteOffers(ctx context.Context, destinationPostalPrefix string, lines []promising.Line) ([]promising.Offer, error)
+	// QuoteOffers quotes the offers (all tiers) for one destination — a postal
+	// prefix or a pickup point (ADR 0016) — and a group's lines.
+	QuoteOffers(ctx context.Context, destination promising.Destination, lines []promising.Line) ([]promising.Offer, error)
 	// MakePromise makes a provisional promise for one group (idempotent per
 	// order and group).
 	MakePromise(ctx context.Context, req promising.MakeRequest) (promising.Terms, error)

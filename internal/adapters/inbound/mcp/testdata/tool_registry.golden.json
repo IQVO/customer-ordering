@@ -237,6 +237,9 @@
                         "object"
                       ]
                     },
+                    "destinationKind": {
+                      "type": "string"
+                    },
                     "etaEnd": {
                       "type": "string"
                     },
@@ -252,6 +255,34 @@
                     "lastScanNodeId": {
                       "type": "string"
                     },
+                    "pickupPoint": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "collectedAt": {
+                          "type": "string"
+                        },
+                        "holdUntil": {
+                          "type": "string"
+                        },
+                        "proofCode": {
+                          "type": "string"
+                        },
+                        "readyForCollectionAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "readyForCollectionAt",
+                        "holdUntil"
+                      ],
+                      "type": [
+                        "null",
+                        "object"
+                      ]
+                    },
+                    "pickupPointId": {
+                      "type": "string"
+                    },
                     "state": {
                       "type": "string"
                     },
@@ -260,7 +291,8 @@
                     }
                   },
                   "required": [
-                    "trackingNumber"
+                    "trackingNumber",
+                    "destinationKind"
                   ],
                   "type": "object"
                 },
@@ -351,6 +383,9 @@
         "countryCode": {
           "type": "string"
         },
+        "destinationKind": {
+          "type": "string"
+        },
         "line1": {
           "type": "string"
         },
@@ -363,6 +398,9 @@
         "phone": {
           "type": "string"
         },
+        "pickupPointId": {
+          "type": "string"
+        },
         "postalCode": {
           "type": "string"
         },
@@ -370,14 +408,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "name",
-        "line1",
-        "city",
-        "region",
-        "postalCode",
-        "countryCode"
-      ],
       "type": "object"
     }
   }

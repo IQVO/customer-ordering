@@ -7,7 +7,7 @@ func wrapLine(format string, args ...any) error {
 }
 
 func wrapDestination(groupNo int, prefix string) error {
-	return fmt.Errorf("%w: group %d promise destination %q does not match the ship-to", ErrPromiseDestinationMismatch, groupNo, prefix)
+	return fmt.Errorf("%w: group %d promise destination %q does not match the order destination", ErrPromiseDestinationMismatch, groupNo, prefix)
 }
 
 func wrapUnknownGroup(format string, args ...any) error {

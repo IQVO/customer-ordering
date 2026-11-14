@@ -102,7 +102,10 @@ type quoteResponse struct {
 type promiseDTO struct {
 	PromiseID               string `json:"promiseId"`
 	DestinationPostalPrefix string `json:"destinationPostalPrefix"`
-	Terms                   struct {
+	// PickupPointID is read tolerantly (ADR 0016): the point the promise was
+	// quoted against when delivery-promise names it, empty when it does not.
+	PickupPointID string `json:"pickupPointId"`
+	Terms         struct {
 		Tier              string    `json:"tier"`
 		ShipBy            time.Time `json:"shipBy"`
 		DeliverByEarliest time.Time `json:"deliverByEarliest"`
@@ -126,10 +129,17 @@ type problemDTO struct {
 // QuoteOffers implements ports.PromiseGateway: POST /delivery-quotes. Only
 // QUOTED offers are returned. A quote is a pure computation with no natural
 // key, so every call is its own logical submit and mints a fresh
-// Idempotency-Key (REST guideline 5.1).
-func (g *Gateway) QuoteOffers(ctx context.Context, destinationPostalPrefix string, lines []promising.Line) ([]promising.Offer, error) {
+// Idempotency-Key (REST guideline 5.1). The destination is the pickup point
+// for a pickup checkout (ADR 0016): delivery-promise takes exactly one of
+// destinationPostalPrefix and pickupPointId.
+func (g *Gateway) QuoteOffers(ctx context.Context, destination promising.Destination, lines []promising.Line) ([]promising.Offer, error) {
 	var resp quoteResponse
-	body := map[string]any{"destinationPostalPrefix": destinationPostalPrefix, "lines": linesDTO(lines)}
+	body := map[string]any{"lines": linesDTO(lines)}
+	if destination.Pickup() {
+		body["pickupPointId"] = destination.PickupPointID
+	} else {
+		body["destinationPostalPrefix"] = destination.PostalPrefix
+	}
 	if err := g.post(ctx, "/delivery-quotes", uuid.NewString(), body, &resp); err != nil {
 		return nil, err
 	}
@@ -160,7 +170,7 @@ func (g *Gateway) MakePromise(ctx context.Context, req promising.MakeRequest) (p
 	return promising.Terms{
 		PromiseID: p.PromiseID, Tier: p.Terms.Tier, WitnessNodeID: p.WitnessPath.NodeID, ShipBy: p.Terms.ShipBy.UTC(),
 		DeliverByEarliest: p.Terms.DeliverByEarliest.UTC(), DeliverByLatest: p.Terms.DeliverByLatest.UTC(), TimeZone: zone(p.Terms.TimeZone),
-		DestinationPostalPrefix: p.DestinationPostalPrefix, ConsolidationEligible: optionalBool(p.Terms.Eligible),
+		DestinationPostalPrefix: p.DestinationPostalPrefix, PickupPointID: p.PickupPointID, ConsolidationEligible: optionalBool(p.Terms.Eligible),
 	}, nil
 }
 

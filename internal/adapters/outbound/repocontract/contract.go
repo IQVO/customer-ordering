@@ -48,6 +48,7 @@ func Run(t *testing.T, newEnv func(t *testing.T) Env) {
 		"tracking":            testTracking,
 		"tracking-eta":        testTrackingEta,
 		"tracking-point-flag": testTrackingPointFlag,
+		"tracking-pickup":     testTrackingPickup,
 		"inbox":               testInbox,
 		"unitofwork":          testUnitOfWork,
 		"idempotency":         testIdempotency,
@@ -75,6 +76,14 @@ func groupInput(no int, promise string, lineNos ...int) customerorder.GroupInput
 		GroupNo: no, PromiseID: promise, Tier: customerorder.TierNextDay, WitnessNodeID: "fc-aus-1", ShipBy: at(600),
 		DeliverByEarliest: at(1200), DeliverByLatest: at(1500), LineNos: lineNos, DestinationPostalPrefix: "787",
 	}
+}
+
+// pickupGroupInput is groupInput quoted against the pickup point node-pnt-7
+// (the point's own prefix 070, ADR 0016).
+func pickupGroupInput(no int, promise string, lineNos ...int) customerorder.GroupInput {
+	g := groupInput(no, promise, lineNos...)
+	g.DestinationPostalPrefix = "070"
+	return g
 }
 
 // newOrder builds a PLACED order of three lines in two groups. Group 1 carries

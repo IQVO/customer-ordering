@@ -92,6 +92,22 @@ type ShipTo struct {
 // ShipToFrom maps the value object.
 func ShipToFrom(s shipto.ShipTo) ShipTo { return ShipTo(s) }
 
+// Destination is the order's destination as the restricted ship-to route
+// answers it (ADR 0016): the address of a ship-to order, or the pickup point
+// id of a pickup order, which carries no PII at all.
+type Destination struct {
+	ShipTo        ShipTo
+	PickupPointID string
+}
+
+// DestinationFrom maps the aggregate's destination.
+func DestinationFrom(o *customerorder.CustomerOrder) Destination {
+	if o.PickupPointID() != "" {
+		return Destination{PickupPointID: o.PickupPointID()}
+	}
+	return Destination{ShipTo: ShipToFrom(o.ShipTo())}
+}
+
 // SavedAddress is one saved address of a shopper: its id plus the ship-to
 // fields (NG1; synthetic PII, returned only on the shopper routes).
 type SavedAddress struct {
@@ -152,6 +168,13 @@ type TrackingPackage struct {
 	LastScanAt      time.Time
 	DeliveredAt     time.Time
 	ExceptionReason string
+	// DestinationKind is "PICKUP_POINT" for a package labelled to a pickup
+	// point and "SHIP_TO" otherwise; PickupPointID names the point (ADR 0016).
+	DestinationKind string
+	PickupPointID   string
+	// PickupPoint carries the collection facts of a pickup package — what the
+	// shopper sees next (ADR 0016); nil on a ship-to package.
+	PickupPoint *PickupPoint
 	// EtaStart and EtaEnd are the day-of delivery window (ADR 0014); zero
 	// unless the window is current (see etaWindow).
 	EtaStart time.Time
@@ -159,6 +182,33 @@ type TrackingPackage struct {
 	// DeliveryPointAdvisory is the delivery-point flag (ADR 0015); nil unless
 	// the package has not ended (see pointAdvisory).
 	DeliveryPointAdvisory *DeliveryPointAdvisory
+}
+
+// PickupPoint is the collection state of a pickup package (ADR 0016).
+type PickupPoint struct {
+	ReadyForCollectionAt time.Time
+	HoldUntil            time.Time
+	// CollectedAt is zero until the shopper collected the package.
+	CollectedAt time.Time
+	// ProofCode is the collection proof, empty when none was taken.
+	ProofCode string
+}
+
+// pickupView is the ONE rule that decides whether a package shows its pickup
+// point (ADR 0016): the label or the deposit named a point. The collection
+// object waits for the deposit (readyForCollectionAt is its first fact);
+// collectedAt zero means still collectable.
+func pickupView(p readmodel.Package) (string, string, *PickupPoint) {
+	if p.PickupPointID == "" {
+		return "SHIP_TO", "", nil
+	}
+	if p.ReadyForCollectionAt.IsZero() {
+		return "PICKUP_POINT", p.PickupPointID, nil
+	}
+	return "PICKUP_POINT", p.PickupPointID, &PickupPoint{
+		ReadyForCollectionAt: p.ReadyForCollectionAt, HoldUntil: p.HoldUntil,
+		CollectedAt: p.CollectedAt, ProofCode: p.ProofCode,
+	}
 }
 
 // DeliveryPointAdvisory tells the shopper that the delivery point of a package
@@ -241,9 +291,11 @@ func TrackingFrom(o *customerorder.CustomerOrder, signals []readmodel.GroupSigna
 	for _, p := range packages {
 		start, end := etaWindow(p)
 		advisory := pointAdvisory(p)
+		kind, point, pickup := pickupView(p)
 		pkgs[p.GroupNo] = append(pkgs[p.GroupNo], TrackingPackage{
 			TrackingNumber: p.TrackingNumber, Carrier: p.Carrier, State: p.State, LastScanNodeID: p.LastScanNodeID,
 			LastScanAt: p.LastScanAt, DeliveredAt: p.DeliveredAt, ExceptionReason: p.ExceptionReason,
+			DestinationKind: kind, PickupPointID: point, PickupPoint: pickup,
 			EtaStart: start, EtaEnd: end, DeliveryPointAdvisory: advisory,
 		})
 	}

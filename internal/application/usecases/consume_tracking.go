@@ -17,13 +17,16 @@ type LabelIssued struct {
 	TrackingNumber string
 	AssignmentID   string
 	Carrier        string
+	// PickupPointID names the point of a pickup label; empty on a ship-to
+	// label (ADR 0016).
+	PickupPointID string
 }
 
 // ApplyLabelIssued creates or completes the package row.
 func (c Consumer) ApplyLabelIssued(ctx context.Context, m Meta, in LabelIssued) error {
 	return c.handle(ctx, m, func(ctx context.Context) error {
 		return c.Tracking.ApplyLabel(ctx, readmodel.Label{
-			TrackingNumber: in.TrackingNumber, AssignmentID: in.AssignmentID, Carrier: in.Carrier, At: c.when(m),
+			TrackingNumber: in.TrackingNumber, AssignmentID: in.AssignmentID, Carrier: in.Carrier, PickupPointID: in.PickupPointID, At: c.when(m),
 		})
 	})
 }
