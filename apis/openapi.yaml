@@ -243,12 +243,14 @@ paths:
       description: >-
         In-organization, restricted route for shipping-and-tracking (GetShipTo),
         called when it issues a label. The only route that returns ship-to PII
-        (synthetic). Not exposed through the storefront edge.
+        (synthetic). A pickup order answers its destination kind and point
+        instead - no PII at all (ADR 0016). Not exposed through the storefront
+        edge.
       parameters:
         - $ref: '#/components/parameters/OrderId'
       responses:
         '200':
-          description: The ship-to address (synthetic PII).
+          description: The order's destination - the ship-to address (synthetic PII), or the pickup point of a pickup order (ADR 0016).
           headers:
             Cache-Control:
               description: Always no-store; the address is never cached.
@@ -258,7 +260,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ShipTo'
+                oneOf:
+                  - $ref: '#/components/schemas/ShipTo'
+                  - $ref: '#/components/schemas/PickupDestination'
         '404':
           $ref: '#/components/responses/NotFound'
   /shoppers:
@@ -673,6 +677,22 @@ components:
         phone:
           type: string
           maxLength: 40
+    PickupDestination:
+      type: object
+      description: >-
+        The destination of a pickup order, as GET /orders/{orderId}/ship-to
+        answers it (ADR 0016): the kind and the point, and NO address fields -
+        the restricted route carries no PII at all for these orders. An absent
+        destinationKind (the ShipTo shape) means SHIP_TO, the destination of
+        every order placed before pickup points existed.
+      required: [destinationKind, pickupPointId]
+      properties:
+        destinationKind:
+          type: string
+          enum: [PICKUP_POINT]
+        pickupPointId:
+          type: string
+          maxLength: 64
     OrderLine:
       type: object
       required: [lineNo, catalogItemId, quantity]
@@ -709,11 +729,14 @@ components:
     CheckoutRequest:
       type: object
       description: >-
-        The cart to place. Exactly one of shipTo and shipToAddressId is
-        required: an inline address, or the addressId of an address saved on
-        the shopper (AddSavedAddress), which is copied into the order at
-        placement. Giving both, neither, an unknown id, the id of another
-        shopper's address or an unregistered shopperId is 422 validation-failed.
+        The cart to place. Exactly one of shipTo, shipToAddressId and
+        pickupPointId is required: an inline address, the addressId of an
+        address saved on the shopper (AddSavedAddress, copied into the order
+        at placement), or a pickup point (ADR 0016 - the order carries no
+        address at all and its destination prefix is the point's own, as the
+        confirmed promise quoted it). Giving two or more, neither, an unknown
+        id, the id of another shopper's address or an unregistered shopperId
+        is 422 validation-failed.
       required: [shopperId, lines, groups]
       properties:
         shopperId:
@@ -724,6 +747,14 @@ components:
           type: string
           maxLength: 64
           description: A saved address of this shopper; the address is copied into the order.
+        pickupPointId:
+          type: string
+          maxLength: 64
+          description: >-
+            The pickup point to check out to (ADR 0016): the order carries no
+            ship-to, the promise is quoted against the point and the order's
+            destination prefix is the point's own prefix. The offers must have
+            been quoted to the same point.
         lines:
           type: array
           minItems: 1
@@ -826,10 +857,41 @@ components:
           description: Free text, trimmed, without control characters; the model defines no code list.
     TrackingPackage:
       type: object
-      required: [trackingNumber]
+      required: [trackingNumber, destinationKind]
       properties:
         trackingNumber:
           type: string
+        destinationKind:
+          type: string
+          enum: [SHIP_TO, PICKUP_POINT]
+          description: The package's destination kind (ADR 0016). PICKUP_POINT from the pickup label on; SHIP_TO for every package labelled to an address.
+        pickupPointId:
+          type: string
+          description: The pickup point of a PICKUP_POINT package (ADR 0016); omitted on a ship-to package.
+        pickupPoint:
+          type: object
+          required: [readyForCollectionAt, holdUntil]
+          description: >-
+            The collection state of a pickup package - what the shopper sees
+            next (ADR 0016). Present once the package reached its point
+            (PackageReadyForCollection); collectedAt zero means still
+            collectable. Changes no order state: the promise was judged at the
+            deposit and the order keeps moving on the shipment events.
+          properties:
+            readyForCollectionAt:
+              type: string
+              format: date-time
+            holdUntil:
+              type: string
+              format: date-time
+              description: The retention deadline the uncollected package is returned after.
+            collectedAt:
+              type: string
+              format: date-time
+              description: Present once the shopper collected the package (PackageCollected).
+            proofCode:
+              type: string
+              description: The collection proof when one was taken.
         carrier:
           type: string
         state:
