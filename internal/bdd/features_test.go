@@ -95,6 +95,7 @@ func initializeScenario(sc *godog.ScenarioContext) {
 	registerFulfilment(sc, w)
 	registerAssertions(sc, w)
 	registerHTTP(sc, w)
+	registerRules(sc, w)
 }
 
 func registerSetup(sc *godog.ScenarioContext, w *world) {
