@@ -153,6 +153,7 @@ func TestPayloadValidationPerType(t *testing.T) {
 		{"s", kafkaconsumer.TypePackageDelivered}, {"s", kafkaconsumer.TypePackageException},
 		{"s", kafkaconsumer.TypePackageLost}, {"s", kafkaconsumer.TypePackageReturned},
 		{"s", kafkaconsumer.TypePackageEtaWindowAssigned},
+		{"s", kafkaconsumer.TypePackageReadyForCollection}, {"s", kafkaconsumer.TypePackageCollected},
 	}
 	for _, b := range bad {
 		if err := handle(t, all[b.c], event("empty-"+b.typ, b.typ, map[string]any{})); err == nil {
@@ -170,24 +171,26 @@ func TestPayloadValidationPerType(t *testing.T) {
 
 func TestConsumedTypeStringsAreTheProducersContracts(t *testing.T) {
 	for typ, want := range map[string]string{
-		kafkaconsumer.TypePromiseAtRisk:            "com.retailnetwork.commerce.delivery-promise.promise.PromiseAtRisk",
-		kafkaconsumer.TypePromiseRevised:           "com.retailnetwork.commerce.delivery-promise.promise.PromiseRevised",
-		kafkaconsumer.TypePromiseKept:              "com.retailnetwork.commerce.delivery-promise.promise.PromiseKept",
-		kafkaconsumer.TypePromiseBroken:            "com.retailnetwork.commerce.delivery-promise.promise.PromiseBroken",
-		kafkaconsumer.TypePromiseUnkeepable:        "com.retailnetwork.commerce.delivery-promise.promise.PromiseUnkeepable",
-		kafkaconsumer.TypeFulfillmentLocked:        "com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentLocked",
-		kafkaconsumer.TypeFulfillmentShipped:       "com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentShipped",
-		kafkaconsumer.TypeFulfillmentUnsourceable:  "com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentUnsourceable",
-		kafkaconsumer.TypeFulfillmentCancelled:     "com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentCancelled",
-		kafkaconsumer.TypeFulfillmentCancelRefuse:  "com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentCancelRefused",
-		kafkaconsumer.TypeLabelIssued:              "com.retailnetwork.logistics.shipping-and-tracking.label.LabelIssued",
-		kafkaconsumer.TypeLabelVoided:              "com.retailnetwork.logistics.shipping-and-tracking.label.LabelVoided",
-		kafkaconsumer.TypePackageScanned:           "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageScanned",
-		kafkaconsumer.TypePackageDelivered:         "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered",
-		kafkaconsumer.TypePackageException:         "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageExceptionRaised",
-		kafkaconsumer.TypePackageLost:              "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost",
-		kafkaconsumer.TypePackageReturned:          "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned",
-		kafkaconsumer.TypePackageEtaWindowAssigned: "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageEtaWindowAssigned",
+		kafkaconsumer.TypePromiseAtRisk:             "com.retailnetwork.commerce.delivery-promise.promise.PromiseAtRisk",
+		kafkaconsumer.TypePromiseRevised:            "com.retailnetwork.commerce.delivery-promise.promise.PromiseRevised",
+		kafkaconsumer.TypePromiseKept:               "com.retailnetwork.commerce.delivery-promise.promise.PromiseKept",
+		kafkaconsumer.TypePromiseBroken:             "com.retailnetwork.commerce.delivery-promise.promise.PromiseBroken",
+		kafkaconsumer.TypePromiseUnkeepable:         "com.retailnetwork.commerce.delivery-promise.promise.PromiseUnkeepable",
+		kafkaconsumer.TypeFulfillmentLocked:         "com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentLocked",
+		kafkaconsumer.TypeFulfillmentShipped:        "com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentShipped",
+		kafkaconsumer.TypeFulfillmentUnsourceable:   "com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentUnsourceable",
+		kafkaconsumer.TypeFulfillmentCancelled:      "com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentCancelled",
+		kafkaconsumer.TypeFulfillmentCancelRefuse:   "com.retailnetwork.commerce.order-sourcing.assignment.FulfillmentCancelRefused",
+		kafkaconsumer.TypeLabelIssued:               "com.retailnetwork.logistics.shipping-and-tracking.label.LabelIssued",
+		kafkaconsumer.TypeLabelVoided:               "com.retailnetwork.logistics.shipping-and-tracking.label.LabelVoided",
+		kafkaconsumer.TypePackageScanned:            "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageScanned",
+		kafkaconsumer.TypePackageDelivered:          "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageDelivered",
+		kafkaconsumer.TypePackageException:          "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageExceptionRaised",
+		kafkaconsumer.TypePackageLost:               "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageLost",
+		kafkaconsumer.TypePackageReturned:           "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReturned",
+		kafkaconsumer.TypePackageEtaWindowAssigned:  "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageEtaWindowAssigned",
+		kafkaconsumer.TypePackageReadyForCollection: "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageReadyForCollection",
+		kafkaconsumer.TypePackageCollected:          "com.retailnetwork.logistics.shipping-and-tracking.journey.PackageCollected",
 	} {
 		if typ != want {
 			t.Fatalf("type %q, want %q", typ, want)

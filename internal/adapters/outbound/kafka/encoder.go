@@ -48,6 +48,7 @@ type placedGroupData struct {
 type placedData struct {
 	OrderID                 string            `json:"orderId"`
 	ShopperID               string            `json:"shopperId"`
+	PickupPointID           string            `json:"pickupPointId,omitempty"`
 	DestinationPostalPrefix string            `json:"destinationPostalPrefix"`
 	PlacedAt                string            `json:"placedAt"`
 	Groups                  []placedGroupData `json:"groups"`
@@ -151,7 +152,8 @@ func placedPayload(e customerorder.CustomerOrderPlaced) placedData {
 		}
 	}
 	return placedData{
-		OrderID: string(e.OrderID), ShopperID: e.ShopperID, DestinationPostalPrefix: e.DestinationPostalPrefix, PlacedAt: ts(e.PlacedAt), Groups: groups,
+		OrderID: string(e.OrderID), ShopperID: e.ShopperID, PickupPointID: e.PickupPointID, DestinationPostalPrefix: e.DestinationPostalPrefix,
+		PlacedAt: ts(e.PlacedAt), Groups: groups,
 		ConsolidationKey: e.ConsolidationKey,
 	}
 }

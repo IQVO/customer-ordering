@@ -77,11 +77,13 @@ func (r *TrackingRepository) ResolveAssignment(ctx context.Context, assignmentID
 func (r *TrackingRepository) ApplyLabel(ctx context.Context, l readmodel.Label) error {
 	return r.exec(ctx, "apply label "+l.TrackingNumber, func(q querier) error {
 		if _, err := q.Exec(ctx, `
-			INSERT INTO tracking_packages (tracking_number, assignment_id, carrier, state) VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), 'LABELLED')
+			INSERT INTO tracking_packages (tracking_number, assignment_id, carrier, pickup_point_id, state)
+			VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), 'LABELLED')
 			ON CONFLICT (tracking_number) DO UPDATE SET
 				assignment_id = coalesce(NULLIF($2, ''), tracking_packages.assignment_id),
 				carrier = coalesce(NULLIF($3, ''), tracking_packages.carrier),
-				state = coalesce(tracking_packages.state, 'LABELLED')`, l.TrackingNumber, l.AssignmentID, l.Carrier); err != nil {
+				pickup_point_id = coalesce(NULLIF($4, ''), tracking_packages.pickup_point_id),
+				state = coalesce(tracking_packages.state, 'LABELLED')`, l.TrackingNumber, l.AssignmentID, l.Carrier, l.PickupPointID); err != nil {
 			return err
 		}
 		return linkRows(ctx, q, l.TrackingNumber)

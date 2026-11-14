@@ -41,14 +41,15 @@ func (u GetOrderTracking) Execute(ctx context.Context, id customerorder.ID) (vie
 }
 
 // GetShipTo is the query GetShipTo (GET /orders/{orderId}/ship-to), the only
-// exit of the address (restricted, label printing).
+// exit of the destination (restricted, label printing). A pickup order
+// answers its point and carries no PII at all (ADR 0016).
 type GetShipTo struct{ Deps }
 
-// Execute returns the ship-to address, or ports.ErrNotFound.
-func (u GetShipTo) Execute(ctx context.Context, id customerorder.ID) (views.ShipTo, error) {
+// Execute returns the order's destination, or ports.ErrNotFound.
+func (u GetShipTo) Execute(ctx context.Context, id customerorder.ID) (views.Destination, error) {
 	o, err := u.Orders.Get(ctx, id)
 	if err != nil {
-		return views.ShipTo{}, err
+		return views.Destination{}, err
 	}
-	return views.ShipToFrom(o.ShipTo()), nil
+	return views.DestinationFrom(o), nil
 }

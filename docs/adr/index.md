@@ -29,3 +29,4 @@ The *Status* column is copied from each ADR's own `## Status` section.
 | [0013](./0013-consolidated-tier-and-chosen-delivery-day.md) | the CONSOLIDATED tier and the stored chosen delivery day | Accepted (2026-11-10) |
 | [0014](./0014-day-of-eta-window-on-the-tracking-view.md) | the day-of ETA window on the tracking view | Accepted (2026-11-11) |
 | [0015](./0015-delivery-point-advisory-on-the-tracking-view.md) | the delivery-point advisory on the tracking view | Accepted (2026-11-11) |
+| [0016](./0016-checkout-to-a-pickup-point.md) | checkout to a pickup point | Accepted (2026-11-13) |

@@ -55,6 +55,7 @@ func testOrders(t *testing.T, e Env) {
 		}
 		assertZonesAndKey(t, e, got)
 	})
+	t.Run("a pickup order round-trips its destination (ADR 0016)", func(t *testing.T) { ordersPickupRoundTrip(t, e) })
 	t.Run("every group state and fact round-trips", func(t *testing.T) {
 		o := newOrder(t, "order-facts")
 		must(t, e.Orders.Save(bg(), o))
@@ -72,20 +73,7 @@ func testOrders(t *testing.T, e Env) {
 		}
 	})
 	t.Run("a lost and a returned group round-trip with their facts", func(t *testing.T) { ordersLostAndReturnedRoundTrip(t, e) })
-	t.Run("a cancelled order keeps cancelledAt", func(t *testing.T) {
-		o := newOrder(t, "order-cancelled")
-		must(t, e.Orders.Save(bg(), o))
-		_, err := o.CancelOrder("x", at(5))
-		must(t, err)
-		must(t, o.ConfirmGroupCancelled(1, at(6)))
-		must(t, o.ConfirmGroupCancelled(2, at(7)))
-		must(t, e.Orders.Save(bg(), o))
-		got, err := e.Orders.Get(bg(), "order-cancelled")
-		must(t, err)
-		if got.Status() != customerorder.StatusCancelled || !got.CancelledAt().Equal(at(7)) {
-			t.Fatalf("status/cancelledAt = %s %v", got.Status(), got.CancelledAt())
-		}
-	})
+	t.Run("a cancelled order keeps cancelledAt", func(t *testing.T) { ordersCancelledRoundTrip(t, e) })
 	t.Run("ListByShopper pages newest first without other shoppers", func(t *testing.T) { testListByShopper(t, e) })
 	t.Run("optimistic concurrency", func(t *testing.T) {
 		o := newOrder(t, "order-cc")

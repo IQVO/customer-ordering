@@ -54,7 +54,7 @@ func (s *Server) handlePlaceOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	view, err := s.PlaceOrder.Execute(r.Context(), usecases.PlaceOrderInput{
 		OrderID: s.IDs.OrderIDFor(r.Header.Get(IdempotencyKeyHeader)), ShopperID: req.ShopperID,
-		ShipTo: req.ShipTo.domain(), ShipToAddressID: req.ShipToAddressID, Lines: req.lines(), Groups: groups,
+		ShipTo: req.ShipTo.domain(), ShipToAddressID: req.ShipToAddressID, PickupPointID: req.PickupPointID, Lines: req.lines(), Groups: groups,
 	})
 	if err != nil {
 		writeError(w, r, err)
@@ -108,8 +108,9 @@ func (s *Server) handleCancelOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, orderView(view))
 }
 
-// handleGetShipTo serves the synthetic PII. It is the only place the address
-// leaves the service (ADR RN-0006): never cached, never in an event.
+// handleGetShipTo serves the destination. It is the only place the address
+// leaves the service (ADR RN-0006): never cached, never in an event. A pickup
+// order answers its point instead — no PII at all (ADR 0016).
 func (s *Server) handleGetShipTo(w http.ResponseWriter, r *http.Request) {
 	id, ok := orderIDParam(w, r)
 	if !ok {
@@ -121,7 +122,7 @@ func (s *Server) handleGetShipTo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, shipToView(view))
+	writeJSON(w, http.StatusOK, destinationView(view))
 }
 
 func (s *Server) handleRegisterShopper(w http.ResponseWriter, r *http.Request) {

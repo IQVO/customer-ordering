@@ -9,7 +9,8 @@
 // CANCELLATION_REQUESTED, CANCELLED.
 //
 // Invariants: every line is in exactly one group and every group has a promise
-// (ErrLineWithoutPromise); the promise destination matches the ship-to
+// (ErrLineWithoutPromise); exactly one destination — a ship-to address or a
+// pickup point — and the promise destination matches it
 // (ErrPromiseDestinationMismatch); cancel only while a group is unlocked
 // (ErrCancelAfterLock, advisory); status moves forward only
 // (ErrStatusRegression).
@@ -27,8 +28,9 @@ var (
 	// ErrLineWithoutPromise: every line is in exactly one group and every group
 	// has a promise (422 line-without-promise).
 	ErrLineWithoutPromise = errors.New("line without promise")
-	// ErrPromiseDestinationMismatch: the promise destination prefix matches the
-	// ship-to (422 promise-destination-mismatch).
+	// ErrPromiseDestinationMismatch: the promise destination matches the
+	// order's destination — the ship-to prefix, or for a pickup order the
+	// promise's own point (422 promise-destination-mismatch).
 	ErrPromiseDestinationMismatch = errors.New("promise destination mismatch")
 	// ErrCancelAfterLock: no group is unlocked any more (409 cancel-after-lock).
 	ErrCancelAfterLock = errors.New("cancel after lock")
@@ -200,26 +202,30 @@ func (g GroupPromise) clone() GroupPromise {
 
 // CustomerOrder is the aggregate root.
 type CustomerOrder struct {
-	id          ID
-	shopperID   string
-	shipTo      shipto.ShipTo
-	prefix      string
-	status      Status
-	placedAt    time.Time
-	cancelledAt time.Time
-	lines       []OrderLine
-	groups      []GroupPromise
-	version     int64
-	loaded      int64
+	id            ID
+	shopperID     string
+	shipTo        shipto.ShipTo
+	pickupPointID string
+	prefix        string
+	status        Status
+	placedAt      time.Time
+	cancelledAt   time.Time
+	lines         []OrderLine
+	groups        []GroupPromise
+	version       int64
+	loaded        int64
 	// consolidationKey is "" or 64 lower-case hex characters (ADR 0012).
 	consolidationKey string
 }
 
-// Snapshot is the persisted form of an order. Restore validates it.
+// Snapshot is the persisted form of an order. Restore validates it. Exactly
+// one destination is set: ShipTo for a ship-to order, PickupPointID for a
+// pickup order (ADR 0016).
 type Snapshot struct {
 	ID                      ID
 	ShopperID               string
 	ShipTo                  shipto.ShipTo
+	PickupPointID           string
 	DestinationPostalPrefix string
 	Status                  Status
 	PlacedAt                time.Time
@@ -237,8 +243,21 @@ func (o *CustomerOrder) ID() ID { return o.id }
 // ShopperID returns the shopper who placed the order.
 func (o *CustomerOrder) ShopperID() string { return o.shopperID }
 
-// ShipTo returns the ship-to address (PII).
+// ShipTo returns the ship-to address (PII). Empty for a pickup order.
 func (o *CustomerOrder) ShipTo() shipto.ShipTo { return o.shipTo }
+
+// PickupPointID returns the pickup point of a pickup order, "" for a ship-to
+// order (ADR 0016).
+func (o *CustomerOrder) PickupPointID() string { return o.pickupPointID }
+
+// DestinationKind returns "PICKUP_POINT" for a pickup order and "SHIP_TO"
+// otherwise (ADR 0016).
+func (o *CustomerOrder) DestinationKind() string {
+	if o.pickupPointID != "" {
+		return "PICKUP_POINT"
+	}
+	return "SHIP_TO"
+}
 
 // DestinationPostalPrefix returns the destination postal prefix.
 func (o *CustomerOrder) DestinationPostalPrefix() string { return o.prefix }
@@ -312,7 +331,7 @@ func (o *CustomerOrder) GroupNoByPromise(promiseID string) (int, bool) {
 // Snapshot returns the persisted form.
 func (o *CustomerOrder) Snapshot() Snapshot {
 	return Snapshot{
-		ID: o.id, ShopperID: o.shopperID, ShipTo: o.shipTo, DestinationPostalPrefix: o.prefix, Status: o.status,
+		ID: o.id, ShopperID: o.shopperID, ShipTo: o.shipTo, PickupPointID: o.pickupPointID, DestinationPostalPrefix: o.prefix, Status: o.status,
 		PlacedAt: o.placedAt, CancelledAt: o.cancelledAt, Lines: o.Lines(), Groups: o.Groups(), Version: o.version,
 		ConsolidationKey: o.consolidationKey,
 	}

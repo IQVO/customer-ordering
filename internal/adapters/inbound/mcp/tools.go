@@ -100,10 +100,34 @@ type trackingPackageView struct {
 	LastScanAt      string `json:"lastScanAt,omitempty"`
 	DeliveredAt     string `json:"deliveredAt,omitempty"`
 	ExceptionReason string `json:"exceptionReason,omitempty"`
-	EtaStart        string `json:"etaStart,omitempty"`
-	EtaEnd          string `json:"etaEnd,omitempty"`
+	// DestinationKind and PickupPointID name the pickup destination of the
+	// package; the kind is always answered, the point only for a pickup
+	// package, whose collection facts ride in PickupPoint (ADR 0016).
+	DestinationKind string           `json:"destinationKind"`
+	PickupPointID   string           `json:"pickupPointId,omitempty"`
+	PickupPoint     *pickupPointView `json:"pickupPoint,omitempty"`
+	EtaStart        string           `json:"etaStart,omitempty"`
+	EtaEnd          string           `json:"etaEnd,omitempty"`
 
 	DeliveryPointAdvisory *deliveryPointAdvisoryView `json:"deliveryPointAdvisory,omitempty"`
+}
+
+// pickupPointView is the collection state of a pickup package (ADR 0016).
+type pickupPointView struct {
+	ReadyForCollectionAt string `json:"readyForCollectionAt"`
+	HoldUntil            string `json:"holdUntil"`
+	CollectedAt          string `json:"collectedAt,omitempty"`
+	ProofCode            string `json:"proofCode,omitempty"`
+}
+
+func pickupViewOf(p *views.PickupPoint) *pickupPointView {
+	if p == nil {
+		return nil
+	}
+	return &pickupPointView{
+		ReadyForCollectionAt: instant(p.ReadyForCollectionAt), HoldUntil: instant(p.HoldUntil),
+		CollectedAt: instant(p.CollectedAt), ProofCode: p.ProofCode,
+	}
 }
 
 // deliveryPointAdvisoryView is the code-only advisory of ADR 0015.
@@ -145,14 +169,18 @@ type trackingView struct {
 }
 
 type shipToView struct {
-	Name        string `json:"name"`
-	Line1       string `json:"line1"`
-	Line2       string `json:"line2,omitempty"`
-	City        string `json:"city"`
-	Region      string `json:"region"`
-	PostalCode  string `json:"postalCode"`
-	CountryCode string `json:"countryCode"`
-	Phone       string `json:"phone,omitempty"`
+	// DestinationKind and PickupPointID are the pickup destination of a pickup
+	// order (ADR 0016); a ship-to order answers the address fields only.
+	DestinationKind string `json:"destinationKind,omitempty"`
+	PickupPointID   string `json:"pickupPointId,omitempty"`
+	Name            string `json:"name,omitempty"`
+	Line1           string `json:"line1,omitempty"`
+	Line2           string `json:"line2,omitempty"`
+	City            string `json:"city,omitempty"`
+	Region          string `json:"region,omitempty"`
+	PostalCode      string `json:"postalCode,omitempty"`
+	CountryCode     string `json:"countryCode,omitempty"`
+	Phone           string `json:"phone,omitempty"`
 }
 
 // --- mapping ------------------------------------------------------------------
@@ -201,6 +229,7 @@ func toTracking(t views.Tracking) trackingView {
 			packages = append(packages, trackingPackageView{
 				TrackingNumber: p.TrackingNumber, Carrier: p.Carrier, State: p.State, LastScanNodeID: p.LastScanNodeID,
 				LastScanAt: instant(p.LastScanAt), DeliveredAt: instant(p.DeliveredAt), ExceptionReason: p.ExceptionReason,
+				DestinationKind: p.DestinationKind, PickupPointID: p.PickupPointID, PickupPoint: pickupViewOf(p.PickupPoint),
 				EtaStart: instant(p.EtaStart), EtaEnd: instant(p.EtaEnd), DeliveryPointAdvisory: advisoryView(p.DeliveryPointAdvisory),
 			})
 		}
@@ -216,7 +245,13 @@ func toTracking(t views.Tracking) trackingView {
 	return trackingView{OrderID: t.OrderID, Status: t.Status, Groups: groups}
 }
 
-func toShipTo(s views.ShipTo) shipToView {
+// toShipTo mirrors the REST ship-to route (ADR 0016): a pickup order answers
+// its destination kind and point — no address fields, no PII at all.
+func toShipTo(d views.Destination) shipToView {
+	if d.PickupPointID != "" {
+		return shipToView{DestinationKind: "PICKUP_POINT", PickupPointID: d.PickupPointID}
+	}
+	s := d.ShipTo
 	return shipToView{
 		Name: s.Name, Line1: s.Line1, Line2: s.Line2, City: s.City, Region: s.Region,
 		PostalCode: s.PostalCode, CountryCode: s.CountryCode, Phone: s.Phone,

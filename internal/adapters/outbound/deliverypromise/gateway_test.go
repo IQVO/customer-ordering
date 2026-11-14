@@ -79,7 +79,7 @@ func TestQuoteOffersKeepsQuotedOffersOnly(t *testing.T) {
 	g, got := serve(t, 200, "application/json", `{"offers":[
 	 {"offerId":"a","state":"QUOTED","tier":"NEXT_DAY","window":{"earliest":"2026-10-24T12:00:00Z","latest":"2026-10-24T20:00:00Z"},"expiresAt":"2026-10-23T11:00:00Z"},
 	 {"offerId":"b","state":"EXPIRED","tier":"STANDARD","window":{"earliest":"2026-10-26T12:00:00Z","latest":"2026-10-26T20:00:00Z"},"expiresAt":"2026-10-23T09:00:00Z"}],"unavailable":[]}`)
-	offers, err := g.QuoteOffers(context.Background(), "787", []promising.Line{{CatalogItemID: "sku-1", Quantity: 1}})
+	offers, err := g.QuoteOffers(context.Background(), promising.Destination{PostalPrefix: "787"}, []promising.Line{{CatalogItemID: "sku-1", Quantity: 1}})
 	if err != nil || len(offers) != 1 || offers[0].OfferID != "a" || offers[0].Tier != "NEXT_DAY" || !offers[0].ExpiresAt.Equal(time.Date(2026, 10, 23, 11, 0, 0, 0, time.UTC)) {
 		t.Fatalf("offers = %+v err %v", offers, err)
 	}
@@ -102,7 +102,7 @@ func TestEveryQuoteIsItsOwnLogicalSubmit(t *testing.T) {
 	lines := []promising.Line{{CatalogItemID: "sku-1", Quantity: 1}}
 	keys := map[string]bool{}
 	for range 3 {
-		if _, err := g.QuoteOffers(context.Background(), "787", lines); err != nil {
+		if _, err := g.QuoteOffers(context.Background(), promising.Destination{PostalPrefix: "787"}, lines); err != nil {
 			t.Fatal(err)
 		}
 		keys[got.key] = true
@@ -137,7 +137,7 @@ func TestRefusalsAreTyped(t *testing.T) {
 		if _, err := g.MakePromise(context.Background(), promising.MakeRequest{OrderID: "o", GroupNo: 1}); !errors.Is(err, c.want) {
 			t.Fatalf("%s (make): %v", c.name, err)
 		}
-		if _, err := g.QuoteOffers(context.Background(), "787", nil); !errors.Is(err, c.want) {
+		if _, err := g.QuoteOffers(context.Background(), promising.Destination{PostalPrefix: "787"}, nil); !errors.Is(err, c.want) {
 			t.Fatalf("%s (quote): %v", c.name, err)
 		}
 	}
@@ -151,7 +151,7 @@ func TestUndecodableAndEmptyPromisesAreUnavailable(t *testing.T) {
 		}
 	}
 	g, _ := serve(t, 200, "application/json", `not json`)
-	if _, err := g.QuoteOffers(context.Background(), "787", nil); !errors.Is(err, ports.ErrPromiseUnavailable) {
+	if _, err := g.QuoteOffers(context.Background(), promising.Destination{PostalPrefix: "787"}, nil); !errors.Is(err, ports.ErrPromiseUnavailable) {
 		t.Fatalf("quote: %v", err)
 	}
 }
@@ -229,11 +229,34 @@ func TestTheWindowTimeZoneIsCarriedAndAMalformedOneIsUnknown(t *testing.T) {
 	 {"offerId":"a","state":"QUOTED","tier":"NEXT_DAY","window":{"earliest":"2026-10-31T14:00:00Z","latest":"2026-11-01T02:00:00Z","timeZone":"America/Chicago"},"expiresAt":"2026-10-30T11:00:00Z"},
 	 {"offerId":"b","state":"QUOTED","tier":"STANDARD","window":{"earliest":"2026-11-02T14:00:00Z","latest":"2026-11-03T02:00:00Z"},"expiresAt":"2026-10-30T11:00:00Z"},
 	 {"offerId":"c","state":"QUOTED","tier":"TWO_DAY","window":{"earliest":"2026-11-01T14:00:00Z","latest":"2026-11-02T02:00:00Z","timeZone":"not a zone"},"expiresAt":"2026-10-30T11:00:00Z"}]}`)
-	offers, err := g.QuoteOffers(context.Background(), "787", []promising.Line{{CatalogItemID: "sku-1", Quantity: 1}})
+	offers, err := g.QuoteOffers(context.Background(), promising.Destination{PostalPrefix: "787"}, []promising.Line{{CatalogItemID: "sku-1", Quantity: 1}})
 	if err != nil || len(offers) != 3 {
 		t.Fatalf("offers = %+v, %v", offers, err)
 	}
 	if offers[0].TimeZone != "America/Chicago" || offers[1].TimeZone != "" || offers[2].TimeZone != "" {
 		t.Fatalf("zones = %q %q %q, want America/Chicago, empty, empty", offers[0].TimeZone, offers[1].TimeZone, offers[2].TimeZone)
+	}
+}
+
+func TestQuoteOffersSendsThePickupPointForAPickupDestination(t *testing.T) {
+	g, got := serve(t, 200, "application/json", `{"offers":[]}`)
+	if _, err := g.QuoteOffers(context.Background(), promising.Destination{PickupPointID: "node-pnt-7"}, []promising.Line{{CatalogItemID: "sku-1", Quantity: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if got.body["pickupPointId"] != "node-pnt-7" || got.body["destinationPostalPrefix"] != nil {
+		t.Fatalf("a pickup quote names the point and no prefix: %+v", got.body)
+	}
+}
+
+func TestMakePromiseReadsThePointsIdTolerantly(t *testing.T) {
+	g, _ := serve(t, 201, "application/json", `{"promiseId":"pr-p","offerId":"of-1","state":"PROVISIONAL","destinationPostalPrefix":"070","pickupPointId":"node-pnt-7",
+ "terms":{"tier":"NEXT_DAY","shipBy":"2026-10-23T20:00:00Z","deliverByEarliest":"2026-10-24T12:00:00Z","deliverByLatest":"2026-10-24T20:00:00Z"},
+ "witnessPath":{"nodeId":"fc-pnt-7"},"lines":[],"revisions":[],"holdExpiresAt":"2026-10-23T11:00:00Z"}`)
+	terms, err := g.MakePromise(context.Background(), promising.MakeRequest{OrderID: "o-1", GroupNo: 1, OfferID: "of-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terms.PickupPointID != "node-pnt-7" || terms.DestinationPostalPrefix != "070" {
+		t.Fatalf("the promise's point and prefix must be read: %+v", terms)
 	}
 }

@@ -20,11 +20,11 @@ event-fed local read model; every consumer is idempotent on the CloudEvents id
 | Counterpart | Direction | Relationship | What |
 |---|---|---|---|
 | shopper / storefront | in (REST) | OHS | `POST /checkout`, `GET /orders/{id}`, `GET /orders/{id}/tracking`, `POST /orders/{id}/cancellations`, `POST /shoppers` |
-| shipping-and-tracking | in (REST) | Customer/Supplier | `GET /orders/{id}/ship-to` (restricted; the only PII exit) |
+| shipping-and-tracking | in (REST) | Customer/Supplier | `GET /orders/{id}/ship-to` (restricted; the only PII exit - a pickup order answers `{destinationKind, pickupPointId}` with no address at all, ADR 0016) |
 | delivery-promise | out (REST) | Customer/Supplier | QuoteDeliveryOffers `POST /delivery-quotes`, MakePromise `POST /promises`, ConfirmPromise `POST /promises/{promiseId}/confirmations` (E7), CancelPromise `POST /promises/{promiseId}/cancellations` (compensation of a failed checkout, A14) |
 | delivery-promise | in (events) | Customer/Supplier | PromiseAtRisk, PromiseRevised, PromiseKept, PromiseBroken, PromiseUnkeepable (E9) |
 | order-sourcing | in (events) | Conformist | FulfillmentLocked, FulfillmentShipped, FulfillmentUnsourceable, FulfillmentCancelled, FulfillmentCancelRefused (E11) |
-| shipping-and-tracking | in (events) | Conformist | LabelIssued, LabelVoided (E16), PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned (A19), PackageEtaWindowAssigned (ADR 0014) |
+| shipping-and-tracking | in (events) | Conformist | LabelIssued, LabelVoided (E16), PackageScanned, PackageDelivered, PackageExceptionRaised, PackageLost, PackageReturned (A19), PackageEtaWindowAssigned (ADR 0014), PackageReadyForCollection and PackageCollected (ADR 0016) |
 | order-sourcing, delivery-promise | out (events) | published language | CustomerOrderPlaced, CustomerOrderCancelled |
 
 ### Consumed events and what each does
@@ -54,6 +54,8 @@ Topics: `retailnetwork.delivery-promise.events`, `retailnetwork.order-sourcing.e
 | `...journey.PackageLost` | tracking package outcome LOST; `MarkGroupLost` for the group that announced the package (terminal LOST); an early loss is replayed when `FulfillmentShipped` arrives (A19) |
 | `...journey.PackageReturned` | tracking package outcome RETURNED; `MarkGroupReturned` (terminal RETURNED), same replay rule (A19) |
 | `...journey.PackageEtaWindowAssigned` | tracking package day-of window (`etaStart`, `etaEnd`, `etaAssignedAt`; the latest `assignedAt` wins); read model only, no order or promise field changes (ADR 0014) |
+| `...journey.PackageReadyForCollection` | tracking package of a pickup journey: state `READY_FOR_COLLECTION`, `pickupPointId`, `readyForCollectionAt`, `holdUntil`; read model only, no aggregate change - the promise is judged at delivery-promise and the order keeps moving on the shipment events (ADR 0016) |
+| `...journey.PackageCollected` | tracking package collected: state `COLLECTED`, `collectedAt`, optional `proofCode` and the point; read model only, like the deposit (ADR 0016) |
 
 Decoding is tolerant: only the fields listed in `apis/asyncapi.yaml` are read, unknown
 fields and unknown types are ignored. A message that is not a valid CloudEvents

@@ -137,20 +137,23 @@ func loadOrder(ctx context.Context, q querier, id customerorder.ID, lock string)
 		status    string
 	)
 	err := q.QueryRow(ctx, `
-		SELECT order_id, shopper_id, ship_to, destination_postal_prefix, status, placed_at, cancelled_at, version, coalesce(consolidation_key, '')
+		SELECT order_id, shopper_id, ship_to, coalesce(pickup_point_id, ''), destination_postal_prefix, status, placed_at, cancelled_at, version, coalesce(consolidation_key, '')
 		FROM customer_orders WHERE order_id = $1`+lock, string(id)).
-		Scan(&snap.ID, &snap.ShopperID, &shipJSON, &snap.DestinationPostalPrefix, &status, &snap.PlacedAt, &cancelled, &snap.Version, &snap.ConsolidationKey)
+		Scan(&snap.ID, &snap.ShopperID, &shipJSON, &snap.PickupPointID, &snap.DestinationPostalPrefix, &status, &snap.PlacedAt, &cancelled, &snap.Version, &snap.ConsolidationKey)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("order %s: %w", id, ports.ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read order %s: %w", id, err)
 	}
-	var sj shipToJSON
-	if err := json.Unmarshal(shipJSON, &sj); err != nil {
-		return nil, fmt.Errorf("decode ship-to of order %s: %w", id, err)
+	if shipJSON != nil { // NULL = a pickup order, which carries no ship-to (ADR 0016)
+		var sj shipToJSON
+		if err := json.Unmarshal(shipJSON, &sj); err != nil {
+			return nil, fmt.Errorf("decode ship-to of order %s: %w", id, err)
+		}
+		snap.ShipTo = sj.value()
 	}
-	snap.ShipTo, snap.Status, snap.CancelledAt = sj.value(), customerorder.Status(status), timeOrZero(cancelled)
+	snap.Status, snap.CancelledAt = customerorder.Status(status), timeOrZero(cancelled)
 	if snap.Lines, err = loadLines(ctx, q, id); err != nil {
 		return nil, err
 	}
@@ -204,14 +207,21 @@ func (r *OrderRepository) Save(ctx context.Context, o *customerorder.CustomerOrd
 }
 
 func insertOrder(ctx context.Context, q querier, s customerorder.Snapshot) error {
-	ship, err := json.Marshal(toShipToJSON(s.ShipTo))
-	if err != nil {
-		return fmt.Errorf("encode ship-to: %w", err)
+	// A pickup order stores NO ship-to (NULL): the CHECK of migration 0011
+	// enforces exactly one destination.
+	var ship *string
+	if s.ShipTo != (shipto.ShipTo{}) {
+		raw, err := json.Marshal(toShipToJSON(s.ShipTo))
+		if err != nil {
+			return fmt.Errorf("encode ship-to: %w", err)
+		}
+		enc := string(raw)
+		ship = &enc
 	}
-	_, err = q.Exec(ctx, `
-		INSERT INTO customer_orders (order_id, shopper_id, ship_to, destination_postal_prefix, status, placed_at, cancelled_at, version, consolidation_key)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))`,
-		string(s.ID), s.ShopperID, string(ship), s.DestinationPostalPrefix, string(s.Status), s.PlacedAt.UTC(), nullTime(s.CancelledAt), s.Version, s.ConsolidationKey)
+	_, err := q.Exec(ctx, `
+		INSERT INTO customer_orders (order_id, shopper_id, ship_to, pickup_point_id, destination_postal_prefix, status, placed_at, cancelled_at, version, consolidation_key)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9, NULLIF($10, ''))`,
+		string(s.ID), s.ShopperID, ship, s.PickupPointID, s.DestinationPostalPrefix, string(s.Status), s.PlacedAt.UTC(), nullTime(s.CancelledAt), s.Version, s.ConsolidationKey)
 	if _, dup := isUniqueViolation(err); dup {
 		return fmt.Errorf("order %s already stored: %w", s.ID, ports.ErrConcurrentUpdate)
 	}

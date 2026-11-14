@@ -115,10 +115,34 @@ type packageDTO struct {
 	LastScanAt      string `json:"lastScanAt,omitempty"`
 	DeliveredAt     string `json:"deliveredAt,omitempty"`
 	ExceptionReason string `json:"exceptionReason,omitempty"`
-	EtaStart        string `json:"etaStart,omitempty"`
-	EtaEnd          string `json:"etaEnd,omitempty"`
+	// DestinationKind and PickupPointID name the pickup destination of the
+	// package; the kind is always answered, the point only for a pickup
+	// package, whose collection facts ride in PickupPoint (ADR 0016).
+	DestinationKind string          `json:"destinationKind"`
+	PickupPointID   string          `json:"pickupPointId,omitempty"`
+	PickupPoint     *pickupPointDTO `json:"pickupPoint,omitempty"`
+	EtaStart        string          `json:"etaStart,omitempty"`
+	EtaEnd          string          `json:"etaEnd,omitempty"`
 
 	DeliveryPointAdvisory *advisoryDTO `json:"deliveryPointAdvisory,omitempty"`
+}
+
+// pickupPointDTO is the collection state of a pickup package (ADR 0016).
+type pickupPointDTO struct {
+	ReadyForCollectionAt string `json:"readyForCollectionAt"`
+	HoldUntil            string `json:"holdUntil"`
+	CollectedAt          string `json:"collectedAt,omitempty"`
+	ProofCode            string `json:"proofCode,omitempty"`
+}
+
+func toPickupPointDTO(p *views.PickupPoint) *pickupPointDTO {
+	if p == nil {
+		return nil
+	}
+	return &pickupPointDTO{
+		ReadyForCollectionAt: instant(p.ReadyForCollectionAt), HoldUntil: instant(p.HoldUntil),
+		CollectedAt: instant(p.CollectedAt), ProofCode: p.ProofCode,
+	}
 }
 
 // advisoryDTO is the code-only delivery-point advisory of ADR 0015.
@@ -203,6 +227,7 @@ func toPackageDTOs(in []views.TrackingPackage) []packageDTO {
 		out = append(out, packageDTO{
 			TrackingNumber: p.TrackingNumber, Carrier: p.Carrier, State: p.State, LastScanNodeID: p.LastScanNodeID,
 			LastScanAt: instant(p.LastScanAt), DeliveredAt: instant(p.DeliveredAt), ExceptionReason: p.ExceptionReason,
+			DestinationKind: p.DestinationKind, PickupPointID: p.PickupPointID, PickupPoint: toPickupPointDTO(p.PickupPoint),
 			EtaStart: instant(p.EtaStart), EtaEnd: instant(p.EtaEnd), DeliveryPointAdvisory: toAdvisoryDTO(p.DeliveryPointAdvisory),
 		})
 	}

@@ -45,7 +45,7 @@ type: com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderCa
 
 | Event | Subject / key | Raised when | `data` |
 |---|---|---|---|
-| `CustomerOrderPlaced` | `orderId` | PlaceOrder is saved (state PLACED) | `{orderId, shopperId, destinationPostalPrefix, placedAt, groups[{groupNo, promiseId, tier, witnessNodeId, shipBy, deliverByEarliest, deliverByLatest, lines[{lineNo, catalogItemId, quantity}]}]}` |
+| `CustomerOrderPlaced` | `orderId` | PlaceOrder is saved (state PLACED) | `{orderId, shopperId, pickupPointId?, destinationPostalPrefix, placedAt, groups[{groupNo, promiseId, tier, witnessNodeId, shipBy, deliverByEarliest, deliverByLatest, lines[{lineNo, catalogItemId, quantity}]}]}` (`pickupPointId` only on a pickup order, ADR 0016; `consolidationKey` and the group optionals as in ADRs 0012-0013) |
 | `CustomerOrderCancelled` | `orderId` | CancelOrder (shopper) or the CancelOnUnfulfillable policy is saved | `{orderId, reason, cancelledAt, groupNos[]}` |
 
 Payload rules:

@@ -26,7 +26,10 @@ type Label struct {
 	TrackingNumber string
 	AssignmentID   string
 	Carrier        string
-	At             time.Time
+	// PickupPointID is the point of a pickup label, empty on a ship-to label
+	// (ADR 0016).
+	PickupPointID string
+	At            time.Time
 }
 
 // Scan is the effect of PackageScanned.
@@ -98,6 +101,29 @@ type Outcome struct {
 	At             time.Time
 }
 
+// ReadyForCollection is the effect of PackageReadyForCollection (ADR 0016):
+// the wave deposited a pickup package at its point, collectable from ReadyAt
+// until HoldUntil.
+type ReadyForCollection struct {
+	TrackingNumber string
+	AssignmentID   string
+	OrderID        string
+	PickupPointID  string
+	ReadyAt        time.Time
+	HoldUntil      time.Time
+}
+
+// Collected is the effect of PackageCollected (ADR 0016): the shopper took
+// the package; ProofCode is empty when no proof was taken.
+type Collected struct {
+	TrackingNumber string
+	AssignmentID   string
+	OrderID        string
+	PickupPointID  string
+	CollectedAt    time.Time
+	ProofCode      string
+}
+
 // Package is one tracked package of an order, as the tracking view shows it.
 // Optional fields are empty or zero when unknown.
 type Package struct {
@@ -111,6 +137,15 @@ type Package struct {
 	LastScanAt      time.Time
 	DeliveredAt     time.Time
 	ExceptionReason string
+	// PickupPointID names the point of a pickup package (the label or the
+	// deposit named it; ADR 0016); empty on a ship-to package. The three
+	// collection instants and the proof code are the facts of
+	// PackageReadyForCollection and PackageCollected, zero/empty when absent.
+	PickupPointID        string
+	ReadyForCollectionAt time.Time
+	HoldUntil            time.Time
+	CollectedAt          time.Time
+	ProofCode            string
 	// Outcome is OutcomeLost or OutcomeReturned once PackageLost or
 	// PackageReturned was applied (first one wins), with its instant.
 	Outcome   string

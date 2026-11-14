@@ -212,3 +212,29 @@ func TestEncoderTopicOverride(t *testing.T) {
 		t.Fatalf("Encode: %v %+v", err, msgs)
 	}
 }
+
+// placedPickupOrder places the fixture order to the pickup point node-pnt-7
+// (ADR 0016): no ship-to, the point's own prefix from the promise.
+func placedPickupOrder(t *testing.T) (*customerorder.CustomerOrder, []shared.Event) {
+	t.Helper()
+	group := customerorder.GroupInput{
+		GroupNo: 1, PromiseID: "p-2001", Tier: customerorder.TierNextDay, WitnessNodeID: "fc-pnt-7", ShipBy: t0.Add(12 * time.Hour),
+		DeliverByEarliest: t0.Add(24 * time.Hour), DeliverByLatest: t0.Add(36 * time.Hour), LineNos: []int{1}, DestinationPostalPrefix: "070",
+	}
+	o, evs, err := customerorder.Place(customerorder.NewOrder{
+		ID: "7a1e6c52-0d2b-4f0e-9d6a-5c6f1b8e2a10", ShopperID: "3b0c1f0e-6f0a-4a39-8a55-2b7f0d8c9e11", PickupPointID: "node-pnt-7",
+		Lines:  []customerorder.OrderLine{{LineNo: 1, CatalogItemID: "sku-100", Quantity: 2}},
+		Groups: []customerorder.GroupInput{group},
+	}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return o, evs
+}
+
+func TestCustomerOrderPlacedPickupGolden(t *testing.T) {
+	_, evs := placedPickupOrder(t)
+	msg := encodeOne(t, evs[0])
+	assertGolden(t, "CustomerOrderPlaced.pickup", msg.Value)
+	assertEnvelope(t, msg, "CustomerOrderPlaced")
+}

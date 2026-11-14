@@ -29,7 +29,23 @@ type shipToDTO struct {
 
 func (d shipToDTO) domain() shipto.ShipTo { return shipto.ShipTo(d) }
 
-func shipToView(v views.ShipTo) shipToDTO { return shipToDTO(v) }
+// pickupShipToDTO is the pickup answer of the ship-to route (ADR 0016): the
+// destination kind and the point, and NO address fields — the restricted
+// route carries no PII at all for these orders.
+type pickupShipToDTO struct {
+	DestinationKind string `json:"destinationKind"`
+	PickupPointID   string `json:"pickupPointId"`
+}
+
+// destinationView shapes the ship-to route's answer by destination kind
+// (ADR 0016): PICKUP_POINT answers {destinationKind, pickupPointId}; a
+// ship-to order keeps today's address shape (an absent kind IS ship-to).
+func destinationView(d views.Destination) any {
+	if d.PickupPointID != "" {
+		return pickupShipToDTO{DestinationKind: "PICKUP_POINT", PickupPointID: d.PickupPointID}
+	}
+	return shipToDTO(d.ShipTo)
+}
 
 type lineDTO struct {
 	LineNo        int    `json:"lineNo"`
@@ -46,11 +62,15 @@ type checkoutGroupDTO struct {
 type checkoutRequest struct {
 	ShopperID string    `json:"shopperId"`
 	ShipTo    shipToDTO `json:"shipTo"`
-	// ShipToAddressID names a saved address of the shopper (NG1): exactly one
-	// of shipTo / shipToAddressId, the address is copied into the order.
-	ShipToAddressID string             `json:"shipToAddressId"`
-	Lines           []lineDTO          `json:"lines"`
-	Groups          []checkoutGroupDTO `json:"groups"`
+	// ShipToAddressID names a saved address of the shopper (NG1); exactly one
+	// of shipTo / shipToAddressId / pickupPointId, the address is copied into
+	// the order.
+	ShipToAddressID string `json:"shipToAddressId"`
+	// PickupPointID checks the order out to a pickup point instead of an
+	// address (ADR 0016): no ship-to is held for the order at all.
+	PickupPointID string             `json:"pickupPointId"`
+	Lines         []lineDTO          `json:"lines"`
+	Groups        []checkoutGroupDTO `json:"groups"`
 }
 
 func (c checkoutRequest) lines() []customerorder.OrderLine {
@@ -133,10 +153,34 @@ type trackingPackageDTO struct {
 	LastScanAt      string `json:"lastScanAt,omitempty"`
 	DeliveredAt     string `json:"deliveredAt,omitempty"`
 	ExceptionReason string `json:"exceptionReason,omitempty"`
-	EtaStart        string `json:"etaStart,omitempty"`
-	EtaEnd          string `json:"etaEnd,omitempty"`
+	// DestinationKind and PickupPointID name the pickup destination of the
+	// package; the kind is always answered, the point only for a pickup
+	// package (ADR 0016).
+	DestinationKind string          `json:"destinationKind"`
+	PickupPointID   string          `json:"pickupPointId,omitempty"`
+	PickupPoint     *pickupPointDTO `json:"pickupPoint,omitempty"`
+	EtaStart        string          `json:"etaStart,omitempty"`
+	EtaEnd          string          `json:"etaEnd,omitempty"`
 
 	DeliveryPointAdvisory *deliveryPointAdvisoryDTO `json:"deliveryPointAdvisory,omitempty"`
+}
+
+// pickupPointDTO is the collection state of a pickup package (ADR 0016).
+type pickupPointDTO struct {
+	ReadyForCollectionAt string `json:"readyForCollectionAt"`
+	HoldUntil            string `json:"holdUntil"`
+	CollectedAt          string `json:"collectedAt,omitempty"`
+	ProofCode            string `json:"proofCode,omitempty"`
+}
+
+func pickupDTO(p *views.PickupPoint) *pickupPointDTO {
+	if p == nil {
+		return nil
+	}
+	return &pickupPointDTO{
+		ReadyForCollectionAt: ts(p.ReadyForCollectionAt), HoldUntil: ts(p.HoldUntil),
+		CollectedAt: ts(p.CollectedAt), ProofCode: p.ProofCode,
+	}
 }
 
 // deliveryPointAdvisoryDTO is the code-only advisory of ADR 0015.
@@ -186,6 +230,7 @@ func trackingView(t views.Tracking) trackingDTO {
 			pkgs[j] = trackingPackageDTO{
 				TrackingNumber: p.TrackingNumber, Carrier: p.Carrier, State: p.State, LastScanNodeID: p.LastScanNodeID,
 				LastScanAt: ts(p.LastScanAt), DeliveredAt: ts(p.DeliveredAt), ExceptionReason: p.ExceptionReason,
+				DestinationKind: p.DestinationKind, PickupPointID: p.PickupPointID, PickupPoint: pickupDTO(p.PickupPoint),
 				EtaStart: ts(p.EtaStart), EtaEnd: ts(p.EtaEnd), DeliveryPointAdvisory: advisoryDTO(p.DeliveryPointAdvisory),
 			}
 		}

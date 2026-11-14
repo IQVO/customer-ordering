@@ -26,11 +26,13 @@ type PlacedGroup struct {
 }
 
 // CustomerOrderPlaced is raised by Place. Its fields are the model's data list.
-// It carries the destination postal prefix, never the address.
+// It carries the destination postal prefix and, for a pickup order, the pickup
+// point id (ADR 0016) — never the address.
 type CustomerOrderPlaced struct {
 	shared.Header
 	OrderID                 ID
 	ShopperID               string
+	PickupPointID           string // the point of a pickup order; "" for a ship-to order (ADR 0016)
 	DestinationPostalPrefix string
 	PlacedAt                time.Time
 	Groups                  []PlacedGroup

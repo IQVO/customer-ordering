@@ -78,8 +78,9 @@ func TestGetOrderAndShipTo(t *testing.T) {
 	}
 	to, err := usecases.GetShipTo{Deps: f.deps}.Execute(bg(), customerorder.ID(id))
 	must(t, err)
-	if to.Name != "Ana Example" || to.Line1 != "1 Sample Street" || to.PostalCode != "78701" || to.CountryCode != "US" || to.City != "Austin" || to.Region != "TX" {
-		t.Fatalf("ship-to = %+v", to)
+	if to.PickupPointID != "" || to.ShipTo.Name != "Ana Example" || to.ShipTo.Line1 != "1 Sample Street" || to.ShipTo.PostalCode != "78701" ||
+		to.ShipTo.CountryCode != "US" || to.ShipTo.City != "Austin" || to.ShipTo.Region != "TX" {
+		t.Fatalf("destination = %+v", to)
 	}
 	if _, err := (usecases.GetOrder{Deps: f.deps}).Execute(bg(), "nope"); !errors.Is(err, ports.ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
