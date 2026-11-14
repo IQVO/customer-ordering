@@ -35,6 +35,8 @@ type Server struct {
 	FindShopperByEmail usecases.FindShopperByEmail
 	// ListOrdersByShopper backs GET /orders?shopperId= (NG2).
 	ListOrdersByShopper usecases.ListOrdersByShopper
+	// NotificationPolicies backs GET and PUT /notification-policy (ADR 0017).
+	NotificationPolicies usecases.NotificationPolicies
 
 	// IdempotencyStore and Clock back the Idempotency-Key middleware of the
 	// POST routes.
@@ -87,6 +89,10 @@ func NewRouter(s *Server, logger *slog.Logger, serviceName string) http.Handler 
 	r.With(s.idempotent()).Post("/shoppers", s.handleRegisterShopper)
 	r.Get("/shoppers/{shopperId}", s.handleGetShopper)
 	r.With(s.idempotent()).Post("/shoppers/{shopperId}/addresses", s.handleAddSavedAddress)
+	// The PUT publishes a new version, so a retry must not publish twice: it
+	// takes the key too (ADR 0017).
+	r.Get("/notification-policy", s.handleGetNotificationPolicy)
+	r.With(s.idempotent()).Put("/notification-policy", s.handlePutNotificationPolicy)
 	return r
 }
 

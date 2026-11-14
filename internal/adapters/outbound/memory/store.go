@@ -24,6 +24,7 @@ import (
 	"github.com/claudioed/customer-ordering/internal/application/ports"
 	"github.com/claudioed/customer-ordering/internal/application/readmodel"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
+	"github.com/claudioed/customer-ordering/internal/domain/notice"
 	"github.com/claudioed/customer-ordering/internal/domain/shared"
 	"github.com/claudioed/customer-ordering/internal/domain/shopper"
 )
@@ -47,6 +48,7 @@ type Store struct {
 	outbox        []shared.Event
 	idempotency   map[string]idempotency.Record
 	compensations *Compensations
+	policies      map[int]notice.Snapshot
 	clock         ports.Clock
 }
 
@@ -60,7 +62,7 @@ func NewStore(clock ports.Clock) *Store {
 		orders: map[customerorder.ID]customerorder.Snapshot{}, shoppers: map[shopper.ID]shopper.Snapshot{}, emails: map[string]shopper.ID{},
 		links: map[string]readmodel.AssignmentLink{}, packages: map[string]readmodel.Package{}, pkgGroups: map[string][]readmodel.GroupRef{},
 		signals: map[signalKey]readmodel.GroupSignal{}, inbox: map[string]string{}, idempotency: map[string]idempotency.Record{},
-		compensations: &Compensations{}, clock: clock,
+		compensations: &Compensations{}, policies: map[int]notice.Snapshot{}, clock: clock,
 	}
 }
 
@@ -80,6 +82,7 @@ type state struct {
 	signals   map[signalKey]readmodel.GroupSignal
 	inbox     map[string]string
 	outbox    []shared.Event
+	policies  map[int]notice.Snapshot
 }
 
 func cloneMap[K comparable, V any](m map[K]V) map[K]V {
@@ -94,13 +97,13 @@ func (s *Store) capture() state {
 	return state{
 		orders: cloneMap(s.orders), shoppers: cloneMap(s.shoppers), emails: cloneMap(s.emails), links: cloneMap(s.links),
 		packages: cloneMap(s.packages), pkgGroups: cloneMap(s.pkgGroups), signals: cloneMap(s.signals), inbox: cloneMap(s.inbox),
-		outbox: append([]shared.Event(nil), s.outbox...),
+		outbox: append([]shared.Event(nil), s.outbox...), policies: cloneMap(s.policies),
 	}
 }
 
 func (s *Store) restore(st state) {
-	s.orders, s.shoppers, s.emails, s.links, s.packages, s.pkgGroups, s.signals, s.inbox, s.outbox =
-		st.orders, st.shoppers, st.emails, st.links, st.packages, st.pkgGroups, st.signals, st.inbox, st.outbox
+	s.orders, s.shoppers, s.emails, s.links, s.packages, s.pkgGroups, s.signals, s.inbox, s.outbox, s.policies =
+		st.orders, st.shoppers, st.emails, st.links, st.packages, st.pkgGroups, st.signals, st.inbox, st.outbox, st.policies
 }
 
 // txKey marks a ctx that carries the open unit of work of one store.

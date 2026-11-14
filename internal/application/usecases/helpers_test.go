@@ -36,7 +36,7 @@ func newFx(t *testing.T) *fx {
 	f := &fx{t: t, store: memory.NewStore(memory.NewClock(t0)), gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0), cq: &memory.Compensations{}}
 	s := f.store
 	f.deps = usecases.Deps{
-		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
+		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Policies: s.Policies(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
 		Compensations: f.cq,
 		Promises:      f.gw, Clock: f.clock, IDs: &memory.SequentialIDs{},
 	}

@@ -116,6 +116,18 @@ const sidebar: SidebarsConfig = {
       items: [
         {
           type: "doc",
+          id: "api-reference/rest/get-notification-policy",
+          label: "Read the notification policy (who notifies the shopper per event family)",
+          className: "api-method get",
+        },
+        {
+          type: "doc",
+          id: "api-reference/rest/put-notification-policy",
+          label: "Publish the next version of the notification policy (whole document)",
+          className: "api-method put",
+        },
+        {
+          type: "doc",
           id: "api-reference/rest/get-health",
           label: "Liveness probe",
           className: "api-method get",

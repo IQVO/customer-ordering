@@ -43,6 +43,9 @@ type Deps struct {
 	// order (ADR 0012); nil derives none: the event omits the field and the
 	// order never merges.
 	ConsolidationKeys ports.ConsolidationKeyer
+	// Policies persists the NotificationPolicy document (ADR 0017); nil means
+	// the built-in default (every family NOBODY, version 0) is in force.
+	Policies ports.NotificationPolicyRepository
 }
 
 const (
