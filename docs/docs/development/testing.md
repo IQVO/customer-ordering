@@ -38,18 +38,33 @@ CI jobs of `.github/workflows/ci.yml` call the same targets, so a green local
 
 ## BDD scenarios
 
-Eight feature files, **59 scenarios** (`features/`):
+Twelve feature files, **122 scenario definitions** that the runner executes as
+**183 scenarios** (the Examples rows of the Scenario Outlines expand), counted
+with `git grep -c -E "^[[:space:]]*Scenario" -- features` and the
+`183 scenarios (183 passed)` line of
+`go test ./internal/bdd -run TestFeatures -count=1 -v`:
 
-| File | Scenarios |
-| --- | --- |
-| `checkout.feature` | 11 |
-| `fulfilment_status.feature` | 10 |
-| `shopper.feature` | 8 |
-| `api_errors.feature` | 8 |
-| `cancellation.feature` | 7 |
-| `orders_history.feature` | 7 |
-| `api_orders.feature` | 5 |
-| `api_idempotency.feature` | 3 |
+| File | Definitions | Executed |
+| --- | --- | --- |
+| `checkout_rules.feature` | 24 | 64 |
+| `fulfilment_rules.feature` | 18 | 34 |
+| `cancellation_rules.feature` | 11 | 16 |
+| `checkout.feature` | 11 | 11 |
+| `fulfilment_status.feature` | 10 | 10 |
+| `shopper.feature` | 8 | 8 |
+| `api_errors.feature` | 8 | 8 |
+| `orders_history.feature` | 8 | 8 |
+| `cancellation.feature` | 7 | 7 |
+| `tracking_rules.feature` | 7 | 7 |
+| `api_orders.feature` | 5 | 5 |
+| `api_idempotency.feature` | 5 | 5 |
+
+The four `*_rules.feature` files pin the rules the context's documentation
+states (ADR 0002, 0003, 0009 and 0012 to 0016): the `PlaceOrder` checks and
+delivery-promise failures, the pickup destination (ADR 0016), the consolidation
+key and the stored consolidated choice (ADR 0012, 0013), the cancel request and
+the `CancelOnUnfulfillable` policy, the consumed facts, the order status table,
+shared packages, revisions, and the tracking-view rules (ADR 0014, 0015, 0016).
 
 `internal/bdd/features_test.go` (`TestFeatures`) runs them in-process against
 the real HTTP router with in-memory repositories, a fake delivery-promise and a

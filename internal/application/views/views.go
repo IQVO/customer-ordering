@@ -10,6 +10,7 @@ import (
 	"github.com/claudioed/customer-ordering/internal/application/promising"
 	"github.com/claudioed/customer-ordering/internal/application/readmodel"
 	"github.com/claudioed/customer-ordering/internal/domain/customerorder"
+	"github.com/claudioed/customer-ordering/internal/domain/notice"
 	"github.com/claudioed/customer-ordering/internal/domain/shipto"
 	"github.com/claudioed/customer-ordering/internal/domain/shopper"
 )
@@ -338,4 +339,19 @@ func RequotedFrom(groupNo int, offers []promising.Offer) []RequotedOffer {
 		})
 	}
 	return out
+}
+
+// NotificationPolicy is the read view of the notification policy (GET and PUT
+// /notification-policy, ADR 0017). Version 0 is the built-in default: every
+// family NOBODY and PublishedAt the zero time.
+type NotificationPolicy struct {
+	Version     int
+	Rows        []notice.Row
+	PublishedAt time.Time
+}
+
+// NotificationPolicyFrom builds the view of a policy.
+func NotificationPolicyFrom(p *notice.Policy) NotificationPolicy {
+	s := p.Snapshot()
+	return NotificationPolicy{Version: s.Version, Rows: append([]notice.Row{}, s.Rows...), PublishedAt: s.PublishedAt}
 }

@@ -1,0 +1,1 @@
+{"type": "https://retailnetwork.example/problems/group-spans-nodes", "title": "Group spans nodes", "status": 422, "detail": "sku-1 ships from fc-aus-1, sku-2 from fc-dal-1: one promise cannot cover both.", "instance": "/promises"}

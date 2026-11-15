@@ -40,8 +40,8 @@ func TestPackageLostClosesTheGroupAndRecordsThePackage(t *testing.T) {
 	if !found {
 		t.Fatalf("the package row must show LOST: %+v", pkgs)
 	}
-	if f.store.Counts().OutboxEvents != 1 { // only CustomerOrderPlaced: an outcome publishes nothing
-		t.Fatalf("outbox = %d", f.store.Counts().OutboxEvents)
+	if n := f.store.Counts().OutboxEvents; n != 4 {
+		t.Fatalf("outbox = %d, want 4: CustomerOrderPlaced, the two GROUP_SHIPPED facts of shipBoth and GROUP_LOST (ADR 0017)", n)
 	}
 }
 

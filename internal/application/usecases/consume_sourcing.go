@@ -136,18 +136,23 @@ type FulfillmentShipped struct {
 	ShippedAt       time.Time
 }
 
-// ApplyFulfillmentShipped runs MarkGroupShipped and replays early deliveries.
+// ApplyFulfillmentShipped runs MarkGroupShipped, replays early deliveries and
+// decides the GROUP_SHIPPED (and any settle) notices (ADR 0017).
 func (c Consumer) ApplyFulfillmentShipped(ctx context.Context, m Meta, in FulfillmentShipped) error {
 	return c.handle(ctx, m, func(ctx context.Context) error {
 		if err := c.Tracking.AttachTrackingNumbers(ctx, in.OrderID, in.GroupNo, in.TrackingNumbers); err != nil {
 			return err
 		}
-		return c.mutate(ctx, in.OrderID, quiet(func(o *customerorder.CustomerOrder) error {
+		return c.mutate(ctx, in.OrderID, func(o *customerorder.CustomerOrder) ([]shared.Event, error) {
+			before := statusOf(o, in.GroupNo)
 			if err := o.MarkGroupShipped(in.GroupNo, in.TrackingNumbers, orElse(in.ShippedAt, c.when(m))); err != nil {
-				return err
+				return nil, err
 			}
-			return c.reconcile(ctx, o, in.GroupNo)
-		}))
+			if err := c.reconcile(ctx, o, in.GroupNo); err != nil {
+				return nil, err
+			}
+			return c.groupNotices(ctx, c.when(m), in.OrderID, in.GroupNo, before, statusOf(o, in.GroupNo))
+		})
 	})
 }
 

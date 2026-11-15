@@ -1,0 +1,70 @@
+---
+id: put-notification-policy
+title: "Publish the next version of the notification policy (whole document)"
+description: "Whole-document PUT (ADR 0017): the body carries one row per family. The next version number is derived (current + 1); every version is kept. Publishing version 1 is what wakes a family up — until then the posture is silence. No event is raised: v1 is analytics-free."
+sidebar_label: "Publish the next version of the notification policy (whole document)"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "put api-method"
+info_path: docs/api-reference/rest/customer-ordering-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Publish the next version of the notification policy (whole document)"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"put"}
+  path={"/notification-policy"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Whole-document PUT (ADR 0017): the body carries one row per family. The next version number is derived (current + 1); every version is kept. Publishing version 1 is what wakes a family up — until then the posture is silence. No event is raised: v1 is analytics-free.
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./put-notification-policy.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./put-notification-policy.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./put-notification-policy.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

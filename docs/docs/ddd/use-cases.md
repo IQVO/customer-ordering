@@ -26,7 +26,7 @@ delivery-promise happen **before** the transaction. Error mapping is in
 | `AddSavedAddress` | shopper | REST `POST /shoppers/{shopperId}/addresses` | none |
 | `GetOrder`, `GetOrderTracking`, `GetShipTo` | any caller | REST, MCP, A2A (`GetShipTo`: REST and MCP only) | none |
 | `GetShopper`, `FindShopperByEmail`, `ListOrdersByShopper` | storefront | REST | none |
-| `Consumer.Apply*` (17 handlers) | Kafka events of three sibling contexts | `internal/adapters/inbound/kafka` | `CustomerOrderCancelled` from `PromiseUnkeepable` only |
+| `Consumer.Apply*` (21 handlers) | Kafka events of three sibling contexts | `internal/adapters/inbound/kafka` | `CustomerOrderCancelled` from `PromiseUnkeepable` only |
 
 ## PlaceOrder
 
@@ -133,6 +133,8 @@ order, unknown group, a status regression, an illegal transition) are logged as
 | `PackageDelivered` | `ApplyPackageDelivered` | marks the package delivered; `MarkGroupDelivered` for every group that named the tracking number (a merged package is shared by several groups, ADR 0012) and for the group the event resolves, each closing when every package of it is; a delivery for a not yet known group is replayed when its shipment arrives |
 | `PackageLost`, `PackageReturned` | `ApplyPackageLost`, `ApplyPackageReturned` | `MarkGroupLost` / `MarkGroupReturned` for every group that named the tracking number: the groups close (terminal) |
 | `PackageEtaWindowAssigned` | `ApplyPackageEta` | stores the day-of window on the package row (latest `assignedAt` wins); read model only, no order or promise field is read or written (ADR 0014) |
+| `PackageDeliveryPointFlagged` | `ApplyDeliveryPointFlag` | stores the delivery-point advisory on the package row unless a newer one is stored; read model only (ADR 0015) |
+| `PackageReadyForCollection`, `PackageCollected` | `ApplyPackageReadyForCollection`, `ApplyPackageCollected` | record the deposit and the collection on the package row; no aggregate changes (ADR 0016) |
 
 The order status is derived from the group states (`status.go`, `derive`):
 `CANCELLED` groups do not count; with no live group the order is `CANCELLED`;

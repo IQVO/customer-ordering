@@ -108,7 +108,7 @@ Contract: [`apis/asyncapi.yaml`](apis/asyncapi.yaml), catalogue in [ADR 0004](do
   `com.retailnetwork.commerce.customer-ordering.customerorder.CustomerOrderCancelled`.
 - **Consumed**: delivery-promise `PromiseAtRisk`, `PromiseRevised`, `PromiseKept`, `PromiseBroken`, `PromiseUnkeepable`; order-sourcing `FulfillmentLocked`,
   `FulfillmentShipped`, `FulfillmentUnsourceable`, `FulfillmentCancelled`, `FulfillmentCancelRefused`; shipping-and-tracking `LabelIssued`, `LabelVoided`,
-  `PackageScanned`, `PackageDelivered`, `PackageExceptionRaised`, `PackageLost`, `PackageReturned` (the last two close the group: LOST / RETURNED, ADR 0002 A19), `PackageEtaWindowAssigned` (the day-of delivery window shown on the tracking view, ADR 0014). Idempotent on the CloudEvents id, dispatched on the full type, bad messages go to `<topic>.dlq`.
+  `PackageScanned`, `PackageDelivered`, `PackageExceptionRaised`, `PackageLost`, `PackageReturned` (the last two close the group: LOST / RETURNED, ADR 0002 A19), `PackageEtaWindowAssigned` (the day-of delivery window shown on the tracking view, ADR 0014), `PackageDeliveryPointFlagged` (the delivery-point advisory on the tracking view, ADR 0015), `PackageReadyForCollection` and `PackageCollected` (pickup collection facts on the tracking view, ADR 0016). Idempotent on the CloudEvents id, dispatched on the full type, bad messages go to `<topic>.dlq`.
 - **Synchronous calls**: delivery-promise `POST /delivery-quotes`, `POST /promises`, `POST /promises/{promiseId}/confirmations`, and the compensating `POST /promises/{promiseId}/cancellations` (only after a later confirm failed).
 
 ## Running it
@@ -304,7 +304,7 @@ Git hooks are managed by [lefthook](https://github.com/evilmartians/lefthook)
 ## Tests
 
 - **Unit** — `go test ./...` (domain, use cases, handlers; `make test`).
-- **BDD acceptance** — godog/Gherkin over the real HTTP API in `features/` (`api_errors`, `api_idempotency`, `api_orders`, `cancellation`, `checkout`, `fulfilment_status`, `orders_history`, `shopper`), run from `internal/bdd` (`make bdd`).
+- **BDD acceptance** — godog/Gherkin over the real HTTP API in `features/` (`api_errors`, `api_idempotency`, `api_orders`, `cancellation`, `cancellation_rules`, `checkout`, `checkout_rules`, `fulfilment_rules`, `fulfilment_status`, `orders_history`, `shopper`, `tracking_rules`; 122 scenario definitions, 183 executed), run from `internal/bdd` (`make bdd`).
 - **Integration** — testcontainers Postgres and Kafka: repositories, relay and real-wiring tests, including checkout compensation (`make integration`, build-tagged, needs only Docker).
 - **Coverage gate** — `make coverage`: ≥ 90% over `internal/domain` + `internal/application`.
 - **Mutation** — gremlins over every `internal/domain/<pkg>` (`make mutation`; the exhaustive `mutation-full`).

@@ -181,7 +181,8 @@ func buildAdapters(ctx context.Context, rt runtimeEnv, logger *slog.Logger) (ada
 	ad := adapters{pool: pool, outbox: outbox, compensations: postgres.NewCompensationRepo(pool), idempotency: postgres.NewIdempotencyStore(pool)}
 	ad.deps = usecases.Deps{
 		Orders: postgres.NewOrderRepository(pool), Shoppers: postgres.NewShopperRepository(pool), Tracking: postgres.NewTrackingRepository(pool),
-		Inbox: postgres.NewInbox(pool), Outbox: outbox, UoW: postgres.NewUnitOfWork(pool), Compensations: ad.compensations,
+		Policies: postgres.NewPolicyRepository(pool),
+		Inbox:    postgres.NewInbox(pool), Outbox: outbox, UoW: postgres.NewUnitOfWork(pool), Compensations: ad.compensations,
 		Promises: deliverypromise.New(rt.deliveryPromiseURL, &http.Client{Timeout: rt.deliveryPromiseTimeout}),
 		Clock:    ad.clock, IDs: ad.ids, Log: logger, ConsolidationKeys: keyer,
 	}
@@ -195,7 +196,8 @@ func buildServer(ad adapters, readiness *inboundhttp.Readiness) *inboundhttp.Ser
 		CancelOrder: usecases.CancelOrder{Deps: d}, GetShipTo: usecases.GetShipTo{Deps: d}, RegisterShopper: usecases.RegisterShopper{Deps: d},
 		AddSavedAddress: usecases.AddSavedAddress{Deps: d}, GetShopper: usecases.GetShopper{Deps: d},
 		FindShopperByEmail: usecases.FindShopperByEmail{Deps: d}, ListOrdersByShopper: usecases.ListOrdersByShopper{Deps: d},
-		IdempotencyStore: ad.idempotency, Clock: ad.clock, IDs: ad.ids, Readiness: readiness,
+		NotificationPolicies: usecases.NotificationPolicies{Deps: d},
+		IdempotencyStore:     ad.idempotency, Clock: ad.clock, IDs: ad.ids, Readiness: readiness,
 	}
 }
 

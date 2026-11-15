@@ -39,7 +39,7 @@ func newEnvLogged(t *testing.T, logger *slog.Logger) *env {
 	gw := memory.NewPromiseGateway()
 	clock := memory.NewClock(t0)
 	deps := usecases.Deps{
-		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
+		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Policies: s.Policies(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
 		Promises: gw, Clock: clock, IDs: &memory.SequentialIDs{},
 	}
 	sh, err := shopper.Register(shopper.NewShopper{ID: "shopper-1", Email: "ana@example.com"}, t0)
@@ -59,7 +59,8 @@ func newEnvLogged(t *testing.T, logger *slog.Logger) *env {
 		CancelOrder: usecases.CancelOrder{Deps: deps}, GetShipTo: usecases.GetShipTo{Deps: deps}, RegisterShopper: usecases.RegisterShopper{Deps: deps},
 		AddSavedAddress: usecases.AddSavedAddress{Deps: deps}, GetShopper: usecases.GetShopper{Deps: deps},
 		FindShopperByEmail: usecases.FindShopperByEmail{Deps: deps}, ListOrdersByShopper: usecases.ListOrdersByShopper{Deps: deps},
-		IdempotencyStore: s.Idempotency(), Clock: deps.Clock, IDs: ids.Generator{},
+		NotificationPolicies: usecases.NotificationPolicies{Deps: deps},
+		IdempotencyStore:     s.Idempotency(), Clock: deps.Clock, IDs: ids.Generator{},
 	}
 	srv := httptest.NewServer(httpadapter.NewRouter(api, logger, ""))
 	t.Cleanup(srv.Close)

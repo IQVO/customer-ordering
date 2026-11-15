@@ -1,0 +1,1 @@
+{"type": "https://retailnetwork.example/problems/book-closed", "title": "Book closed", "status": 409, "detail": "Book AUS3:2026-W44 is closed for new holds.", "instance": "/promises"}
