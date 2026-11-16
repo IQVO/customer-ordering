@@ -97,11 +97,12 @@ nothing.
 ## Mutation testing
 
 `.gremlins.yaml` sets one worker, a timeout coefficient of 30 and thresholds
-`efficacy: 98`, `mutant-coverage: 98`. The last measurement recorded in the file
-(2026-10-23, gremlins v0.6.0) is 100% efficacy and mutant coverage for each
-domain package: `shared` (31 killed), `shipto` (21), `shopper` (17),
-`customerorder` (139), 0 lived. `make mutation` and the `mutation-fast` job loop
-over every `internal/domain/*/` package.
+`efficacy: 99`, `mutant-coverage: 99` (plain numbers: a quoted YAML string is read
+as 0 by gremlins v0.6.0 and leaves the gate dormant). The last measurement recorded
+in the file (2026-11-15, gremlins v0.6.0) is 100% efficacy and mutant coverage for
+each domain package: `shared` (49 killed), `shipto` (21), `shopper` (22),
+`customerorder` (205), `notice` (26), 0 lived. `make mutation` and the
+`mutation-fast` job loop over every `internal/domain/*/` package.
 
 ## CI jobs
 
