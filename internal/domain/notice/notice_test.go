@@ -134,3 +134,41 @@ func TestShopperNoticeDecidedImplementsTheEventContract(t *testing.T) {
 		t.Fatalf("header = %d %v", ev.AggregateVersion(), ev.OccurredAt())
 	}
 }
+
+func TestPublishVersionBoundary(t *testing.T) {
+	// The last publishable version: current = MaxVersion-1 yields MaxVersion.
+	p, err := Publish(MaxVersion-1, rows(NotifierNobody), at)
+	if err != nil {
+		t.Fatalf("Publish(MaxVersion-1) = %v, want ok", err)
+	}
+	if p.Version() != MaxVersion {
+		t.Fatalf("version = %d, want %d", p.Version(), MaxVersion)
+	}
+	// One more would overflow the wire and the table.
+	if _, err := Publish(MaxVersion, rows(NotifierNobody), at); !errors.Is(err, ErrVersionNotNext) {
+		t.Fatalf("Publish(MaxVersion) = %v, want ErrVersionNotNext", err)
+	}
+	if _, err := Publish(-1, rows(NotifierNobody), at); !errors.Is(err, ErrVersionNotNext) {
+		t.Fatalf("Publish(-1) = %v, want ErrVersionNotNext", err)
+	}
+	if p, err := Publish(0, rows(NotifierNobody), at); err != nil || p.Version() != 1 {
+		t.Fatalf("Publish(0) = %v, %v, want version 1", p, err)
+	}
+}
+
+func TestRestoreVersionBoundary(t *testing.T) {
+	for _, v := range []int{1, MaxVersion} {
+		p, err := Restore(Snapshot{Version: v, Rows: rows(NotifierNobody), PublishedAt: at})
+		if err != nil {
+			t.Fatalf("Restore(version %d) = %v, want ok", v, err)
+		}
+		if p.Version() != v {
+			t.Fatalf("Restore(version %d).Version() = %d", v, p.Version())
+		}
+	}
+	for _, v := range []int{0, -1, MaxVersion + 1} {
+		if _, err := Restore(Snapshot{Version: v, Rows: rows(NotifierNobody), PublishedAt: at}); !errors.Is(err, shared.ErrInvalidSnapshot) {
+			t.Fatalf("Restore(version %d) = %v, want ErrInvalidSnapshot", v, err)
+		}
+	}
+}
