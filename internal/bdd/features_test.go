@@ -99,6 +99,7 @@ func initializeScenario(sc *godog.ScenarioContext) {
 	registerHTTP(sc, w)
 	registerRules(sc, w)
 	registerAnalytics(sc, w)
+	registerNoticeTime(sc, w)
 }
 
 func registerSetup(sc *godog.ScenarioContext, w *world) {

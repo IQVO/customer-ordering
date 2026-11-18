@@ -62,11 +62,11 @@ func toEvent(kind report.Kind, evt ce.Event) (report.Event, error) {
 	}
 	e := report.Event{Kind: kind, EventID: evt.ID(), At: evt.Time().UTC(), OrderID: d.OrderID, OccurredAt: d.instant(kind).UTC()}
 	if kind == report.KindNoticeDecided && e.At.IsZero() {
-		// The notice use case (ADR 0017) builds ShopperNoticeDecided without its
-		// header, so the publisher stamps the CloudEvents `time` with the zero
-		// instant (0001-01-01). The projector must not dead-letter every notice
-		// for it: decidedAt, the instant the use case decided, is the freshness
-		// basis then. The publisher is deliberately left unchanged (ADR 0018).
+		// LEGACY ONLY. Notices published before the notice use case stamped its
+		// events carry the zero CloudEvents `time` (0001-01-01) and are still on
+		// the stream: dead-lettering them would blind the report, so decidedAt,
+		// the instant the use case decided, is their freshness basis. Current
+		// publishers always set the time (ADR 0018); this branch is dead for them.
 		e.At = e.OccurredAt
 	}
 	switch kind {

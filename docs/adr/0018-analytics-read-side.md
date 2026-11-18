@@ -119,12 +119,14 @@ the in-memory twin and against real Postgres.
   same topic) with `x-dlq-*` headers. A failed DLQ write is retried, so poison is never lost.
 - **Transient failures** are retried forever with capped exponential backoff (200ms doubling to 5s) and never
   dead-lettered: a database outage must not turn into silently missing analytics.
-- **A publisher defect the projector tolerates.** The notice use case (ADR 0017) builds `ShopperNoticeDecided`
-  without its aggregate header, so the CloudEvents `time` of every notice published today is the zero instant
-  (`0001-01-01T00:00:00Z`; the golden file hides it because it sets a header). Dead-lettering every notice for it would
-  make the report blind to them, so for this one type a zero `time` takes `decidedAt` as the freshness instant. The
-  publisher is deliberately NOT changed here (a visible change to a published contract, outside this ADR): the fix is
-  one line in `usecases/notice.go` and a golden, and the tolerance can then be dropped.
+- **A legacy publisher defect the projector tolerates.** Until the notice use case stamped its events (ADR 0017),
+  `ShopperNoticeDecided` was built without its aggregate header, so the CloudEvents `time` of every notice published
+  before the fix is the zero instant (`0001-01-01T00:00:00Z`; the golden file hid it because the golden test sets a
+  header). Those messages are still on the stream, and dead-lettering them would make the report blind to them, so for
+  this one type a zero `time` takes `decidedAt` as the freshness instant. The publisher is fixed
+  (`usecases/notice.go` sets the header to the decision instant, and an encoder test over every published type fails
+  on a zero time), so the tolerance is **legacy-only**: a notice with a real `time` is projected at that time, and the
+  branch can be dropped once the retention of the events topic has passed the fix.
 
 ### 4. The binaries
 
@@ -185,7 +187,7 @@ pod gets neither Kafka nor any DSN but the reader's. Nothing in the api, its con
 - **Store the cancellation reason or the pickup point id for a breakdown**: free text and identifiers of a place a
   person chose are not needed for a count, and the read side holds ids and codes only.
 - **Fix the zero `time` of `ShopperNoticeDecided` in this change**: a change to a published event, not part of an
-  additive read side; recorded instead (section 3).
+  additive read side; it was fixed separately afterwards and the tolerance kept for the legacy messages (section 3).
 - **Zero-fill the days**: the pilot omits empty days and a consumer can fill them; a row of zeros would also have to
   carry a `null` share to stay honest.
 - **Dead-letter after N attempts for every failure**: drops analytics for events that failed only because the database

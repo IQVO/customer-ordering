@@ -259,11 +259,14 @@ func TestAnalyticsConsumerRunRetriesTransientFailuresForever(t *testing.T) {
 	}
 }
 
-// The notice use case publishes ShopperNoticeDecided with the zero CloudEvents
-// time (it builds the event without its header). Such a notice is projected,
-// with its decision instant as the freshness basis, not dead-lettered; the same
-// defect on any other type is still poison.
-func TestAnalyticsConsumerAcceptsANoticeWithAZeroCloudEventsTime(t *testing.T) {
+// LEGACY ONLY. Until the notice use case stamped its events with the decision
+// instant, every ShopperNoticeDecided was published with the zero CloudEvents
+// time (0001-01-01T00:00:00Z); those messages are still on the stream. Such a
+// notice is projected with its decision instant as the freshness basis instead
+// of dead-lettered; the same defect on any other type is still poison. No
+// current publisher produces a zero time (the encoder time table pins that in
+// internal/adapters/outbound/kafka).
+func TestAnalyticsConsumerAcceptsALegacyNoticeWithAZeroCloudEventsTime(t *testing.T) {
 	zeroTime := func(entity, name string, data map[string]any) []byte {
 		b, err := cloudevents.New(cloudevents.Spec{ID: "evt-zero", Entity: entity, EventName: name, Subject: "o-1",
 			Stream: cloudevents.StreamEvents, Version: 1, Data: data})
@@ -286,5 +289,21 @@ func TestAnalyticsConsumerAcceptsANoticeWithAZeroCloudEventsTime(t *testing.T) {
 	}
 	if len(p.events) != 1 || len(dlq.msgs) != 1 {
 		t.Fatalf("a cancellation without a time must be dead-lettered: applied=%d dlq=%d", len(p.events), len(dlq.msgs))
+	}
+}
+
+// The zero-time fallback is for the legacy messages only: a notice that carries
+// a real CloudEvents time (every notice published since the fix) is projected
+// at THAT time, even when it differs from decidedAt; the fallback never
+// applies to it.
+func TestAnalyticsConsumerUsesTheEnvelopeTimeOfANoticeThatHasOne(t *testing.T) {
+	p, dlq := &fakeProjection{}, &runDLQ{}
+	notice := map[string]any{"orderId": "o-1", "family": "GROUP_LOST", "noticeKey": "nk", "decidedAt": businessRFC}
+	msg := kafkago.Message{Value: ownEvent(t, entityOrder, "ShopperNoticeDecided", "o-1", notice)}
+	if err := analyticsConsumer(p, dlq, nil).HandleMessage(context.Background(), msg); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.events) != 1 || len(dlq.msgs) != 0 || !p.events[0].At.Equal(eventTime) || p.events[0].At.Equal(businessAt) {
+		t.Fatalf("applied=%+v dlq=%d, want the notice projected at its envelope time %s, not at decidedAt", p.events, len(dlq.msgs), eventTime)
 	}
 }
