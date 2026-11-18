@@ -89,3 +89,10 @@ Feature: The order status follows the groups and only moves forward
     Then group 1 is "LOST"
     When delivery-promise revises the promise of group 1 one day later
     Then group 1 is "LOST"
+
+  Scenario: A decided shopper notice is published with the CloudEvents time of its decision
+    Given order-sourcing locks group 1
+    When order-sourcing ships group 1 with packages "TRK-1"
+    Then the 1 published ShopperNoticeDecided event carries the CloudEvents time of the decision
+    When shipping-and-tracking delivers package "TRK-1"
+    Then the 2 published ShopperNoticeDecided events carry the CloudEvents time of the decision

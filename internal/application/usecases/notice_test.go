@@ -239,3 +239,38 @@ func TestALostGroupDecidesTheShippedAndLostFacts(t *testing.T) {
 		t.Fatalf("group 1 = %s", f.groupStatus(id, 1))
 	}
 }
+
+// Every decided notice carries its decision instant as the event's occurred-at
+// (the CloudEvents `time`): the instant of the consumed fact, equal to decidedAt,
+// never the zero time of a header-less event.
+func TestADecidedNoticeCarriesTheDecisionInstantAsItsEventTime(t *testing.T) {
+	f := newFx(t)
+	id := f.place()
+	lockGroup1(t, f, id)
+	m := f.meta("sourcing.Shipped")
+	must(t, f.consumer().ApplyFulfillmentShipped(bg(), m, usecases.FulfillmentShipped{AssignmentID: "as-1", OrderID: id, GroupNo: 1, TrackingNumbers: []string{"TRK-1"}, ShippedAt: at(20)}))
+	got := noticesOf(t, f)
+	if len(got) != 1 {
+		t.Fatalf("notices = %+v", got)
+	}
+	if !got[0].OccurredAt().Equal(m.At) || !got[0].DecidedAt.Equal(m.At) {
+		t.Fatalf("occurred-at = %v, decidedAt = %v, want the consumed fact's instant %v", got[0].OccurredAt(), got[0].DecidedAt, m.At)
+	}
+}
+
+// A consumed fact whose producer omitted the CloudEvents time still yields a
+// notice with a real event time: the service clock, never the zero instant.
+func TestANoticeFromAFactWithoutATimeUsesTheClockAsItsEventTime(t *testing.T) {
+	f := newFx(t)
+	id := f.place()
+	lockGroup1(t, f, id)
+	when := at(700)
+	f.clock.Set(when)
+	m := f.meta("sourcing.Shipped")
+	m.At = time.Time{}
+	must(t, f.consumer().ApplyFulfillmentShipped(bg(), m, usecases.FulfillmentShipped{AssignmentID: "as-1", OrderID: id, GroupNo: 1, TrackingNumbers: []string{"TRK-1"}}))
+	got := noticesOf(t, f)
+	if len(got) != 1 || !got[0].OccurredAt().Equal(when) || !got[0].DecidedAt.Equal(when) {
+		t.Fatalf("notices = %+v, want occurred-at and decidedAt = the clock %v", got, when)
+	}
+}
