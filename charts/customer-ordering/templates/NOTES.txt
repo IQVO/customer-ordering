@@ -26,3 +26,9 @@ The three consumers are ON, each under a stable group id:
   delivery-promise       group {{ .Values.config.deliveryPromiseConsumerGroup }}, topic retailnetwork.delivery-promise.events
   order-sourcing         group {{ .Values.config.orderSourcingConsumerGroup }}, topic retailnetwork.order-sourcing.events
   shipping-and-tracking  group {{ .Values.config.shippingConsumerGroup }}, topic retailnetwork.shipping-and-tracking.events
+{{- if .Values.analytics.enabled }}
+
+Analytics read side (ADR 0018): {{ include "customer-ordering.projectorFullname" . }} projects
+retailnetwork.customer-ordering.events (group {{ .Values.analytics.projector.consumerGroup }}) into the
+analytical database; {{ include "customer-ordering.reportsFullname" . }} serves GET /reports/... read-only.
+{{- end }}

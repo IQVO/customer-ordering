@@ -1,5 +1,8 @@
-# Default values for customer-ordering. One component: the api Deployment
+# Default values for customer-ordering. Default component: the api Deployment
 # (cmd/api: REST, the outbox relay and three Kafka consumers in one process).
+# Optional components, all off by default: mcp, a2a, frontend and the analytics
+# read side (cmd/co-projector and cmd/co-reports over a separate analytical
+# database, ADR 0018).
 # The chart refuses to render without the mandatory values below (named in the
 # failure): database.*, kafka.brokers, config.deliveryPromiseUrl and the three
 # config.*ConsumerGroup ids.
@@ -338,6 +341,63 @@ frontend:
     requests:
       cpu: 50m
       memory: 64Mi
+
+# The analytics read side (ADR 0018), OFF by default: cmd/co-projector projects
+# this context's own events topic into a SEPARATE analytical Postgres and
+# cmd/co-reports serves the read-only GET /reports/ordering-performance and
+# /reports/freshness over it. Both run from the same image. Unauthenticated like
+# every other surface (fleet decision); access control is the cluster boundary.
+analytics:
+  enabled: false
+  # LOG_LEVEL of both analytics binaries.
+  logLevel: "info"
+  database:
+    # The projector's read-write analytical DSN (DIRECT Postgres, not
+    # PgBouncer: it also runs the migrations). No password in committed values.
+    projectorUrl: ""
+    # The reports reader's DSN -- a read-only role where possible; falls back
+    # to projectorUrl when empty (local/dev).
+    reportsUrl: ""
+    # Name of an existing Secret holding ANALYTICS_DATABASE_URL (projector) and
+    # ANALYTICS_READER_DATABASE_URL (reports). Takes precedence over the URLs.
+    existingSecret: ""
+  projector:
+    replicaCount: 1
+    adminAddr: ":8091"                  # ADMIN_ADDR (/healthz, /readyz)
+    adminPort: 8091
+    # ANALYTICS_CONSUMER_GROUP: the projector's FIXED consumer group on
+    # retailnetwork.customer-ordering.events.
+    consumerGroup: "customer-ordering-analytics"
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  reports:
+    replicaCount: 1
+    httpAddr: ":8092"                   # HTTP_ADDR
+    service:
+      type: ClusterIP
+      port: 80
+      targetPort: 8092
+    # Kong exposure: /api/customer-ordering/reports -> Service :80, prefix
+    # rewritten to /reports. Needs the Gateway parentRef from warehouse-infra.
+    route:
+      enabled: false
+      path: "/api/customer-ordering/reports"
+      parentRefs:
+        - name: ""
+          namespace: ""
+          sectionName: "http"
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
 
 nodeSelector: {}
 tolerations: []

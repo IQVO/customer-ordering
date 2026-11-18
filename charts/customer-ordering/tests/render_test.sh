@@ -181,7 +181,7 @@ if grep -qiE 'in-memory|silently runs|permissive' <<<"$render_all"$'\n'"$(cat "$
   fail "the render or NOTES.txt mentions an in-memory / permissive mode"
 fi
 
-# Only the api component exists: one Deployment, one Service, no MCP, A2A, frontend, projector or reports.
+# Only the api component exists by default: one Deployment, one Service, no MCP, A2A, frontend, projector or reports.
 for stray in mcp a2a frontend projector reports analytics; do
   if grep -qE "app.kubernetes.io/component: .*$stray" <<<"$render_all"; then fail "the chart must not render a $stray component"; fi
 done
@@ -210,7 +210,8 @@ tagged="$(helm template "$release" "$chart_dir" "${base[@]}" --set image.tag=v9.
 [[ "$(env_value "$tagged" OTEL_EXPORTER_OTLP_ENDPOINT)" == "http://collector:4317" ]] || fail "OTEL_EXPORTER_OTLP_ENDPOINT must follow otel.endpoint"
 [[ "$(env_value "$tagged" ENVIRONMENT)" == "staging" ]] || fail "ENVIRONMENT must follow environment"
 # otel.enabled=false renders no OTEL_* env (SERVICE_VERSION stays: it also labels the logs' build).
-otel_off="$(helm template "$release" "$chart_dir" "${base[@]}" --set otel.enabled=false --set mcp.enabled=true --set a2a.enabled=true)"
+otel_off="$(helm template "$release" "$chart_dir" "${base[@]}" --set otel.enabled=false --set mcp.enabled=true --set a2a.enabled=true \
+  --set analytics.enabled=true --set analytics.database.projectorUrl=postgres://projector@example.invalid:5432/analytics)"
 if grep -q 'name: OTEL_' <<<"$otel_off"; then fail "otel.enabled=false must render no OTEL_* env in any component"; fi
 grep -q 'name: SERVICE_VERSION$' <<<"$otel_off" || fail "SERVICE_VERSION must still render with otel.enabled=false"
 # The values are chart-owned: extraEnv may not set them a second time.
@@ -379,12 +380,90 @@ if helm template "$release" "$chart_dir" "${base[@]}" --set frontend.enabled=tru
   fail "frontend routing must not live in this chart"
 fi
 
+# --- analytics read side (ADR 0018): co-projector + co-reports -----------------
+# OFF by default (the default render names no analytics component, asserted
+# above). On, it adds a projector Deployment (no Service) and a reports
+# Deployment + Service, both unauthenticated like every surface of this service.
+an=(--set analytics.enabled=true --set analytics.database.projectorUrl=postgres://projector@example.invalid:5432/analytics)
+projector_dep="$(helm template "$release" "$chart_dir" "${base[@]}" "${an[@]}" --show-only templates/analytics-projector-deployment.yaml)"
+reports_dep="$(helm template "$release" "$chart_dir" "${base[@]}" "${an[@]}" --show-only templates/analytics-reports-deployment.yaml)"
+grep -q 'app.kubernetes.io/component: analytics-projector' <<<"$projector_dep" || fail "the projector Deployment was not rendered with analytics.enabled=true"
+grep -q 'command: \["/app/co-projector"\]' <<<"$projector_dep" || fail "the projector Deployment must run /app/co-projector"
+grep -q 'app.kubernetes.io/component: analytics-reports' <<<"$reports_dep" || fail "the reports Deployment was not rendered with analytics.enabled=true"
+grep -q 'command: \["/app/co-reports"\]' <<<"$reports_dep" || fail "the reports Deployment must run /app/co-reports"
+for dep in "$projector_dep" "$reports_dep"; do
+  if grep -q 'configMapRef:' <<<"$dep"; then fail "the analytics Deployments must not mount the api ConfigMap"; fi
+  if grep -Eq 'name: (DATABASE_URL|MIGRATIONS_DATABASE_URL|CONSOLIDATION_KEY_SECRET|DELIVERY_PROMISE_[A-Z_]+|OUTBOX_[A-Z_]+|(DELIVERY_PROMISE|ORDER_SOURCING|SHIPPING)_CONSUMER_GROUP)$' <<<"$dep"; then
+    fail "the analytics Deployments must never get the OLTP DSN, the consolidation secret, delivery-promise, relay or OLTP consumer env"
+  fi
+done
+# Every env literal cmd/co-projector reads is rendered, and every variable it requires.
+# shellcheck disable=SC2207
+projector_vars=($(binary_env_of "$repo_dir/cmd/co-projector/main.go" "$repo_dir/cmd/co-projector/telemetry.go"))
+(( ${#projector_vars[@]} >= 8 )) || fail "found only ${#projector_vars[@]} env literals in cmd/co-projector; the scan is looking in the wrong place"
+assert_env_rendered "$projector_dep" "the projector Deployment" "${projector_vars[@]}" OTEL_SERVICE_NAME OTEL_EXPORTER_OTLP_ENDPOINT SERVICE_VERSION ENVIRONMENT
+# shellcheck disable=SC2207
+projector_required=($(grep -ohE '"[A-Z][A-Z0-9_]+ is required' "$repo_dir"/cmd/co-projector/main.go | sed -E 's/^"//; s/ is required//' | sort -u || true))
+(( ${#projector_required[@]} >= 2 )) || fail "found only ${#projector_required[@]} required variables in cmd/co-projector/main.go"
+assert_env_rendered "$projector_dep" "the projector Deployment (required)" "${projector_required[@]}"
+# cmd/co-reports: every literal but ANALYTICS_DATABASE_URL, its single-role local
+# fallback, which the chart deliberately does NOT render (the reports pod gets the
+# reader DSN only).
+# shellcheck disable=SC2207
+reports_vars=($(binary_env_of "$repo_dir/cmd/co-reports/main.go" "$repo_dir/cmd/co-reports/telemetry.go" | grep -vx 'ANALYTICS_DATABASE_URL'))
+(( ${#reports_vars[@]} >= 6 )) || fail "found only ${#reports_vars[@]} env literals in cmd/co-reports; the scan is looking in the wrong place"
+binary_env_of "$repo_dir/cmd/co-reports/main.go" | grep -qx 'ANALYTICS_DATABASE_URL' || fail "cmd/co-reports no longer reads the ANALYTICS_DATABASE_URL fallback; drop this exception"
+assert_env_rendered "$reports_dep" "the reports Deployment" "${reports_vars[@]}" OTEL_SERVICE_NAME OTEL_EXPORTER_OTLP_ENDPOINT SERVICE_VERSION ENVIRONMENT
+if grep -Eq 'name: (KAFKA_BROKERS|ANALYTICS_DATABASE_URL|ANALYTICS_CONSUMER_GROUP)$' <<<"$reports_dep"; then
+  fail "the reports Deployment gets neither Kafka nor any DSN but the reader's"
+fi
+[[ "$(env_value "$projector_dep" ADMIN_ADDR)" == ":8091" ]] || fail "ADMIN_ADDR must default to :8091"
+[[ "$(env_value "$projector_dep" ANALYTICS_CONSUMER_GROUP)" == "customer-ordering-analytics" ]] || fail "the projector group must default to customer-ordering-analytics"
+[[ "$(env_value "$projector_dep" KAFKA_BROKERS)" == "kafka.example.invalid:9092" ]] || fail "the projector KAFKA_BROKERS must come from kafka.brokers"
+[[ "$(env_value "$reports_dep" HTTP_ADDR)" == ":8092" ]] || fail "the reports HTTP_ADDR must default to :8092"
+[[ "$(env_value "$projector_dep" OTEL_SERVICE_NAME)" == "customer-ordering-projector" ]] || fail "the projector must export as <otel.serviceName>-projector"
+[[ "$(env_value "$reports_dep" OTEL_SERVICE_NAME)" == "customer-ordering-reports" ]] || fail "the reports must export as <otel.serviceName>-reports"
+[[ "$(env_value "$reports_dep" SERVICE_VERSION)" == "0.1.0" ]] || fail "the analytics SERVICE_VERSION must default to the image tag / appVersion"
+grep -A4 'name: ANALYTICS_DATABASE_URL$' <<<"$projector_dep" | grep -q 'secretKeyRef:' || fail "ANALYTICS_DATABASE_URL must come from a Secret"
+grep -A4 'name: ANALYTICS_READER_DATABASE_URL$' <<<"$reports_dep" | grep -q 'secretKeyRef:' || fail "ANALYTICS_READER_DATABASE_URL must come from a Secret"
+# The reports Service (component analytics-reports, :80 -> http); the projector has none.
+[[ "$(grep -c '^kind: Service' <<<"$reports_dep")" == 1 ]] || fail "the reports Service was not rendered"
+grep -q 'port: 80$' <<<"$reports_dep" || fail "the reports Service must listen on :80"
+analytics_all="$(helm template "$release" "$chart_dir" "${base[@]}" "${an[@]}")"
+if grep -B2 -A8 '^kind: Service' <<<"$analytics_all" | grep -q 'component: analytics-projector'; then fail "the projector must have no Service"; fi
+# The analytics Secret: both keys, the reader falling back to the projector DSN; an
+# existing Secret replaces it.
+analytics_secret="$(helm template "$release" "$chart_dir" "${base[@]}" "${an[@]}" --show-only templates/analytics-secret.yaml)"
+[[ "$(grep -c 'postgres://projector@example.invalid:5432/analytics' <<<"$analytics_secret")" == 2 ]] \
+  || fail "the analytics Secret must carry ANALYTICS_DATABASE_URL and the ANALYTICS_READER_DATABASE_URL fallback"
+reader_secret="$(helm template "$release" "$chart_dir" "${base[@]}" "${an[@]}" --set analytics.database.reportsUrl=postgres://reports@example.invalid/a --show-only templates/analytics-secret.yaml)"
+grep -q 'ANALYTICS_READER_DATABASE_URL: "postgres://reports@example.invalid/a"' <<<"$reader_secret" || fail "analytics.database.reportsUrl must be the reader DSN"
+existing_an="$(helm template "$release" "$chart_dir" "${base[@]}" --set analytics.enabled=true --set analytics.database.existingSecret=an-sec)"
+grep -q 'name: an-sec' <<<"$existing_an" || fail "analytics.database.existingSecret is not referenced"
+if grep -q "name: $release-analytics\$" <<<"$existing_an"; then fail "no analytics Secret may be created with analytics.database.existingSecret"; fi
+# The Kong route is opt-in, rewrites to /reports and outranks the API route's
+# prefix (it sits inside /api/customer-ordering: without regex-priority Kong
+# answers /reports/* from the API Service with 404).
+if grep -q 'kind: HTTPRoute' <<<"$analytics_all"; then fail "the reports HTTPRoute must not render while analytics.reports.route.enabled is false"; fi
+reports_route="$(helm template "$release" "$chart_dir" "${base[@]}" "${an[@]}" --set analytics.reports.route.enabled=true --show-only templates/analytics-reports-route.yaml)"
+grep -q 'replacePrefixMatch: /reports' <<<"$reports_route" || fail "the reports HTTPRoute must rewrite its prefix to /reports"
+grep -q 'value: /api/customer-ordering/reports' <<<"$reports_route" || fail "the reports HTTPRoute must listen on /api/customer-ordering/reports"
+grep -q 'konghq.com/regex-priority: "10"' <<<"$reports_route" || fail "the reports HTTPRoute must carry konghq.com/regex-priority: \"10\" (it sits inside the API route's prefix)"
+grep -q "name: $release-reports\$" <<<"$reports_route" || fail "the reports HTTPRoute must target the reports Service"
+if grep -qiE 'plugin|auth' <<<"$(grep -v '^\s*#' <<<"$reports_route" | sed -e '/{{-/,/-}}/d')"; then fail "the reports route must carry no auth plugin"; fi
+an_off="$(helm template "$release" "$chart_dir" "${base[@]}" --set analytics.reports.route.enabled=true --set analytics.database.projectorUrl=postgres://p@h/a)"
+if grep -q 'component: analytics' <<<"$an_off"; then fail "nothing of analytics may render while analytics.enabled is false"; fi
+# Refusals: a DSN source, the brokers and a consumer group.
+expect_refusal "analytics without a DSN" "analytics.database.projectorUrl" "${base[@]}" --set analytics.enabled=true
+expect_refusal "analytics without a consumer group" "analytics.projector.consumerGroup" "${base[@]}" "${an[@]}" --set analytics.projector.consumerGroup=
+expect_refusal "analytics without brokers" "kafka.brokers" "${base[@]}" "${an[@]}" --set kafka.brokers=
+
 # ALL optional components render TOGETHER (ct lint's values file).
 together="$(helm template "$release" "$chart_dir" -f "$chart_dir/ci/all-components-values.yaml")"
-for component in api mcp a2a frontend; do
+for component in api mcp a2a frontend analytics-projector analytics-reports; do
   grep -q "app.kubernetes.io/component: $component\$" <<<"$together" || fail "the full render lacks the $component component"
 done
-[[ "$(grep -c '^kind: Deployment' <<<"$together")" == 4 ]] || fail "the full render must carry the api, mcp, a2a and frontend Deployments"
-[[ "$(grep -c '^kind: Service$' <<<"$together")" == 4 ]] || fail "the full render must carry the api, mcp, a2a and frontend Services"
+[[ "$(grep -c '^kind: Deployment' <<<"$together")" == 6 ]] || fail "the full render must carry the api, mcp, a2a, frontend, projector and reports Deployments"
+[[ "$(grep -c '^kind: Service$' <<<"$together")" == 5 ]] || fail "the full render must carry the api, mcp, a2a, frontend and reports Services (the projector has none)"
 
 echo "PASS: customer-ordering chart render assertions"
