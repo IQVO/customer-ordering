@@ -43,6 +43,8 @@ have no `/readyz`.
 | Shoppers | `GET /shoppers?email=` | `findShopperByEmail` | `200`, the profile; `404 not-found` when no e-mail matches |
 | Shoppers | `GET /shoppers/{shopperId}` | `getShopper` | `200`, the profile with `savedAddresses[]` |
 | Shoppers | `POST /shoppers/{shopperId}/addresses` | `addSavedAddress` | `201`, the saved address; `422 too-many-addresses` past 20 |
+| reports | `GET /reports/ordering-performance?from=&to=` | `getOrderingPerformanceReport` | `200`, per UTC day (snake_case): orders placed and cancelled, consolidated-tier, pickup-point and split-shipment orders, the split share, shopper notices decided by kind (at most 5, the rest in `shopper_notices_other`), plus `freshness`; `400 invalid-report-range`. Served by `cmd/co-reports` on `:8092` from the analytical database ([ADR 0018](/docs/adr/0018-analytics-read-side)); not on `cmd/api` |
+| reports | `GET /reports/freshness` | `getReportFreshness` | `200`, `as_of` and `lag_seconds` of the analytics projection (both `null` before the first event) |
 | Operations | `GET /healthz`, `GET /readyz` | `getHealth`, `getReadiness` | `200` / `200`, or `503` while shutting down or when Postgres or Kafka does not answer ([Runbook](/docs/operations/runbook#health-and-readiness)) |
 
 Exact status codes, bodies and schemas of every route are in the generated REST
