@@ -22,6 +22,7 @@ wired in `cmd/api/main.go` `buildServer`):
 - `GET /shoppers?email=` -> `FindShopperByEmail` (trimmed, lower-cased match, A16/A27)
 - `POST /shoppers/{shopperId}/addresses` -> `AddSavedAddress` (201; the `addressId` derives from the Idempotency-Key, A24)
 - `GET /healthz` (liveness), `GET /readyz` (readiness): not business operations.
+- Not served by `cmd/api`: the read-only `GET /reports/...` routes (tag `reports`, `cmd/co-reports`, `internal/adapters/inbound/reportshttp`, ADR 0018; rules in `.claude/rules/analytics.md`).
 
 ## Conventions
 
