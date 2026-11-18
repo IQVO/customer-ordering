@@ -55,6 +55,8 @@ type world struct {
 	addressIDs     map[string]string
 	historyShopper string
 
+	analytics *analyticsWorld
+
 	apiSrv    *httptest.Server
 	apiStatus int
 	apiBody   string
@@ -62,7 +64,7 @@ type world struct {
 }
 
 func newWorld() *world {
-	w := &world{store: memory.NewStore(memory.NewClock(t0)), gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0), promiseOf: map[int]string{}, addressIDs: map[string]string{}}
+	w := &world{store: memory.NewStore(memory.NewClock(t0)), gw: memory.NewPromiseGateway(), clock: memory.NewClock(t0), promiseOf: map[int]string{}, addressIDs: map[string]string{}, analytics: newAnalyticsWorld()}
 	s := w.store
 	w.deps = usecases.Deps{
 		Orders: s.Orders(), Shoppers: s.Shoppers(), Tracking: s.Tracking(), Inbox: s.Inbox(), Outbox: s.Outbox(), UoW: s.UnitOfWork(),
@@ -96,6 +98,7 @@ func initializeScenario(sc *godog.ScenarioContext) {
 	registerAssertions(sc, w)
 	registerHTTP(sc, w)
 	registerRules(sc, w)
+	registerAnalytics(sc, w)
 }
 
 func registerSetup(sc *godog.ScenarioContext, w *world) {

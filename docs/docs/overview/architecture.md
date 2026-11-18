@@ -61,6 +61,8 @@ web/                           customer_ordering_mfe console remote (Module Fede
 | --- | --- | --- | --- |
 | `cmd/api` | REST API, three Kafka consumers, the outbox relay, probes | `HTTP_ADDR`, `:8080` | Postgres, Kafka, delivery-promise (REST) |
 | `cmd/mcp` | read-only MCP server: `get_order`, `get_order_tracking`, `get_ship_to` over Streamable HTTP at `/mcp` and `/` | `MCP_ADDR`, `:8090` | Postgres only |
+| `cmd/co-projector` | analytics projector: reads this context's own `retailnetwork.customer-ordering.events` and writes the separate analytical database ([ADR 0018](/docs/adr/0018-analytics-read-side)); admin probes only; off by default in the chart | `ADMIN_ADDR`, `:8091` | analytical Postgres, Kafka |
+| `cmd/co-reports` | read-only `GET /reports/ordering-performance` and `/reports/freshness` over the analytical database; off by default in the chart | `HTTP_ADDR`, `:8092` | analytical Postgres only |
 | `cmd/a2a` | read-only A2A agent: skills `get_order`, `get_order_tracking`, JSON-RPC at `/` and `/a2a`, Agent Card at `/.well-known/agent-card.json` | `A2A_ADDR`, `:8093` | Postgres only |
 
 `cmd/mcp` and `cmd/a2a` wire read use cases only; fitness tests
@@ -119,7 +121,7 @@ Source: `cmd/api/main.go`, `cmd/mcp/main.go`, `cmd/a2a/main.go`,
 | PostgreSQL (one database, accessed through PgBouncer in the cluster) | `customer_orders`, `order_lines`, `order_groups` (the CustomerOrder aggregate), `shoppers`, `shopper_addresses`, `group_signals`, `tracking_packages`, `tracking_package_groups`, `assignment_links` (tracking read model), `processed_events` (inbox), `idempotency_keys`, `outbox_events`, `compensation_cancels` (durable queue of promise cancels), plus golang-migrate's `schema_migrations` | `cmd/api` writes; `cmd/mcp` and `cmd/a2a` read |
 | Kafka | produces `retailnetwork.customer-ordering.events`; consumes `retailnetwork.delivery-promise.events`, `retailnetwork.order-sourcing.events`, `retailnetwork.shipping-and-tracking.events`; dead letters `<topic>.dlq` | `cmd/api` only |
 
-No cache, no object store, no second database. The schema is described in
+No cache and no object store. The optional analytics read side ([ADR 0018](/docs/adr/0018-analytics-read-side)) adds a second, separate analytical Postgres (`placed_orders`, `order_cancellations`, `shopper_notices`, `analytics_processed_events`; ids, codes, counts and instants only), written by `cmd/co-projector` and read by `cmd/co-reports`; the OLTP database is untouched. The schema is described in
 [Entity relationship](/docs/ddd/entity-relationship).
 
 ## How the pieces cooperate
