@@ -16,7 +16,12 @@ info:
     promise-closed, revision-moves-earlier (409); group-spans-nodes, invalid-promise-terms, nominal-basis-not-allowed-for-tier
     (422). Infrastructure slugs: malformed-request, idempotency-key-required, idempotency-key-invalid (400), idempotency-key-reused (409), resource-not-found (404), internal-error (500). Every
     POST requires Idempotency-Key (fleet REST API guideline); a repeat with the same key, method, path and body
-    replays the first response for 24 hours with the Idempotency-Replayed header. The one exception is the safe
+    replays the first response for 24 hours with the Idempotency-Replayed header when that response is final: a 2xx, or
+    a refusal the same request cannot pass later. A refusal that depends on state that can change is not stored: the key
+    is released and the same request retried under the same key runs again (a different body under a released key is a
+    new request, not idempotency-key-reused). The problem types that release the key (RETRYABLE): not-found,
+    promise-capacity-exhausted, book-closed, offer-not-quotable, illegal-transition, concurrent-update,
+    group-spans-nodes, revision-moves-earlier. A 5xx is never stored. The one exception is the safe
     POST /delivery-estimates, which stores nothing: it needs no key and ignores one that is sent (ADR 0019). The
     read-only analytics reports (tag reports, ADR 0018) are served by cmd/dp-reports on its own port (per-path server)
     from the separate analytical database; their range errors are invalid-report-range (400).'
@@ -182,7 +187,9 @@ paths:
       description: 'MakePromise. Consumes the offer (CONSUMED), creates the promise in PROVISIONAL with holdExpiresAt,
         and holds capacity on the witness PromiseBook (nodeId:pickupDepartureId), opening the book lazily on the
         first hold, in ONE transaction (documented exception to one aggregate per transaction, G22). A retry with
-        the same Idempotency-Key and body replays the first response (200). Errors: not-found (404); offer-not-quotable,
+        the same Idempotency-Key and body replays the stored answer when it is final (a promise made, or a refusal the
+        request cannot pass later); a refusal that capacity, a concurrent request or a fact not known yet can still
+        change releases the key, so the retry under the same key runs again. Errors: not-found (404); offer-not-quotable,
         promise-capacity-exhausted, book-closed, concurrent-update (409); group-spans-nodes, invalid-promise-terms,
         nominal-basis-not-allowed-for-tier, validation-failed (422); idempotency-key-required (400); idempotency-key-reused
         (409).'
@@ -548,8 +555,11 @@ components:
       required: true
       description: Client-generated key (a UUID per logical submit; a retry reuses it), 1-128 printable ASCII
         characters. The key is global, not per route. A repeat with the same key, method, path and body replays
-        the first answer with the Idempotency-Replayed header set to "true"; a different request under the same key is a 409
-        idempotency-key-reused.
+        the first answer with the Idempotency-Replayed header set to "true" when that answer is final (a 2xx, or a refusal
+        the same request cannot pass later); a different request under the same key is a 409 idempotency-key-reused.
+        A refusal that a retry could pass (the RETRYABLE problem types of the API description) and a 5xx are not stored;
+        the key is released, the retry under the same key executes again, and a different body under a released key is a
+        new request.
       schema:
         type: string
         minLength: 1
