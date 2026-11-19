@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -25,6 +26,27 @@ import (
 // RETRYABLE refusal rolls the request back, key row included, so the same key
 // retries the work; an OUTCOME refusal commits what the command did together
 // with its stored answer.
+
+// newClassAPI is the real router over a real Postgres pool with every dependency a keyed
+// route needs wired: the notification policies and the compensation queue included
+// (newIdemAPI wires neither). promiseURL is the delivery-promise fake.
+func newClassAPI(t *testing.T, promiseURL string) *idemAPI {
+	t.Helper()
+	pool := pgtest.NewPool(t)
+	logger := slog.New(slog.DiscardHandler)
+	ad := adapters{pool: pool, idempotency: postgres.NewIdempotencyStore(pool), clock: clock.System{}, ids: ids.Generator{}}
+	ad.outbox = postgres.NewOutboxRepo(pool, outboundkafka.NewEncoder())
+	ad.compensations = postgres.NewCompensationRepo(pool)
+	ad.deps = usecases.Deps{
+		Orders: postgres.NewOrderRepository(pool), Shoppers: postgres.NewShopperRepository(pool), Tracking: postgres.NewTrackingRepository(pool),
+		Policies: postgres.NewPolicyRepository(pool), Inbox: postgres.NewInbox(pool), Outbox: ad.outbox, UoW: postgres.NewUnitOfWork(pool),
+		Compensations: ad.compensations, Promises: deliverypromise.New(promiseURL, &http.Client{}), Clock: ad.clock, IDs: ad.ids, Log: logger,
+	}
+	srv := httptest.NewServer(inboundhttp.NewRouter(buildServer(ad, nil), logger, ""))
+	t.Cleanup(srv.Close)
+	query := func(sql string, dest ...any) error { return pool.QueryRow(context.Background(), sql).Scan(dest...) }
+	return &idemAPI{svc: &service{base: srv.URL}, query: query}
+}
 
 // keyRows counts the rows the store holds for key.
 func (a *idemAPI) keyRows(t *testing.T, key string) int {
@@ -49,7 +71,7 @@ func policyBody(notifier string) string {
 // concurrent-update is RETRYABLE: the loser of an optimistic-lock race leaves
 // no key row, and its retry under the same key executes, is stored, then replayed.
 func TestAConcurrentUpdateRefusalIsNotStoredSoItsKeyRetries(t *testing.T) {
-	a := newIdemAPI(t)
+	a := newClassAPI(t, newFlakyPromise(t).srv.URL)
 	const callers = 16
 	notifiers := []string{"MARKETPLACE", "SELLER", "NOBODY"}
 	var loserKey, loserBody string
@@ -99,7 +121,7 @@ func TestAConcurrentUpdateRefusalIsNotStoredSoItsKeyRetries(t *testing.T) {
 // not-found is RETRYABLE: the order a cancellation names may be created by
 // another request (its id derives from a checkout's Idempotency-Key).
 func TestANotFoundRefusalIsNotStoredSoTheCancelRetriesOnceTheOrderExists(t *testing.T) {
-	a := newIdemAPI(t)
+	a := newClassAPI(t, newFlakyPromise(t).srv.URL)
 	const cancelKey, checkoutKey, reason = "cancel-late", "co-late", `{"reason":"changed my mind"}`
 	orderID := string(ids.Generator{}.OrderIDFor(checkoutKey))
 	path := "/orders/" + orderID + "/cancellations"
@@ -133,23 +155,12 @@ func TestANotFoundRefusalIsNotStoredSoTheCancelRetriesOnceTheOrderExists(t *test
 // request's transaction (usecases/checkout.go compensate) and then refuses;
 // the row must commit with the stored answer, and a replay must not run again.
 func TestAnOutcomeRefusalCommitsItsCompensationRowWithTheStoredAnswer(t *testing.T) {
-	pool := pgtest.NewPool(t)
 	dp := &recordingDP{cancelsFail: true}
-	logger := slog.New(slog.DiscardHandler)
-	ad := adapters{pool: pool, idempotency: postgres.NewIdempotencyStore(pool), clock: clock.System{}, ids: ids.Generator{}}
-	ad.outbox = postgres.NewOutboxRepo(pool, outboundkafka.NewEncoder())
-	ad.compensations = postgres.NewCompensationRepo(pool)
-	ad.deps = usecases.Deps{
-		Orders: postgres.NewOrderRepository(pool), Shoppers: postgres.NewShopperRepository(pool), Tracking: postgres.NewTrackingRepository(pool),
-		Inbox: postgres.NewInbox(pool), Outbox: ad.outbox, UoW: postgres.NewUnitOfWork(pool), Compensations: ad.compensations,
-		Promises: deliverypromise.New(dp.serve(t).URL, &http.Client{}), Clock: ad.clock, IDs: ad.ids, Log: logger,
-	}
-	srv := httptest.NewServer(inboundhttp.NewRouter(buildServer(ad, nil), logger, ""))
-	t.Cleanup(srv.Close)
-	svc := &service{base: srv.URL}
+	a := newClassAPI(t, dp.serve(t).URL)
+	svc := a.svc
 	count := func(sql string) int {
 		var n int
-		if err := pool.QueryRow(t.Context(), sql).Scan(&n); err != nil {
+		if err := a.query(sql, &n); err != nil {
 			t.Fatal(err)
 		}
 		return n
