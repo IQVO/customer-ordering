@@ -247,14 +247,19 @@ Every POST route (`/checkout`, `/orders/{orderId}/cancellations`, `/shoppers`,
 `/shoppers/{shopperId}/addresses`) requires an `Idempotency-Key` header of
 1 to 128 printable ASCII characters (`internal/adapters/inbound/http/idempotency.go`);
 absent is 400 `idempotency-key-required`, malformed 400 `idempotency-key-invalid`.
-The key is global, not per route. The first response below 500 (a 4xx too) is
-stored for 24 h in table `idempotency_keys` (`route` is always the empty string;
+The key is global, not per route. The first answer is stored when it is final for the
+request (a 2xx, or a refusal whose problem type is `FINAL` or `OUTCOME`, ADR 0019) for 24 h in table `idempotency_keys` (`route` is always the empty string;
 `internal/application/idempotency/idempotency.go`), in the SAME transaction as
 the order change and its outbox rows. A repeat with the same method, path and body
 replays it with header `Idempotency-Replayed: true`; the same key with anything
-else is 409 `idempotency-key-reused`. 5xx responses and panics roll back and are
-never stored. Concurrent requests with one key are serialised by the unique
-index: the loser replays the winner's answer.
+else is 409 `idempotency-key-reused`. 5xx responses, panics and `RETRYABLE`
+refusals roll back, key row included, and are never stored: the key is free and the
+same request runs again (a different body under it is a new request). Concurrent
+requests with one key are serialised by the unique index: the loser replays the
+winner's answer, or runs the request itself when the winner's answer was released.
+The class of every problem type is in ADR 0019; to see what a key holds,
+`SELECT status FROM idempotency_keys WHERE key = '...'` (no row: nothing is stored
+for it, the key is free).
 
 ## Alerts and dashboards
 
