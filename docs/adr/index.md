@@ -32,3 +32,4 @@ The *Status* column is copied from each ADR's own `## Status` section.
 | [0016](./0016-checkout-to-a-pickup-point.md) | checkout to a pickup point | Accepted (2026-11-13) |
 | [0017](./0017-notification-policy-and-shopper-notice-decided.md) | the notification policy and `ShopperNoticeDecided` | Accepted (2026-11-14) |
 | [0018](./0018-analytics-read-side.md) | analytics read side | Accepted (2026-11-17) |
+| [0019](./0019-every-problem-type-has-a-replay-class.md) | every problem type has a replay class; a retryable refusal is not stored | Accepted (2026-11-18) |

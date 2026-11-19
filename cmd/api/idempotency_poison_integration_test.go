@@ -12,6 +12,7 @@ import (
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/clock"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/postgres"
 	"github.com/claudioed/customer-ordering/internal/adapters/outbound/postgres/pgtx"
+	"github.com/claudioed/customer-ordering/internal/domain/shopper"
 	"github.com/claudioed/customer-ordering/internal/testing/pgtest"
 )
 
@@ -41,7 +42,7 @@ func poisonKeyed(key string) *http.Request {
 	return req
 }
 
-// A 409 from an aborted transaction is committed and replayed; the handler
+// A FINAL 409 from an aborted transaction is committed and replayed; the handler
 // never re-runs for that key.
 func TestIdempotencyA409FromAnAbortedTransactionCommitsTheOutcome(t *testing.T) {
 	pool := pgtest.NewPool(t)
@@ -49,9 +50,7 @@ func TestIdempotencyA409FromAnAbortedTransactionCommitsTheOutcome(t *testing.T) 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		poisonTx(t, r)
-		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(http.StatusConflict)
-		_, _ = w.Write([]byte(`{"type":"/problems/some-conflict","title":"Conflict","status":409}`))
+		inboundhttp.WriteError(w, r, shopper.ErrShopperExists) // 409, FINAL: stored and replayed
 	})
 	mw := inboundhttp.RequireIdempotencyKey(postgres.NewIdempotencyStore(pool), clock.System{})(handler)
 

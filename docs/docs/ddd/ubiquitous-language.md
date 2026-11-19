@@ -34,7 +34,7 @@ right. Source: `internal/domain/*`, `internal/application/*`, `apis/openapi.yaml
 | **Policy `CheckoutPromising`** | For each group make the promise with the offer the shopper saw; if an offer is unusable re-quote every group and place nothing. | `usecases.PlaceOrder` | Re-promise (delivery-promise revising a confirmed promise): checkout never revises. |
 | **Policy `CancelOnUnfulfillable`** | When delivery-promise reports `PromiseUnkeepable` the `PROMISED` group is cancelled and `CustomerOrderCancelled` raised. | `CustomerOrder.CancelUnkeepableGroup`, `Consumer.ApplyPromiseUnkeepable` | A shopper's cancellation. |
 | **Inbox** | The claim of a CloudEvents id so an event is applied at most once. | table `processed_events`, port `ports.Inbox` | The idempotency key of a REST POST. |
-| **Idempotency record** | The stored answer of a POST, replayed for 24 h. | table `idempotency_keys`, `idempotency.Record` | The inbox. |
+| **Idempotency record** | The stored answer of a POST, replayed for 24 h; only an answer that is final for the request is stored (a success, a `FINAL` or `OUTCOME` refusal, ADR 0019). | table `idempotency_keys`, `idempotency.Record` | The inbox. |
 | **Outbox** | Events written in the order's transaction and published by the relay. | table `outbox_events`, port `ports.EventOutbox` | The topic itself. |
 
 ## Neighbour terms this context uses
