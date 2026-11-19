@@ -176,7 +176,9 @@ Contract: [`apis/openapi.yaml`](apis/openapi.yaml). No authentication. Errors ar
 example `not-found`, `illegal-transition`, `concurrent-update`, `validation-failed`, `cancel-after-lock`, `offer-not-quotable`).
 Every POST needs an `Idempotency-Key` header (1 to 128 printable ASCII characters, a client UUID per logical submit; missing is 400 `idempotency-key-required`,
 malformed 400 `idempotency-key-invalid`). The key is global: a repeat with the same method, path and body replays the first answer for 24 hours with
-`Idempotency-Replayed: true`; the same key with anything else is 409 `idempotency-key-reused`. The key row commits in the same transaction as the order and its
+`Idempotency-Replayed: true` when that answer is final for the request (a success, or a refusal whose problem type is `FINAL` or `OUTCOME`, ADR 0019); a refusal a retry could pass
+(`RETRYABLE`: `concurrent-update`, `not-found`, `validation-failed`, `cancel-after-lock`, the capacity and book refusals of delivery-promise) and a 5xx are not stored, the key is released
+and the same key runs the request again; the same key with another request after a stored answer is 409 `idempotency-key-reused`. The key row commits in the same transaction as the order and its
 outbox rows. Lists answer `{items, nextCursor}` (REST guideline: `docs/adr/0010`).
 
 | Method and path | Operation |

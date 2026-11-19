@@ -57,7 +57,7 @@ with `git grep -c -E "^[[:space:]]*Scenario" -- features` and the
 | `cancellation.feature` | 7 | 7 |
 | `tracking_rules.feature` | 7 | 7 |
 | `api_orders.feature` | 5 | 5 |
-| `api_idempotency.feature` | 5 | 5 |
+| `api_idempotency.feature` | 7 | 7 |
 
 The four `*_rules.feature` files pin the rules the context's documentation
 states (ADR 0002, 0003, 0009 and 0012 to 0016): the `PlaceOrder` checks and

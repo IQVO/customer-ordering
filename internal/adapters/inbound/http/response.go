@@ -53,7 +53,9 @@ func decodeJSON(r *http.Request, dest any) error {
 // writeError writes err as its RFC 9457 problem. An unmapped error is a 500
 // whose detail never leaks the internal message (it is logged instead).
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
-	p := problemFor(err)
+	e := entryFor(err)
+	p := e.p
+	markReplay(w, e.replay)
 	detail := err.Error()
 	if p == internalProblem {
 		slog.ErrorContext(r.Context(), "request failed", "error", sanitizeLog(err.Error()), "method", r.Method, "path", sanitizeLog(r.URL.Path))
@@ -66,6 +68,11 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	writeBody(w, p.status, body)
 }
+
+// WriteError is writeError for the tests of the Idempotency-Key middleware over a
+// real store: it answers err as its problem, so the replay class of the problem
+// marks the capturing writer the way a handler's answer does.
+func WriteError(w http.ResponseWriter, r *http.Request, err error) { writeError(w, r, err) }
 
 // writeProblem writes p with an explicit detail.
 func writeProblem(w http.ResponseWriter, r *http.Request, p problem, detail string) {

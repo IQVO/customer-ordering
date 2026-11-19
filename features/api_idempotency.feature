@@ -1,8 +1,12 @@
 Feature: A replayed request with the same Idempotency-Key is answered from the record
-  The first response below 500 of a key (the key is global) is stored; the same
-  key with the same method, path and body replays it byte for byte (marked
-  Idempotency-Replayed) and nothing runs again — no second promise, no second
-  event. The same key with another request is refused as a reuse (409).
+  The first answer of a key (the key is global) is stored when it is final for
+  the request: a success, or a refusal whose problem type is FINAL or OUTCOME
+  (ADR 0019). The same key with the same method, path and body then replays it
+  byte for byte (marked Idempotency-Replayed) and nothing runs again — no second
+  promise, no second event. The same key with another request is refused as a
+  reuse (409). A refusal that depends on state that can change (RETRYABLE: a
+  concurrent update, an order not known yet) and a 5xx are not stored: the key is
+  released and a retry runs the work again.
 
   Background:
     Given a registered shopper
@@ -57,3 +61,38 @@ Feature: A replayed request with the same Idempotency-Key is answered from the r
     Then the API answers 200
     And the response is marked replayed
     And 1 "CustomerOrderCancelled" events were published
+
+  Scenario: A refusal that depends on state that can change is not stored, so the key retries
+    When the API posts to "/orders/order-key-4/cancellations" with Idempotency-Key "cancel-4" the body:
+      """
+      {"reason": "changed my mind"}
+      """
+    Then the API answers 404 with problem "not-found"
+    When the API checks out the cart of 3 lines in 2 groups with Idempotency-Key "key-4"
+    Then the API answers 201
+    When the API posts to "/orders/order-key-4/cancellations" with Idempotency-Key "cancel-4" the body:
+      """
+      {"reason": "changed my mind"}
+      """
+    Then the API answers 200
+    And the response is not marked replayed
+    And 1 "CustomerOrderCancelled" events were published
+
+  Scenario: A final refusal is stored and replayed
+    When the API posts to "/shoppers" with Idempotency-Key "reg-1" the body:
+      """
+      {"email": "twice@example.com"}
+      """
+    Then the API answers 201
+    When the API posts to "/shoppers" with Idempotency-Key "reg-2" the body:
+      """
+      {"email": "twice@example.com"}
+      """
+    Then the API answers 409 with problem "shopper-exists"
+    And the response is not marked replayed
+    When the API posts to "/shoppers" with Idempotency-Key "reg-2" the body:
+      """
+      {"email": "twice@example.com"}
+      """
+    Then the API answers 409 with problem "shopper-exists"
+    And the response is marked replayed

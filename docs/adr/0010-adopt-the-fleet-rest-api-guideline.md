@@ -92,3 +92,10 @@ The fleet guideline applies unchanged; nothing in it is a toggle.
 - `.spectral.yaml` enforces R1-R8 in the `api-lint` job; the fleet integration tests
   (real router, real Postgres) pin fresh key, byte-identical replay, `409` reuse, `400`,
   N concurrent same-key requests with one order, cached `4xx` and uncached `5xx`.
+
+## Update (2026-11-18)
+
+[ADR 0019](./0019-every-problem-type-has-a-replay-class.md) narrows the sentence "a 4xx is stored
+and replayed" above (and the "cached `4xx`" of the Consequences): a 4xx is stored only when its
+problem type is FINAL or OUTCOME; a RETRYABLE refusal rolls back, key row included, and is not
+stored. The text above is the decision as it was taken.

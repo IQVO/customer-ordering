@@ -216,7 +216,7 @@ func (i *IdempotencyStore) Do(ctx context.Context, key, requestHash string, at t
 	if err != nil {
 		return idempotency.Record{}, false, err
 	}
-	if rec.Status >= http.StatusInternalServerError {
+	if rec.Release || rec.Status >= http.StatusInternalServerError {
 		return rec, false, nil
 	}
 	rec.RequestHash, rec.CreatedAt = requestHash, at

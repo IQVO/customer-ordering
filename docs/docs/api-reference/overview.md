@@ -55,10 +55,16 @@ pages of this section.
 - **`Idempotency-Key`.** Required on the four POST routes (`/checkout`,
   `/orders/{orderId}/cancellations`, `/shoppers`, `/shoppers/{shopperId}/addresses`),
   1 to 128 printable ASCII characters; absent is `400 idempotency-key-required`,
-  malformed is `400 idempotency-key-invalid`. The key is global. The first
-  answer below 500 (a 4xx too) is stored for 24 hours, committed with the order
-  and its outbox rows, and replayed with `Idempotency-Replayed: true`; the same
-  key with a different method, path or body is `409 idempotency-key-reused`. On
+  malformed is `400 idempotency-key-invalid`. The key is global. A success
+  and a refusal that is final for the request are stored for 24 hours, committed with
+  the order and its outbox rows, and replayed with `Idempotency-Replayed: true`; the
+  same key with a different method, path or body is `409 idempotency-key-reused`.
+  A refusal that a retry could pass (`concurrent-update`, `not-found`,
+  `validation-failed`, `cancel-after-lock`, `promise-capacity-exhausted`,
+  `book-closed`, `group-spans-nodes`, `promise-destination-mismatch`,
+  `illegal-transition`) and a 5xx are not stored: the key is released, so a retry with
+  the same key runs again and another body under it is a new request
+  ([ADR 0019](/docs/adr/0019-every-problem-type-has-a-replay-class)). On
   `/checkout` the order id is derived from the key, so a retry after a timeout
   reuses the same promises
   ([Runbook](/docs/operations/runbook#idempotency-key-behaviour)).
