@@ -498,10 +498,13 @@ paths:
       - reports
       operationId: getQuoteConversionReport
       x-pagination-exempt: report
-      summary: Offers quoted against promises made, per day and tier
+      summary: Offers quoted against promises made, per day and tier, and promise coverage per region
       description: Per UTC day and tier, offersQuoted counts DeliveryOfferQuoted and promisesMade counts PromiseMade of
         that day (each by its own CloudEvents time); conversion = promisesMade / offersQuoted, null when no offer was
-        quoted that day and tier. Same-day counts, not an offer-to-promise cohort. Days with neither are omitted. Served
+        quoted that day and tier. Same-day counts, not an offer-to-promise cohort. Days with neither are omitted. promiseCoverage
+        (ADR 0030) adds, per UTC day, the offers quoted per region (the first two characters of the destination postal
+        prefix; the ten regions with most requests, the rest folded into other) with the cumulative counts and shares
+        of those promised within 1, 2, 3 and 5 days; it is a sibling of days, not a field of each tier row. Served
         by cmd/dp-reports (ADR 0018).
       parameters:
       - $ref: '#/components/parameters/ReportFrom'
@@ -1748,6 +1751,84 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QuoteConversionDay'
+        promiseCoverage:
+          type: array
+          description: Promise coverage per UTC day and region (ADR 0030), ascending by day. Days without a quoted
+            offer that carries a destination are omitted, so an empty range gives an empty array. Optional and
+            additive; consumers decode tolerantly and ignore it.
+          items:
+            $ref: '#/components/schemas/PromiseCoverageDay'
+    PromiseCoverageDay:
+      type: object
+      required:
+      - day
+      - regions
+      properties:
+        day:
+          type: string
+          format: date
+        regions:
+          type: array
+          description: The ten regions with most requests that day (ties by region, byte order), most first, then
+            the region other when any region was folded into it.
+          items:
+            $ref: '#/components/schemas/PromiseCoverageRegion'
+    PromiseCoverageRegion:
+      type: object
+      description: The offers quoted for one region on one day. The unit is the offer quoted (DeliveryOfferQuoted),
+        because it is the only fact that carries both a region and a promised window; a request answered with no
+        offer is not counted (ADR 0030).
+      required:
+      - region
+      - requests
+      - answeredWithPromise
+      - answeredWithinDays
+      properties:
+        region:
+          type: string
+          maxLength: 5
+          description: The first two characters of the destination postal prefix, or other for the regions folded
+            past the tenth. Never more of the destination than that.
+          example: '78'
+        requests:
+          type: integer
+          minimum: 1
+          description: The offers quoted for the region that day.
+        answeredWithPromise:
+          type: integer
+          minimum: 0
+          description: Those that carry a promised window (deliverByLatest).
+        answeredWithinDays:
+          type: array
+          description: Cumulative counts over the documented list of days [1, 2, 3, 5], in that order. A promised
+            day count is the number of local calendar days from the quote day to the day of deliverByLatest in
+            the window's time zone (UTC without one), never below 0.
+          items:
+            $ref: '#/components/schemas/PromiseCoverageWithin'
+    PromiseCoverageWithin:
+      type: object
+      required:
+      - days
+      - count
+      - share
+      properties:
+        days:
+          type: integer
+          enum:
+          - 1
+          - 2
+          - 3
+          - 5
+        count:
+          type: integer
+          minimum: 0
+          description: The offers promised within days days or less (cumulative).
+        share:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: count / requests; null when the region had no request.
     QuoteConversionDay:
       type: object
       required:
