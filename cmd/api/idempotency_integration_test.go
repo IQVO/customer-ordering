@@ -177,28 +177,40 @@ func TestConcurrentRequestsWithOneKeyHaveOneEffect(t *testing.T) {
 	}
 }
 
-func TestA4xxIsCachedAndA5xxIsNotStored(t *testing.T) {
+// A FINAL refusal (shopper-exists) is stored and replayed; a RETRYABLE one (validation-failed,
+// which also covers a fact another request may create) is not; a 5xx never is.
+func TestAFinalRefusalIsCachedAndA5xxIsNotStored(t *testing.T) {
 	a := newIdemAPI(t)
-	bad := a.svc.call(t, "POST", "/shoppers", "bad-1", `{"email":"not-an-email"}`)
-	if bad.status != 422 {
-		t.Fatalf("invalid e-mail = %d %s", bad.status, bad.body)
-	}
-	if again := a.svc.call(t, "POST", "/shoppers", "bad-1", `{"email":"not-an-email"}`); again.status != 422 || again.body != bad.body || again.header.Get("Idempotency-Replayed") != "true" {
-		t.Fatalf("a 4xx must be replayed: %d %s replayed=%q", again.status, again.body, again.header.Get("Idempotency-Replayed"))
-	}
-
 	reg := a.svc.call(t, "POST", "/shoppers", "reg-ok", registerAna)
 	shopperID, _ := reg.field(t, "shopperId").(string)
 	if reg.status != 201 || shopperID == "" {
 		t.Fatalf("register = %d %s", reg.status, reg.body)
 	}
+	dup := a.svc.call(t, "POST", "/shoppers", "dup-1", registerAna)
+	if dup.status != 409 || dup.field(t, "type") != "/problems/shopper-exists" {
+		t.Fatalf("duplicate e-mail = %d %s", dup.status, dup.body)
+	}
+	if again := a.svc.call(t, "POST", "/shoppers", "dup-1", registerAna); again.status != 409 || again.body != dup.body || again.header.Get("Idempotency-Replayed") != "true" {
+		t.Fatalf("a FINAL refusal must be replayed: %d %s replayed=%q", again.status, again.body, again.header.Get("Idempotency-Replayed"))
+	}
+	bad := a.svc.call(t, "POST", "/shoppers", "bad-1", `{"email":"not-an-email"}`)
+	if bad.status != 422 {
+		t.Fatalf("invalid e-mail = %d %s", bad.status, bad.body)
+	}
+	if again := a.svc.call(t, "POST", "/shoppers", "bad-1", `{"email":"not-an-email"}`); again.status != 422 || again.header.Get("Idempotency-Replayed") != "" {
+		t.Fatalf("a RETRYABLE refusal must not be replayed: %d %s replayed=%q", again.status, again.body, again.header.Get("Idempotency-Replayed"))
+	}
+	if n := a.keyRows(t, "bad-1"); n != 0 {
+		t.Fatalf("%d row(s) under the key of a RETRYABLE refusal, want 0", n)
+	}
+
 	a.gw.fail.Store(true)
 	body := fmt.Sprintf(checkout, shopperID)
 	if down := a.svc.call(t, "POST", "/checkout", "co-1", body); down.status < 500 {
 		t.Fatalf("delivery-promise down = %d %s, want a 5xx", down.status, down.body)
 	}
 	if n := a.count(t, "idempotency_keys"); n != 2 {
-		t.Fatalf("%d key rows, want 2 (the cached 4xx and the registration; a 5xx is never stored)", n)
+		t.Fatalf("%d key rows, want 2 (the registration and the FINAL refusal; a RETRYABLE answer and a 5xx are never stored)", n)
 	}
 	if n := a.count(t, "customer_orders") + a.count(t, "outbox_events"); n != 0 {
 		t.Fatalf("a 5xx left %d aggregate/outbox rows behind", n)
