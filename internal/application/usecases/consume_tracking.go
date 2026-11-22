@@ -184,7 +184,7 @@ func (c Consumer) eachGroup(ctx context.Context, targets []groupTarget, apply fu
 			return err
 		}
 		c.logger().InfoContext(ctx, "consumed event skipped for one group of a shared package",
-			"orderId", sanitizeLog(t.orderID), "groupNo", sanitizeLog(strconv.Itoa(t.groupNo)), "reason", err.Error())
+			"orderId", sanitizeLog(t.orderID), "groupNo", sanitizeLog(strconv.Itoa(t.groupNo)), "reason", sanitizeLog(err.Error()))
 	}
 	return nil
 }

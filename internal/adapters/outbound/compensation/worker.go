@@ -131,8 +131,8 @@ func (w *Worker) logAttemptCap(ctx context.Context, err error) {
 		return
 	}
 	w.logger.ErrorContext(ctx, AttemptCapReachedMsg,
-		"orderId", rf.Cancel.OrderID, "groupNo", rf.Cancel.GroupNoText(), "promiseId", rf.Cancel.PromiseID,
-		"attempts", rf.Attempts, "max_attempts", w.maxAttempts, "error", rf.Err)
+		"orderId", sanitizeLog(rf.Cancel.OrderID), "groupNo", sanitizeLog(rf.Cancel.GroupNoText()), "promiseId", sanitizeLog(rf.Cancel.PromiseID),
+		"attempts", rf.Attempts, "max_attempts", w.maxAttempts, "error", sanitizeErr(rf.Err))
 }
 
 // Run drains the queue until ctx is cancelled and then returns ctx.Err().
@@ -146,7 +146,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		}
 		n, err := w.RetryOnce(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			w.logger.ErrorContext(ctx, "compensation worker pass failed", "error", err)
+			w.logger.ErrorContext(ctx, "compensation worker pass failed", "error", sanitizeErr(err))
 		}
 		if n == w.batchSize && err == nil {
 			continue
