@@ -22,6 +22,7 @@ wired in `cmd/api/main.go` `buildServer`):
 - `GET /shoppers?email=` -> `FindShopperByEmail` (trimmed, lower-cased match, A16/A27)
 - `POST /shoppers/{shopperId}/addresses` -> `AddSavedAddress` (201; the `addressId` derives from the Idempotency-Key, A24)
 - `GET /healthz` (liveness), `GET /readyz` (readiness): not business operations.
+- Not served by `cmd/api`: the read-only `GET /reports/...` routes (tag `reports`, `cmd/co-reports`, `internal/adapters/inbound/reportshttp`, ADR 0018; rules in `.claude/rules/analytics.md`).
 
 ## Conventions
 
@@ -36,12 +37,20 @@ wired in `cmd/api/main.go` `buildServer`):
   `group-spans-nodes`, `delivery-promise-unavailable` 503). An unmapped error is an
   opaque 500 `internal-error`. A new `Err` needs a catalogue row and a row in
   `errors_test.go` `TestEveryTypedErrorHasItsStatus`.
-- **Idempotency-Key** is required on the four state-changing routes
-  (`idempotency.go`): same key + same request replays the first response
-  (`Idempotency-Replayed: true`), same key + other request is 409
+- **Idempotency-Key** is required on the state-changing routes
+  (`idempotency.go`): same key + same request replays a STORED first response
+  (`Idempotency-Replayed: true`), same key + other request after a stored answer is 409
   `idempotency-key-reused`, missing key 400 `idempotency-key-required`, keys live 24 h
   in `idempotency_keys`. A new state-changing route registers through
   `s.idempotent(route)`, never a bare `r.Post`.
+- **Replay class** (ADR 0019): every `problemCatalogue` entry declares `FINAL`, `OUTCOME`
+  or `RETRYABLE` (the `replay` field; a missing class fails
+  `TestEveryProblemTypeDeclaresAReplayClass`, and ADR 0019's table must equal the
+  catalogue). A 2xx, a FINAL and an OUTCOME refusal are stored; a RETRYABLE refusal, an
+  unclassified 4xx and a 5xx are not: the request rolls back, key row included, and the key
+  is free (another body under it is a new request). `writeError` marks the capture, the
+  middleware holds no slug list. A new `Err` or problem needs a class and a row in the
+  ADR table; when unsure choose RETRYABLE.
 - **NUL** (U+0000) is rejected before anything else (`nul.go`): 404
   `resource-not-found` in the path, 400 elsewhere.
 - Bodies are decoded strictly: unknown fields are 400 `malformed-request`; a value

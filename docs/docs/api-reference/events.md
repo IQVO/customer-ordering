@@ -25,6 +25,10 @@ pinned contract, not observed traffic. Which sibling reads or writes the other
 side of each edge is on [Integration](/docs/ecosystem/integration).
 :::
 
+## Read back for analytics
+
+The optional analytics projector (`cmd/co-projector`, [ADR 0018](/docs/adr/0018-analytics-read-side)) reads this context's OWN topic back in the group `customer-ordering-analytics` and projects all three published types into a separate analytical database: ids, codes, counts and instants only (no address, postal prefix, shopper, consolidation key, cancellation reason or pickup point id). It reads no sibling's topic and publishes nothing; poison goes to `retailnetwork.customer-ordering.analytics.dlq`.
+
 ## Published
 
 Topic `retailnetwork.customer-ordering.events`, source

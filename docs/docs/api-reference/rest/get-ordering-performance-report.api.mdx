@@ -1,0 +1,70 @@
+---
+id: get-ordering-performance-report
+title: "Order-side KPIs per UTC day"
+description: "Per UTC day (of placedAt, cancelledAt and decidedAt respectively), from this context's own events only: orders_placed (CustomerOrderPlaced); orders_cancelled (DISTINCT orders with a CustomerOrderCancelled request that day: a request, order-sourcing may still refuse it, and not a cohort of that day's placements); consolidated_tier_orders (placed orders with at least one CONSOLIDATED group, ADR 0013); pickup_point_orders (placed orders to a pickup point, ADR 0016); split_shipment_orders (placed orders with two or more shipment groups) and split_shipment_share = split_shipment_orders / orders_placed, null on a day without placed orders; shopper_notices_decided (ShopperNoticeDecided, ADR 0017, whatever the notifier) with shopper_notices_by_kind (at most 5 families, most frequent first, ties by family) and shopper_notices_other (the notices of the families left out, so the total is always exact). Days with none of these facts are omitted. The response carries the projection's freshness (the same as GET /reports/freshness)."
+sidebar_label: "Order-side KPIs per UTC day"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/customer-ordering-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Order-side KPIs per UTC day"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/reports/ordering-performance"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Per UTC day (of placedAt, cancelledAt and decidedAt respectively), from this context's own events only: orders_placed (CustomerOrderPlaced); orders_cancelled (DISTINCT orders with a CustomerOrderCancelled request that day: a request, order-sourcing may still refuse it, and not a cohort of that day's placements); consolidated_tier_orders (placed orders with at least one CONSOLIDATED group, ADR 0013); pickup_point_orders (placed orders to a pickup point, ADR 0016); split_shipment_orders (placed orders with two or more shipment groups) and split_shipment_share = split_shipment_orders / orders_placed, null on a day without placed orders; shopper_notices_decided (ShopperNoticeDecided, ADR 0017, whatever the notifier) with shopper_notices_by_kind (at most 5 families, most frequent first, ties by family) and shopper_notices_other (the notices of the families left out, so the total is always exact). Days with none of these facts are omitted. The response carries the projection's freshness (the same as GET /reports/freshness).
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./get-ordering-performance-report.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./get-ordering-performance-report.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./get-ordering-performance-report.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

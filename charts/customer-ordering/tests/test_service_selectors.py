@@ -74,6 +74,9 @@ ENABLE_ALL_COMPONENTS = ENABLE_EVERYTHING + [
     "--set", "a2a.enabled=true",
     "--set", "a2a.route.enabled=true",
     "--set", "frontend.enabled=true",
+    "--set", "analytics.enabled=true",
+    "--set", "analytics.database.projectorUrl=postgres://projector@example.invalid:5432/analytics",
+    "--set", "analytics.reports.route.enabled=true",
 ]
 
 # The MCP server is read-only: no Kafka, no outbox relay, no consumers, no
@@ -83,6 +86,11 @@ MCP_STRAY = {
     "DELIVERY_PROMISE_URL", "DELIVERY_PROMISE_TIMEOUT",
     "DELIVERY_PROMISE_CONSUMER_GROUP", "ORDER_SOURCING_CONSUMER_GROUP", "SHIPPING_CONSUMER_GROUP",
 }
+# The analytics read side never sees the OLTP database, the consolidation secret,
+# delivery-promise or the OLTP consumers; the reports pod gets no Kafka and no
+# DSN but the reader's.
+ANALYTICS_STRAY = (MCP_STRAY - {"KAFKA_BROKERS"}) | {"DATABASE_URL", "MIGRATIONS_DATABASE_URL", "CONSOLIDATION_KEY_SECRET"}
+REPORTS_STRAY = ANALYTICS_STRAY | {"KAFKA_BROKERS", "ANALYTICS_DATABASE_URL", "ANALYTICS_CONSUMER_GROUP"}
 A2A_ENV = ("A2A_ADDR", "A2A_AGENT_URL", "LOG_LEVEL", "SERVICE_VERSION", "ENVIRONMENT", "DATABASE_URL", "MIGRATIONS_DATABASE_URL")
 MCP_ENV = ("MCP_ADDR", "LOG_LEVEL", "SERVICE_VERSION", "ENVIRONMENT", "DATABASE_URL", "MIGRATIONS_DATABASE_URL")
 
@@ -231,14 +239,15 @@ def check_all_components(docs: list[dict], failures: list[str]) -> None:
     services = {d["metadata"]["name"]: d for d in docs if d.get("kind") == "Service"}
     deployments = {d["metadata"]["name"]: d for d in docs if d.get("kind") == "Deployment"}
 
-    want = sorted([RELEASE, f"{RELEASE}-mcp", f"{RELEASE}-a2a", f"{RELEASE}-frontend"])
+    want_services = sorted([RELEASE, f"{RELEASE}-mcp", f"{RELEASE}-a2a", f"{RELEASE}-frontend", f"{RELEASE}-reports"])
+    want = sorted(want_services + [f"{RELEASE}-projector"])
     if sorted(deployments) != want:
         failures.append(f"expected the Deployments {want}, got {sorted(deployments)}")
-    if sorted(services) != want:
-        failures.append(f"expected the Services {want}, got {sorted(services)}")
+    if sorted(services) != want_services:
+        failures.append(f"expected the Services {want_services} (the projector has none), got {sorted(services)}")
 
     # Each Service pins its component and selects exactly one Deployment.
-    for name, component in ((RELEASE, "api"), (f"{RELEASE}-mcp", "mcp"), (f"{RELEASE}-a2a", "a2a"), (f"{RELEASE}-frontend", "frontend")):
+    for name, component in ((RELEASE, "api"), (f"{RELEASE}-mcp", "mcp"), (f"{RELEASE}-a2a", "a2a"), (f"{RELEASE}-frontend", "frontend"), (f"{RELEASE}-reports", "analytics-reports")):
         svc = services.get(name)
         if not pins(svc, component):
             failures.append(f"the {component} Service must exist and pin component={component}")
@@ -272,6 +281,8 @@ def check_all_components(docs: list[dict], failures: list[str]) -> None:
             if want_env not in env:
                 failures.append(f"the A2A Deployment does not render {want_env}")
 
+    check_analytics(deployments, services, failures)
+
     frontend = deployments.get(f"{RELEASE}-frontend")
     if frontend is not None:
         if env_names(frontend):
@@ -283,10 +294,40 @@ def check_all_components(docs: list[dict], failures: list[str]) -> None:
             backends = {b["name"] for r in d["spec"]["rules"] for b in r["backendRefs"]}
             if backends != {f"{RELEASE}-mcp"}:
                 failures.append(f"the mcp HTTPRoute must route to the mcp Service only, got {sorted(backends)}")
+        if d.get("kind") == "HTTPRoute" and d["metadata"]["name"].endswith("-reports"):
+            backends = {b["name"] for r in d["spec"]["rules"] for b in r["backendRefs"]}
+            if backends != {f"{RELEASE}-reports"}:
+                failures.append(f"the reports HTTPRoute must route to the reports Service only, got {sorted(backends)}")
         if d.get("kind") == "HTTPRoute" and d["metadata"]["name"].endswith("-a2a"):
             backends = {b["name"] for r in d["spec"]["rules"] for b in r["backendRefs"]}
             if backends != {f"{RELEASE}-a2a"}:
                 failures.append(f"the a2a HTTPRoute must route to the a2a Service only, got {sorted(backends)}")
+
+
+def check_analytics(deployments: dict, services: dict, failures: list[str]) -> None:
+    """ADR 0018: the projector and the reports run their own binaries with their own env."""
+    wants = (
+        ("projector", "/app/co-projector", ANALYTICS_STRAY,
+         ("ANALYTICS_DATABASE_URL", "KAFKA_BROKERS", "ANALYTICS_CONSUMER_GROUP", "ADMIN_ADDR", "LOG_LEVEL", "SERVICE_VERSION", "ENVIRONMENT")),
+        ("reports", "/app/co-reports", REPORTS_STRAY,
+         ("ANALYTICS_READER_DATABASE_URL", "HTTP_ADDR", "LOG_LEVEL", "SERVICE_VERSION", "ENVIRONMENT")),
+    )
+    for suffix, command, stray_set, needs in wants:
+        dep = deployments.get(f"{RELEASE}-{suffix}")
+        if dep is None:
+            failures.append(f"the analytics {suffix} Deployment was not rendered with analytics.enabled=true")
+            continue
+        if command_of(dep) != [command]:
+            failures.append(f"the analytics {suffix} Deployment must run {command}")
+        env = set(env_names(dep))
+        stray = stray_set & env
+        if stray:
+            failures.append(f"the analytics {suffix} Deployment must not get {sorted(stray)}")
+        for need in needs:
+            if need not in env:
+                failures.append(f"the analytics {suffix} Deployment does not render {need}")
+    if f"{RELEASE}-projector" in services:
+        failures.append("the projector must have no Service (it serves only its admin probes)")
 
 
 def pins(svc: dict | None, component: str) -> bool:
@@ -301,6 +342,9 @@ def main() -> int:
 
     # Default values must not deploy an HPA or a route.
     defaults = render(BASE)
+    optional = [d["metadata"]["name"] for d in defaults if d.get("kind") in {"Deployment", "Service"} and d["metadata"]["name"].endswith(("-mcp", "-a2a", "-frontend", "-projector", "-reports"))]
+    if optional:
+        failures.append(f"optional components rendered with default values: {optional}")
     stray = [d["kind"] for d in defaults if d.get("kind") in {"HorizontalPodAutoscaler", "Ingress", "HTTPRoute"}]
     if stray:
         failures.append(f"optional templates rendered with default values: {stray}")
@@ -322,12 +366,54 @@ def main() -> int:
 
     print("PASS: every Service selects exactly one Deployment (api, mcp, a2a, frontend); mcp, a2a and frontend are off by default; "
           "the MCP and A2A Deployments get no Kafka/relay/consumer/delivery-promise env; the frontend renders no env and no route; "
-          "the HPA, Ingress and HTTPRoute are off by default "
+          "analytics (projector without a Service, reports) is off by default and its pods get no OLTP DSN; the HPA, Ingress and HTTPRoute are off by default "
           "and route to the api only; every cmd/api env var has a dedicated value; the chart refuses to render without a database "
           "source, brokers, the delivery-promise URL or any consumer group, with a *_MODE or a consumer group in extraEnv, "
           "with a grace period that does not exceed the shutdown bounds, or with an http address off the container port")
     return 0
 
 
+def agents_colocated() -> int:
+    release = Path(__file__).resolve().parents[1].name
+    agents = f"{release}-agents"
+    comp = "app.kubernetes.io/component"
+    failures: list[str] = []
+    pair = {f"{release}-mcp", f"{release}-a2a"}
+    # the every-component render that has both mcp and a2a (ENABLE_EVERYTHING, or ENABLE_ALL_COMPONENTS
+    # where ENABLE_EVERYTHING covers only the api)
+    for args in [ENABLE_EVERYTHING] + ([globals()["ENABLE_ALL_COMPONENTS"]] if "ENABLE_ALL_COMPONENTS" in globals() else []):
+        off = render(args)
+        if pair <= {d["metadata"]["name"] for d in off if d.get("kind") == "Deployment"}:
+            break
+    else:
+        failures.append("no every-component render has both the mcp and a2a Deployments")
+    docs = render(args + ["--set", "agents.colocate=true"])
+    services = {d["metadata"]["name"]: d for d in docs if d.get("kind") == "Service"}
+    deployments = {d["metadata"]["name"]: d for d in docs if d.get("kind") == "Deployment"}
+    off_deps = {d["metadata"]["name"] for d in off if d.get("kind") == "Deployment"}
+    want_deps = (off_deps - {f"{release}-mcp", f"{release}-a2a"}) | {agents}
+    if set(deployments) != want_deps:
+        failures.append(f"with agents.colocate: Deployments {sorted(deployments)}, want {sorted(want_deps)}")
+    if set(services) != {d["metadata"]["name"] for d in off if d.get("kind") == "Service"}:
+        failures.append("with agents.colocate: the set of Services changed")
+    for name, svc in services.items():
+        hit = [d for d, dep in deployments.items() if matches(selector_of(svc), pod_labels_of(dep))]
+        want = [agents] if name in (f"{release}-mcp", f"{release}-a2a") else None
+        if len(hit) != 1 or (want and hit != want):
+            failures.append(f"with agents.colocate: Service {name} selects {sorted(hit)}, want {want or 'exactly one'}")
+    dep = deployments.get(agents)
+    if dep is not None:
+        if dep["spec"]["selector"].get("matchLabels", {}).get(comp) != "agents":
+            failures.append("the agents Deployment selector.matchLabels must pin component=agents")
+        names = sorted(c["name"] for c in dep["spec"]["template"]["spec"]["containers"])
+        if names != ["a2a", "mcp"]:
+            failures.append(f"the agents Deployment must run the containers a2a and mcp, got {names}")
+    for f in failures:
+        print(f"FAIL: {f}")
+    if not failures:
+        print(f"PASS: agents.colocate: {len(services)} Services, mcp + a2a both select {agents} (containers mcp, a2a)")
+    return 1 if failures else 0
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main() or agents_colocated())

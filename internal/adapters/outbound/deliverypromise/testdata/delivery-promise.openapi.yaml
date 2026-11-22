@@ -16,7 +16,12 @@ info:
     promise-closed, revision-moves-earlier (409); group-spans-nodes, invalid-promise-terms, nominal-basis-not-allowed-for-tier
     (422). Infrastructure slugs: malformed-request, idempotency-key-required, idempotency-key-invalid (400), idempotency-key-reused (409), resource-not-found (404), internal-error (500). Every
     POST requires Idempotency-Key (fleet REST API guideline); a repeat with the same key, method, path and body
-    replays the first response for 24 hours with the Idempotency-Replayed header. The one exception is the safe
+    replays the first response for 24 hours with the Idempotency-Replayed header when that response is final: a 2xx, or
+    a refusal the same request cannot pass later. A refusal that depends on state that can change is not stored: the key
+    is released and the same request retried under the same key runs again (a different body under a released key is a
+    new request, not idempotency-key-reused). The problem types that release the key (RETRYABLE): not-found,
+    promise-capacity-exhausted, book-closed, offer-not-quotable, illegal-transition, concurrent-update,
+    group-spans-nodes, revision-moves-earlier. A 5xx is never stored. The one exception is the safe
     POST /delivery-estimates, which stores nothing: it needs no key and ignores one that is sent (ADR 0019). The
     read-only analytics reports (tag reports, ADR 0018) are served by cmd/dp-reports on its own port (per-path server)
     from the separate analytical database; their range errors are invalid-report-range (400).'
@@ -182,7 +187,9 @@ paths:
       description: 'MakePromise. Consumes the offer (CONSUMED), creates the promise in PROVISIONAL with holdExpiresAt,
         and holds capacity on the witness PromiseBook (nodeId:pickupDepartureId), opening the book lazily on the
         first hold, in ONE transaction (documented exception to one aggregate per transaction, G22). A retry with
-        the same Idempotency-Key and body replays the first response (200). Errors: not-found (404); offer-not-quotable,
+        the same Idempotency-Key and body replays the stored answer when it is final (a promise made, or a refusal the
+        request cannot pass later); a refusal that capacity, a concurrent request or a fact not known yet can still
+        change releases the key, so the retry under the same key runs again. Errors: not-found (404); offer-not-quotable,
         promise-capacity-exhausted, book-closed, concurrent-update (409); group-spans-nodes, invalid-promise-terms,
         nominal-basis-not-allowed-for-tier, validation-failed (422); idempotency-key-required (400); idempotency-key-reused
         (409).'
@@ -498,10 +505,18 @@ paths:
       - reports
       operationId: getQuoteConversionReport
       x-pagination-exempt: report
-      summary: Offers quoted against promises made, per day and tier
+      summary: Offers quoted against promises made, per day and tier, and promise coverage per region
       description: Per UTC day and tier, offersQuoted counts DeliveryOfferQuoted and promisesMade counts PromiseMade of
         that day (each by its own CloudEvents time); conversion = promisesMade / offersQuoted, null when no offer was
-        quoted that day and tier. Same-day counts, not an offer-to-promise cohort. Days with neither are omitted. Served
+        quoted that day and tier. Same-day counts, not an offer-to-promise cohort. Days with neither are omitted. promiseCoverage
+        (ADR 0030) adds, per UTC day, the offers quoted per region (the first two characters of the destination postal
+        prefix; the ten regions with most requests, the rest folded into other) with the cumulative counts and shares
+        of those promised within 1, 2, 3 and 5 days; it is a sibling of days, not a field of each tier row. Each region
+        row carries two families of fields. The OFFERS-based fields (requests, answeredWithPromise, answeredWithinDays)
+        count offers quoted. The REQUEST-based fields (requestsAnswered, requestsWithPromise, requestsWithinDays,
+        requestShare; ADR 0032) count the quote and estimate requests the service answered, including those answered
+        with no promise; they are best effort (a bounded loss is tolerated) and exist only from the day the request
+        fact was switched on, so earlier days and a service with the fact off report 0 and a null share. Served
         by cmd/dp-reports (ADR 0018).
       parameters:
       - $ref: '#/components/parameters/ReportFrom'
@@ -545,8 +560,11 @@ components:
       required: true
       description: Client-generated key (a UUID per logical submit; a retry reuses it), 1-128 printable ASCII
         characters. The key is global, not per route. A repeat with the same key, method, path and body replays
-        the first answer with the Idempotency-Replayed header set to "true"; a different request under the same key is a 409
-        idempotency-key-reused.
+        the first answer with the Idempotency-Replayed header set to "true" when that answer is final (a 2xx, or a refusal
+        the same request cannot pass later); a different request under the same key is a 409 idempotency-key-reused.
+        A refusal that a retry could pass (the RETRYABLE problem types of the API description) and a 5xx are not stored;
+        the key is released, the retry under the same key executes again, and a different body under a released key is a
+        new request.
       schema:
         type: string
         minLength: 1
@@ -1748,6 +1766,117 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QuoteConversionDay'
+        promiseCoverage:
+          type: array
+          description: Promise coverage per UTC day and region (ADR 0030), ascending by day. Days without a quoted
+            offer that carries a destination are omitted, so an empty range gives an empty array. Optional and
+            additive; consumers decode tolerantly and ignore it.
+          items:
+            $ref: '#/components/schemas/PromiseCoverageDay'
+    PromiseCoverageDay:
+      type: object
+      required:
+      - day
+      - regions
+      properties:
+        day:
+          type: string
+          format: date
+        regions:
+          type: array
+          description: The ten regions with most requests that day (ties by region, byte order), most first, then
+            the region other when any region was folded into it.
+          items:
+            $ref: '#/components/schemas/PromiseCoverageRegion'
+    PromiseCoverageRegion:
+      type: object
+      description: One region on one day, in two families of fields. OFFERS-based (ADR 0030; requests, answeredWithPromise,
+        answeredWithinDays) the unit is the offer quoted (DeliveryOfferQuoted), the only offer fact that carries both a region
+        and a promised window; a request answered with no offer is not counted there. REQUEST-based (ADR 0032;
+        requestsAnswered, requestsWithPromise, requestsWithinDays, requestShare) the unit is the request answered,
+        quote or estimate, with or without a promise (DeliveryRequestAnswered). The request-based fields are best
+        effort by design, a bounded loss is tolerated, and they exist only from the day DELIVERY_REQUEST_FACTS_ENABLED
+        was switched on; before that, and while it is off, they are 0 and requestShare is null. Regions are ranked by
+        requestsAnswered, then by requests, then by region; a region with request facts and no offer is listed too.
+      required:
+      - region
+      - requests
+      - answeredWithPromise
+      - answeredWithinDays
+      - requestsAnswered
+      - requestsWithPromise
+      - requestsWithinDays
+      - requestShare
+      properties:
+        region:
+          type: string
+          maxLength: 5
+          description: The first two characters of the destination postal prefix, or other for the regions folded
+            past the tenth. Never more of the destination than that.
+          example: '78'
+        requests:
+          type: integer
+          minimum: 1
+          description: The offers quoted for the region that day.
+        answeredWithPromise:
+          type: integer
+          minimum: 0
+          description: Those that carry a promised window (deliverByLatest).
+        answeredWithinDays:
+          type: array
+          description: Cumulative counts over the documented list of days [1, 2, 3, 5], in that order. A promised
+            day count is the number of local calendar days from the quote day to the day of deliverByLatest in
+            the window's time zone (UTC without one), never below 0.
+          items:
+            $ref: '#/components/schemas/PromiseCoverageWithin'
+        requestsAnswered:
+          type: integer
+          minimum: 0
+          description: REQUEST-based (ADR 0032, best effort). The quote and estimate requests answered for the region
+            that day, with or without a promise. 0 when none was recorded.
+        requestsWithPromise:
+          type: integer
+          minimum: 0
+          description: REQUEST-based. Those answered with at least one promised option.
+        requestsWithinDays:
+          type: array
+          description: REQUEST-based. Cumulative counts over the same list of days [1, 2, 3, 5], in that order, of the
+            requests whose shortest promised day count across the answered options is within days; the share is
+            count / requestsAnswered, null when none was answered.
+          items:
+            $ref: '#/components/schemas/PromiseCoverageWithin'
+        requestShare:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: REQUEST-based. requestsWithPromise / requestsAnswered, the share of answered requests that got a
+            promise; null when requestsAnswered is 0.
+    PromiseCoverageWithin:
+      type: object
+      required:
+      - days
+      - count
+      - share
+      properties:
+        days:
+          type: integer
+          enum:
+          - 1
+          - 2
+          - 3
+          - 5
+        count:
+          type: integer
+          minimum: 0
+          description: The offers (answeredWithinDays) or requests (requestsWithinDays) promised within days days or less (cumulative).
+        share:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: count / requests for answeredWithinDays, count / requestsAnswered for requestsWithinDays; null
+            when the region had none.
     QuoteConversionDay:
       type: object
       required:

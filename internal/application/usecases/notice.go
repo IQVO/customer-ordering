@@ -79,11 +79,16 @@ func (c Consumer) decideNotices(ctx context.Context, at time.Time, family notice
 		return nil, err
 	}
 	out := make([]shared.Event, 0, len(targets))
+	decidedAt := shared.UTC(at)
 	for _, t := range targets {
 		out = append(out, notice.ShopperNoticeDecided{
+			// The header carries the CloudEvents `time` (OccurredAt): the decision
+			// instant, the same one as decidedAt. Without it the published time is
+			// the zero instant.
+			Header:  shared.Header{At: decidedAt},
 			OrderID: t.orderID, GroupNo: t.groupNo, Family: family, Notifier: p.Notifier(family),
 			PolicyVersion: p.Version(), NoticeKey: notice.NoticeKey(t.orderID, t.groupNo, family, fact),
-			DecidedAt: shared.UTC(at), Fact: fact,
+			DecidedAt: decidedAt, Fact: fact,
 		})
 	}
 	return out, nil

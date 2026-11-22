@@ -68,6 +68,15 @@ Fully qualified name of the A2A agent Deployment/Service/route (<release>-a2a, A
 {{- include "customer-ordering.fullname" . }}-a2a
 {{- end }}
 
+{{/* agents.colocate (warehouse-infra ADR 0012): "true" iff colocate, mcp and a2a are all on; else empty. */}}
+{{- define "customer-ordering.agentsColocated" -}}
+{{- if and (.Values.agents | default dict).colocate .Values.mcp.enabled .Values.a2a.enabled }}true{{ end -}}
+{{- end }}
+
+{{- define "customer-ordering.agentsFullname" -}}
+{{- printf "%s-agents" (include "customer-ordering.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{/*
 Name of the Secret holding DATABASE_URL: the operator's own
 (database.existingSecret) or the one this chart creates from database.url.
@@ -204,4 +213,64 @@ Deployment (always rendered) includes it, so a mis-set release fails
 {{- include "customer-ordering.requireCleanExtraEnv" . -}}
 {{- include "customer-ordering.requireGracePeriod" . -}}
 {{- include "customer-ordering.requireHttpPort" . -}}
+{{- end -}}
+
+{{/*
+Fully qualified names of the analytics read side (ADR 0018): the projector
+Deployment (no Service: it serves only its admin probes) and the reports
+Deployment/Service. Components analytics-projector and analytics-reports keep
+every Service selecting exactly one Deployment.
+*/}}
+{{- define "customer-ordering.projectorFullname" -}}
+{{- include "customer-ordering.fullname" . }}-projector
+{{- end }}
+
+{{- define "customer-ordering.reportsFullname" -}}
+{{- include "customer-ordering.fullname" . }}-reports
+{{- end }}
+
+{{/*
+Name of the Secret holding the analytical DSNs: the operator's own
+(analytics.database.existingSecret, keys ANALYTICS_DATABASE_URL and
+ANALYTICS_READER_DATABASE_URL) or the one this chart creates.
+*/}}
+{{- define "customer-ordering.analyticsSecretName" -}}
+{{- if .Values.analytics.database.existingSecret }}
+{{- .Values.analytics.database.existingSecret }}
+{{- else }}
+{{- include "customer-ordering.fullname" . }}-analytics
+{{- end }}
+{{- end }}
+
+{{/*
+analytics.enabled needs an analytical DSN source (both binaries refuse to boot
+without one), the Kafka brokers (the projector consumes
+retailnetwork.customer-ordering.events) and a stable consumer group. Fail at
+render instead of crash-looping.
+*/}}
+{{- define "customer-ordering.requireAnalytics" -}}
+{{- if not (or .Values.analytics.database.projectorUrl .Values.analytics.database.existingSecret) -}}
+{{- fail "analytics.enabled is true but neither analytics.database.projectorUrl nor analytics.database.existingSecret is set (ANALYTICS_DATABASE_URL): the projector and the reports refuse to boot without an analytical database." -}}
+{{- end -}}
+{{- if not .Values.kafka.brokers -}}
+{{- fail "analytics.enabled is true but kafka.brokers is empty (KAFKA_BROKERS): the projector consumes retailnetwork.customer-ordering.events." -}}
+{{- end -}}
+{{- if not .Values.analytics.projector.consumerGroup -}}
+{{- fail "analytics.projector.consumerGroup is required (ANALYTICS_CONSUMER_GROUP): use the STABLE id customer-ordering-analytics, never the pod name." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Comma-joined names of this chart's enabled KongPlugins, for the
+konghq.com/plugins annotation on every HTTPRoute this chart renders.
+Empty string (annotation omitted) when none are enabled.
+*/}}
+{{- define "customer-ordering.kongPluginNames" -}}
+{{- $names := list -}}
+{{- range $name, $cfg := .Values.kongPlugins -}}
+{{- if $cfg.enabled -}}
+{{- $names = append $names (printf "%s-%s" (include "customer-ordering.fullname" $) $name) -}}
+{{- end -}}
+{{- end -}}
+{{- join "," $names -}}
 {{- end -}}

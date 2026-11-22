@@ -43,6 +43,8 @@ have no `/readyz`.
 | Shoppers | `GET /shoppers?email=` | `findShopperByEmail` | `200`, the profile; `404 not-found` when no e-mail matches |
 | Shoppers | `GET /shoppers/{shopperId}` | `getShopper` | `200`, the profile with `savedAddresses[]` |
 | Shoppers | `POST /shoppers/{shopperId}/addresses` | `addSavedAddress` | `201`, the saved address; `422 too-many-addresses` past 20 |
+| reports | `GET /reports/ordering-performance?from=&to=` | `getOrderingPerformanceReport` | `200`, per UTC day (snake_case): orders placed and cancelled, consolidated-tier, pickup-point and split-shipment orders, the split share, shopper notices decided by kind (at most 5, the rest in `shopper_notices_other`), plus `freshness`; `400 invalid-report-range`. Served by `cmd/co-reports` on `:8092` from the analytical database ([ADR 0018](/docs/adr/0018-analytics-read-side)); not on `cmd/api` |
+| reports | `GET /reports/freshness` | `getReportFreshness` | `200`, `as_of` and `lag_seconds` of the analytics projection (both `null` before the first event) |
 | Operations | `GET /healthz`, `GET /readyz` | `getHealth`, `getReadiness` | `200` / `200`, or `503` while shutting down or when Postgres or Kafka does not answer ([Runbook](/docs/operations/runbook#health-and-readiness)) |
 
 Exact status codes, bodies and schemas of every route are in the generated REST
@@ -53,10 +55,16 @@ pages of this section.
 - **`Idempotency-Key`.** Required on the four POST routes (`/checkout`,
   `/orders/{orderId}/cancellations`, `/shoppers`, `/shoppers/{shopperId}/addresses`),
   1 to 128 printable ASCII characters; absent is `400 idempotency-key-required`,
-  malformed is `400 idempotency-key-invalid`. The key is global. The first
-  answer below 500 (a 4xx too) is stored for 24 hours, committed with the order
-  and its outbox rows, and replayed with `Idempotency-Replayed: true`; the same
-  key with a different method, path or body is `409 idempotency-key-reused`. On
+  malformed is `400 idempotency-key-invalid`. The key is global. A success
+  and a refusal that is final for the request are stored for 24 hours, committed with
+  the order and its outbox rows, and replayed with `Idempotency-Replayed: true`; the
+  same key with a different method, path or body is `409 idempotency-key-reused`.
+  A refusal that a retry could pass (`concurrent-update`, `not-found`,
+  `validation-failed`, `cancel-after-lock`, `promise-capacity-exhausted`,
+  `book-closed`, `group-spans-nodes`, `promise-destination-mismatch`,
+  `illegal-transition`) and a 5xx are not stored: the key is released, so a retry with
+  the same key runs again and another body under it is a new request
+  ([ADR 0019](/docs/adr/0019-every-problem-type-has-a-replay-class)). On
   `/checkout` the order id is derived from the key, so a retry after a timeout
   reuses the same promises
   ([Runbook](/docs/operations/runbook#idempotency-key-behaviour)).

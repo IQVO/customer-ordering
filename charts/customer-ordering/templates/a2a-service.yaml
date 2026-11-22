@@ -10,7 +10,7 @@ spec:
   type: {{ .Values.a2a.service.type }}
   ports:
     - port: {{ .Values.a2a.service.port }}
-      targetPort: http
+      targetPort: {{ ternary "a2a" "http" (eq (include "customer-ordering.agentsColocated" .) "true") }}
       protocol: TCP
       name: http
   # component=a2a pins the Service to the a2a Deployment's pods only
@@ -18,5 +18,5 @@ spec:
   # api or the frontend.
   selector:
     {{- include "customer-ordering.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: a2a
+    app.kubernetes.io/component: {{ ternary "agents" "a2a" (eq (include "customer-ordering.agentsColocated" .) "true") }}
 {{- end }}

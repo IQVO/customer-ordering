@@ -1,0 +1,60 @@
+---
+id: get-report-freshness
+title: "How far the analytics projection is behind"
+description: "as_of is the CloudEvents time of the newest event the projector applied; lag_seconds is now minus as_of, never negative. Both are null until the first event. One endpoint for every report: they all read the same projection."
+sidebar_label: "How far the analytics projection is behind"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/customer-ordering-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"How far the analytics projection is behind"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/reports/freshness"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+as_of is the CloudEvents time of the newest event the projector applied; lag_seconds is now minus as_of, never negative. Both are null until the first event. One endpoint for every report: they all read the same projection.
+
+<ParamsDetails>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./get-report-freshness.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./get-report-freshness.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

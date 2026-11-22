@@ -19,7 +19,7 @@ a symptom-first view see [Troubleshooting](/docs/operations/troubleshooting).
 
 ## Runtime shape
 
-The chart deploys up to four workloads from one image
+The chart deploys up to six workloads from one image
 (`charts/customer-ordering/templates/`); only `api` is on by default.
 
 | Workload | Binary | Port | What runs in it | Dependencies |
@@ -27,6 +27,8 @@ The chart deploys up to four workloads from one image
 | `api` (Deployment `customer-ordering`) | `cmd/api` | `8080` (`config.httpAddr`; Service port 80) | REST API, the **outbox relay**, the **compensation worker** and the **three Kafka consumers** in one process | Postgres, Kafka, delivery-promise |
 | `mcp` (`customer-ordering-mcp`, `mcp.enabled`) | `cmd/mcp` | `8090` | read-only MCP, Streamable HTTP | Postgres only |
 | `a2a` (`customer-ordering-a2a`, `a2a.enabled`) | `cmd/a2a` | `8093` | read-only A2A agent, JSON-RPC and Agent Card | Postgres only |
+| `analytics-projector` (`customer-ordering-projector`, `analytics.enabled`) | `cmd/co-projector` | `8091` (admin `/healthz`, `/readyz`; no Service) | projects the service's OWN events into the separate analytical database ([ADR 0018](/docs/adr/0018-analytics-read-side)) | analytical Postgres, Kafka |
+| `analytics-reports` (`customer-ordering-reports`, `analytics.enabled`) | `cmd/co-reports` | `8092` (Service port 80) | read-only `GET /reports/ordering-performance` and `/reports/freshness`, unauthenticated | analytical Postgres only (read-only role) |
 | `frontend` (`customer-ordering-frontend`, `frontend.enabled`) | static assets of `web/` | | the `customer_ordering_mfe` console remote, served under `/mfes/customer-ordering/` | none |
 
 There is no in-memory mode and no worker that can be switched off. If the relay,
@@ -117,7 +119,9 @@ the first write (`AllowAutoTopicCreation` in `internal/adapters/outbound/kafka/w
 | consumed | `retailnetwork.delivery-promise.events` | `DELIVERY_PROMISE_CONSUMER_GROUP` (`customer-ordering-delivery-promise` in the cluster) |
 | consumed | `retailnetwork.order-sourcing.events` | `ORDER_SOURCING_CONSUMER_GROUP` (`customer-ordering-order-sourcing`) |
 | consumed | `retailnetwork.shipping-and-tracking.events` | `SHIPPING_CONSUMER_GROUP` (`customer-ordering-shipping`) |
+| consumed (`cmd/co-projector`, ADR 0018) | `retailnetwork.customer-ordering.events` (its own topic) | `ANALYTICS_CONSUMER_GROUP` (`customer-ordering-analytics`) |
 | dead letters | `<consumed topic>.dlq` | written by the consumer that gave up on a message |
+| dead letters (analytics) | `retailnetwork.customer-ordering.analytics.dlq` | the projector, poison only; transient failures retry forever |
 
 Group ids are stable and service-prefixed and never derived from the pod name:
 a rescheduled pod resumes from its committed offsets, while a brand-new group
@@ -217,6 +221,8 @@ helm upgrade --install customer-ordering charts/customer-ordering \
 | `HTTP_ADDR`, `LOG_LEVEL` | `config.httpAddr` (its port must equal `service.targetPort`), `config.logLevel` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `SERVICE_VERSION`, `ENVIRONMENT` | `otel.endpoint`, `otel.serviceName` (`<name>-mcp` and `<name>-a2a` for those components), `image.tag` or appVersion, `environment` (chart default `production`) |
 | `OUTBOX_RELAY_INTERVAL`, `OUTBOX_MAX_ATTEMPTS`, `SHUTDOWN_DRAIN_DELAY` | `config.outboxRelayInterval`, `config.outboxMaxAttempts`, `config.shutdownDrainDelay` |
+| `ANALYTICS_DATABASE_URL`, `ANALYTICS_READER_DATABASE_URL` | `analytics.database.projectorUrl` / `reportsUrl`, or the keys of `analytics.database.existingSecret` (component `analytics-projector` / `analytics-reports`; the reports pod gets the reader DSN only) |
+| `ANALYTICS_CONSUMER_GROUP`, `ADMIN_ADDR`, `HTTP_ADDR` (analytics) | `analytics.projector.consumerGroup`, `analytics.projector.adminAddr`, `analytics.reports.httpAddr` |
 | `MCP_ADDR` | `mcp.service.targetPort` (component `mcp`) |
 | `A2A_ADDR`, `A2A_AGENT_URL` | `a2a.service.targetPort`; `a2a.agentUrl` overrides the advertised URL, else derived from the release and namespace (component `a2a`) |
 
@@ -231,20 +237,29 @@ publishes. Tests: `bash charts/customer-ordering/tests/render_test.sh`,
 them in `chart-tests` and lints the chart in `helm-lint` (pull requests).
 Packaging before the first release: [Before the first release](/docs/operations/before-first-release).
 
+### Analytics read side (ADR 0018)
+
+Off by default (`analytics.enabled: false`; the render is then byte-identical to a chart without the block). Turning it on needs a second Postgres database with a read-write role for the projector and a read-only role for the reports, the consumer group `customer-ordering-analytics` and the DLQ topic above; the chart refuses to render without `analytics.database.projectorUrl` (or `existingSecret`), `kafka.brokers` or the consumer group. The reports route (`analytics.reports.route.enabled`) exposes `/api/customer-ordering/reports` (rewritten to `/reports`, annotated `konghq.com/regex-priority: "10"` so it outranks the API route's prefix). After a deploy, `curl <edge>/api/customer-ordering/reports/freshness` answering `200 {"as_of":...,"lag_seconds":...}` proves the route and the projection; `lag_seconds` growing means the projector is behind or down. The model rebuilds from the earliest retained offset when the group is new. No endpoint carries auth.
+
 ### Idempotency-Key behaviour
 
 Every POST route (`/checkout`, `/orders/{orderId}/cancellations`, `/shoppers`,
 `/shoppers/{shopperId}/addresses`) requires an `Idempotency-Key` header of
 1 to 128 printable ASCII characters (`internal/adapters/inbound/http/idempotency.go`);
 absent is 400 `idempotency-key-required`, malformed 400 `idempotency-key-invalid`.
-The key is global, not per route. The first response below 500 (a 4xx too) is
-stored for 24 h in table `idempotency_keys` (`route` is always the empty string;
+The key is global, not per route. The first answer is stored when it is final for the
+request (a 2xx, or a refusal whose problem type is `FINAL` or `OUTCOME`, ADR 0019) for 24 h in table `idempotency_keys` (`route` is always the empty string;
 `internal/application/idempotency/idempotency.go`), in the SAME transaction as
 the order change and its outbox rows. A repeat with the same method, path and body
 replays it with header `Idempotency-Replayed: true`; the same key with anything
-else is 409 `idempotency-key-reused`. 5xx responses and panics roll back and are
-never stored. Concurrent requests with one key are serialised by the unique
-index: the loser replays the winner's answer.
+else is 409 `idempotency-key-reused`. 5xx responses, panics and `RETRYABLE`
+refusals roll back, key row included, and are never stored: the key is free and the
+same request runs again (a different body under it is a new request). Concurrent
+requests with one key are serialised by the unique index: the loser replays the
+winner's answer, or runs the request itself when the winner's answer was released.
+The class of every problem type is in ADR 0019; to see what a key holds,
+`SELECT status FROM idempotency_keys WHERE key = '...'` (no row: nothing is stored
+for it, the key is free).
 
 ## Alerts and dashboards
 

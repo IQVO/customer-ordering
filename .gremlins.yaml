@@ -27,12 +27,15 @@ unleash:
     # differs. See HARNESS.md's mutation-testing section for the
     # tagless-switch-under-reports pitfall before assuming a low number
     # means missing tests.
-    efficacy: "98"
-    mutant-coverage: "98"
-# Measured 2026-10-23 with gremlins v0.6.0, single worker, per domain package
-# (every package is gated by `make mutation` and the CI `mutation-fast` job):
-#   shared 100% efficacy / 100% mutant coverage (31 killed, 0 lived)
-#   shipto 100% / 100% (21 killed, 0 lived)
-#   shopper 100% / 100% (17 killed, 0 lived)
-#   customerorder 100% / 100% (139 killed, 0 lived)
-# The thresholds sit strictly below the measurement, leaving headroom.
+    # Fleet standard 99/99: gremlins fails when measured <= threshold, so 99 needs
+    # >= 99.01% measured. Thresholds are plain numbers on purpose -- a quoted
+    # YAML string ("98") is read as 0 by gremlins v0.6.0 (float type assertion)
+    # and the gate never fails (it was dormant before 2026-11-15).
+    efficacy: 99
+    mutant-coverage: 99
+# Measured 2026-11-15 with gremlins v0.6.0, single worker, cold test cache, per
+# domain package (every package is gated by `make mutation` and the CI
+# `mutation-fast` job); all packages 100% efficacy / 100% mutant coverage, 0 lived:
+#   shared 49 killed, shipto 21, shopper 22, customerorder 205, notice 26.
+# Before the 2026-11-15 ratchet five boundary mutants lived (customerorder
+# consolidation.go:17 x2, notice.go:139 and :157 x2); killed by new boundary tests.

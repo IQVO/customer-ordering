@@ -23,8 +23,14 @@ info:
     not exposed through the storefront edge. Errors are RFC 9457 problem
     details (application/problem+json) whose type is /problems/<slug>. The
     shared problem types are not-found (404), illegal-transition (409),
-    concurrent-update (409) and validation-failed (422). Optional fields are
-    omitted when absent, never null.
+    concurrent-update (409) and validation-failed (422). A POST or PUT retried
+    under the same Idempotency-Key is answered from the store only when its
+    first answer is final for the request; see the Idempotency-Key parameter
+    for the refusals that are not stored. Optional fields are
+    omitted when absent, never null. The one exception is the read-only analytics
+    reports (tag reports, ADR 0018): served by cmd/co-reports on its own port
+    (per-path server) from the separate analytical database, snake_case, with
+    explicit nulls where a figure has no defined value.
 servers:
   - url: http://localhost:8080
 tags:
@@ -38,6 +44,12 @@ tags:
     description: Register a synthetic shopper (RegisterShopper), read a profile with its saved addresses (GetShopper, FindShopperByEmail) and save an address (AddSavedAddress).
   - name: Operations
     description: Liveness and readiness probes.
+  - name: reports
+    description: >-
+      Read-only analytics reports (ADR 0018), served by cmd/co-reports from the
+      separate analytical database the projector feeds from this context's own
+      events. Days are UTC calendar days; from and to are inclusive dates. Ids,
+      codes and counts only: no shopper, name, address or free text.
 paths:
   /checkout:
     post:
@@ -83,7 +95,10 @@ paths:
             capacity exhausted (promise-capacity-exhausted), book closed
             (book-closed), a concurrent update (concurrent-update), or the
             Idempotency-Key was already used with a different request
-            (idempotency-key-reused).
+            (idempotency-key-reused). offer-not-quotable is stored under the
+            key (use a new key with the new offers); promise-capacity-exhausted,
+            book-closed and concurrent-update are not stored and release the
+            key (retry with the same key).
           content:
             application/problem+json:
               schema:
@@ -95,7 +110,9 @@ paths:
             that is not registered),
             line-without-promise (ErrLineWithoutPromise),
             promise-destination-mismatch (ErrPromiseDestinationMismatch) or
-            group-spans-nodes from delivery-promise.
+            group-spans-nodes from delivery-promise. line-without-promise is
+            stored under the Idempotency-Key; the others are not (retry with the
+            same key).
           content:
             application/problem+json:
               schema:
@@ -229,6 +246,9 @@ paths:
             cancel-after-lock (ErrCancelAfterLock), status-regression
             (ErrStatusRegression), concurrent-update, or the Idempotency-Key
             was already used with a different request (idempotency-key-reused).
+            status-regression is stored under the key; cancel-after-lock and
+            concurrent-update are not (a locked group can still be cancelled by
+            an event): retry with the same key.
           content:
             application/problem+json:
               schema:
@@ -320,7 +340,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           description: >-
-            shopper-exists (ErrShopperExists), or the Idempotency-Key was
+            shopper-exists (ErrShopperExists; stored under the Idempotency-Key,
+            the e-mail stays taken), or the Idempotency-Key was
             already used with a different request (idempotency-key-reused).
           content:
             application/problem+json:
@@ -452,7 +473,10 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
-          description: concurrent-update, or the Idempotency-Key was already used with a different request (idempotency-key-reused).
+          description: >-
+            concurrent-update (not stored under the Idempotency-Key: retry with
+            the same key), or the Idempotency-Key was already used with a
+            different request (idempotency-key-reused).
           content:
             application/problem+json:
               schema:
@@ -501,6 +525,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+  /reports/ordering-performance:
+    servers:
+      - url: http://localhost:8092
+    get:
+      tags: [reports]
+      operationId: getOrderingPerformanceReport
+      x-pagination-exempt: report
+      summary: Order-side KPIs per UTC day
+      description: >-
+        Per UTC day (of placedAt, cancelledAt and decidedAt respectively), from
+        this context's own events only: orders_placed (CustomerOrderPlaced);
+        orders_cancelled (DISTINCT orders with a CustomerOrderCancelled request
+        that day: a request, order-sourcing may still refuse it, and not a
+        cohort of that day's placements); consolidated_tier_orders (placed
+        orders with at least one CONSOLIDATED group, ADR 0013);
+        pickup_point_orders (placed orders to a pickup point, ADR 0016);
+        split_shipment_orders (placed orders with two or more shipment
+        groups) and split_shipment_share = split_shipment_orders /
+        orders_placed, null on a day without placed orders;
+        shopper_notices_decided (ShopperNoticeDecided, ADR 0017, whatever the
+        notifier) with shopper_notices_by_kind (at most 5 families, most
+        frequent first, ties by family) and shopper_notices_other (the notices
+        of the families left out, so the total is always exact). Days with none
+        of these facts are omitted. The response carries the projection's
+        freshness (the same as GET /reports/freshness).
+      parameters:
+        - $ref: '#/components/parameters/ReportFrom'
+        - $ref: '#/components/parameters/ReportTo'
+      responses:
+        '200':
+          description: The report for the range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderingPerformanceReport'
+        '400':
+          $ref: '#/components/responses/InvalidReportRange'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /reports/freshness:
+    servers:
+      - url: http://localhost:8092
+    get:
+      tags: [reports]
+      operationId: getReportFreshness
+      summary: How far the analytics projection is behind
+      description: >-
+        as_of is the CloudEvents time of the newest event the projector applied;
+        lag_seconds is now minus as_of, never negative. Both are null until the
+        first event. One endpoint for every report: they all read the same
+        projection.
+      responses:
+        '200':
+          description: The projection's freshness.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportFreshness'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
   parameters:
     OrderId:
@@ -560,15 +644,42 @@ components:
       description: >-
         Client-generated UUID per logical submit, 1 to 128 printable ASCII
         characters (missing is 400 idempotency-key-required, malformed is 400
-        idempotency-key-invalid). A key is global and kept for 24 hours; the
-        same key with the same method, path and body replays the stored answer
-        with Idempotency-Replayed: true; the same key with anything else is 409
-        idempotency-key-reused.
+        idempotency-key-invalid). A key is global and kept for 24 hours. An
+        answer is stored only when it is final for the request: a success, and a
+        refusal whose problem type is FINAL or OUTCOME (ADR 0019). The same key
+        with the same method, path and body replays a stored answer with
+        Idempotency-Replayed: true; the same key with anything else is 409
+        idempotency-key-reused. A refusal that depends on state that can change
+        is not stored and releases the key, so the same request under the same
+        key runs again, and another request under that key is a new request.
+        These problem types are not stored: not-found, concurrent-update,
+        illegal-transition, cancel-after-lock, validation-failed,
+        promise-capacity-exhausted, book-closed, group-spans-nodes,
+        promise-destination-mismatch and delivery-promise-unavailable (retry with
+        the same key). The others are stored: malformed-request, line-without-promise,
+        status-regression, shopper-exists, too-many-addresses and offer-not-quotable
+        (use a new key). A 5xx and a panic are never stored.
       schema:
         type: string
         minLength: 1
         maxLength: 128
         pattern: '^[\x20-\x7E]+$'
+    ReportFrom:
+      name: from
+      in: query
+      required: false
+      description: First UTC day of the range, inclusive. Omitted = 29 days before `to` (a 30-day range).
+      schema:
+        type: string
+        format: date
+    ReportTo:
+      name: to
+      in: query
+      required: false
+      description: Last UTC day of the range, inclusive. Omitted = today. At most 366 days from `from`.
+      schema:
+        type: string
+        format: date
   headers:
     LocationOrder:
       description: Relative URI of the placed order, /orders/{orderId}.
@@ -583,7 +694,7 @@ components:
       schema:
         type: string
     IdempotencyReplayed:
-      description: '"true" when the answer is the stored one of an earlier request with the same Idempotency-Key (a stored 2xx or 4xx answer, replayed with its original status and body); absent on the first execution. A 5xx is never stored.'
+      description: '"true" when the answer is the stored one of an earlier request with the same Idempotency-Key (a stored 2xx or a stored final 4xx answer, replayed with its original status and body); absent on the first execution. A refusal that a retry could pass (a RETRYABLE problem type, see the Idempotency-Key parameter) and a 5xx are never stored.'
       schema:
         type: string
         enum: ['true']
@@ -595,13 +706,25 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     NotFound:
-      description: No order with this id (not-found).
+      description: No order with this id (not-found). Not stored under the Idempotency-Key, because the order may be created by another request; a retry with the same key runs again.
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     Unprocessable:
-      description: The body is well-formed JSON but breaks a value-object rule (validation-failed).
+      description: The body is well-formed JSON but breaks a value-object rule, or names a shopper or a saved address that does not exist (validation-failed). Not stored under the Idempotency-Key, so a retry with the same key runs again.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InvalidReportRange:
+      description: invalid-report-range. from or to is not a date (YYYY-MM-DD), from is after to, or the range exceeds 366 days.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InternalError:
+      description: internal-error. An unexpected failure; the detail never names the cause.
       content:
         application/problem+json:
           schema:
@@ -1176,3 +1299,93 @@ components:
         nextCursor:
           type: string
           description: Present when a next page exists; pass it as cursor.
+    OrderingPerformanceReport:
+      type: object
+      required: [from, to, days, freshness]
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderingPerformanceDay'
+        freshness:
+          $ref: '#/components/schemas/ReportFreshness'
+    OrderingPerformanceDay:
+      type: object
+      required:
+        - day
+        - orders_placed
+        - orders_cancelled
+        - consolidated_tier_orders
+        - pickup_point_orders
+        - split_shipment_orders
+        - split_shipment_share
+        - shopper_notices_decided
+        - shopper_notices_by_kind
+        - shopper_notices_other
+      properties:
+        day:
+          type: string
+          format: date
+        orders_placed:
+          type: integer
+          minimum: 0
+        orders_cancelled:
+          type: integer
+          minimum: 0
+          description: Distinct orders with a cancellation request that day (a request, not a final cancellation).
+        consolidated_tier_orders:
+          type: integer
+          minimum: 0
+        pickup_point_orders:
+          type: integer
+          minimum: 0
+        split_shipment_orders:
+          type: integer
+          minimum: 0
+        split_shipment_share:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: split_shipment_orders / orders_placed; null when no order was placed that day.
+        shopper_notices_decided:
+          type: integer
+          minimum: 0
+        shopper_notices_by_kind:
+          type: array
+          maxItems: 5
+          description: At most 5 notice families, most frequent first, ties by family.
+          items:
+            $ref: '#/components/schemas/ShopperNoticeKindCount'
+        shopper_notices_other:
+          type: integer
+          minimum: 0
+          description: Notices of the families not listed in shopper_notices_by_kind.
+    ShopperNoticeKindCount:
+      type: object
+      required: [kind, count]
+      properties:
+        kind:
+          type: string
+          description: A notice family code of ADR 0017 (DELAY_EXPECTED, ETA_WINDOW_ASSIGNED, DELIVERY_POINT_ADVISORY, GROUP_SHIPPED, GROUP_DELIVERED, GROUP_LOST, GROUP_RETURNED) or UNRECOGNISED.
+        count:
+          type: integer
+          minimum: 1
+    ReportFreshness:
+      type: object
+      required: [as_of, lag_seconds]
+      properties:
+        as_of:
+          type: string
+          format: date-time
+          nullable: true
+        lag_seconds:
+          type: number
+          minimum: 0
+          nullable: true
