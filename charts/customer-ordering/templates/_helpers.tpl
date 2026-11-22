@@ -68,6 +68,15 @@ Fully qualified name of the A2A agent Deployment/Service/route (<release>-a2a, A
 {{- include "customer-ordering.fullname" . }}-a2a
 {{- end }}
 
+{{/* agents.colocate (warehouse-infra ADR 0012): "true" iff colocate, mcp and a2a are all on; else empty. */}}
+{{- define "customer-ordering.agentsColocated" -}}
+{{- if and (.Values.agents | default dict).colocate .Values.mcp.enabled .Values.a2a.enabled }}true{{ end -}}
+{{- end }}
+
+{{- define "customer-ordering.agentsFullname" -}}
+{{- printf "%s-agents" (include "customer-ordering.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{/*
 Name of the Secret holding DATABASE_URL: the operator's own
 (database.existingSecret) or the one this chart creates from database.url.
