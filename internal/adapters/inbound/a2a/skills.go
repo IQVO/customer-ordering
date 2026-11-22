@@ -220,6 +220,6 @@ func problemFromUseCase(ctx context.Context, err error, id customerorder.ID) *pr
 	if errors.Is(err, ports.ErrNotFound) {
 		return problemNotFound(fmt.Sprintf("no order exists with orderId %q", string(id)))
 	}
-	slog.ErrorContext(ctx, "a2a skill failed", "error", err)
+	slog.ErrorContext(ctx, "a2a skill failed", "error", logReplacer.Replace(err.Error()))
 	return problemInternal()
 }
