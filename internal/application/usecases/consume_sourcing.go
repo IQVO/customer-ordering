@@ -44,7 +44,7 @@ func (c Consumer) handle(ctx context.Context, m Meta, apply func(ctx context.Con
 			if !skippable(err) {
 				return struct{}{}, err
 			}
-			c.logger().InfoContext(ctx, "consumed event skipped", "eventId", m.EventID, "type", m.Type, "reason", err.Error())
+			c.logger().InfoContext(ctx, "consumed event skipped", "eventId", sanitizeLog(m.EventID), "type", sanitizeLog(m.Type), "reason", sanitizeLog(err.Error()))
 		}
 		return struct{}{}, nil
 	})

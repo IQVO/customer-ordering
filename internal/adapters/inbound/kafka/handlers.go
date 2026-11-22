@@ -99,7 +99,7 @@ func handler[T any](what string, validate func(T) error, apply func(ctx context.
 		if err := apply(ctx, meta(e), d); err != nil {
 			return err
 		}
-		slog.DebugContext(ctx, "event processed", "type", e.Type(), "event_id", e.ID(), "what", what)
+		slog.DebugContext(ctx, "event processed", "type", sanitizeLog(e.Type()), "event_id", sanitizeLog(e.ID()), "what", sanitizeLog(what))
 		return nil
 	}
 }
