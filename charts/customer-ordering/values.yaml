@@ -245,6 +245,10 @@ mcp:
   route:
     enabled: false
     path: "/api/mcp/customer-ordering"
+    # Route timeout (HTTPRoute rule timeouts.request). "0s" disables it: Envoy's 15s
+    # default would cut MCP Streamable HTTP responses that stream over SSE.
+    timeouts:
+      request: "0s"
     parentRefs:
       - name: ""
         namespace: ""
@@ -276,7 +280,7 @@ a2a:
   # Absolute URL advertised on the Agent Card (A2A_AGENT_URL, mandatory for the
   # binary). Empty defaults to this release's in-cluster Service DNS
   # (http://<release>-a2a.<ns>.svc.cluster.local:8093/); warehouse-infra can
-  # override it with the Kong path when the agent must be reachable off-cluster.
+  # override it with the Agent Router path when the agent must be reachable off-cluster.
   agentUrl: ""
   # SERVICE_VERSION / ENVIRONMENT: the labels cmd/a2a reports at boot and puts on
   # its telemetry (SERVICE_VERSION is also the Agent Card version). serviceVersion
@@ -294,6 +298,10 @@ a2a:
   route:
     enabled: false
     path: "/api/a2a/customer-ordering"
+    # Route timeout (HTTPRoute rule timeouts.request). "0s" disables it: Envoy's 15s
+    # default would cut long A2A calls and streamed (SSE) responses.
+    timeouts:
+      request: "0s"
     parentRefs:
       - name: ""
         namespace: ""
